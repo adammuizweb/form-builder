@@ -17,6 +17,12 @@ function fb_url(array $over = []): string {
     return '?' . http_build_query($q);
 }
 
+// Admin pages are included AFTER the theme header is printed, so PHP header()
+// redirects fail ("headers already sent"). Use a JS redirect + return instead.
+function fb_js_redirect(string $url): void {
+    echo '<script>location.replace(' . json_encode($url) . ');</script>';
+}
+
 function fb_admin_css(): void {
     static $done = false;
     if ($done) return;
@@ -85,6 +91,12 @@ function fb_admin_css(): void {
 /* builder */
 .fbb-layout { display: grid; grid-template-columns: 230px 1fr; gap: 1.2rem; align-items: start; }
 @media (max-width: 900px) { .fbb-layout { grid-template-columns: 1fr; } }
+.fbb-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: .8rem; align-items: start; }
+.fbb-grid .fbb-field { grid-column: span 12; margin-bottom: 0; }
+.fbb-grid .fbb-field.w6 { grid-column: span 6; }
+.fbb-grid .fbb-field.w4 { grid-column: span 4; }
+.fbb-grid .fbb-field.w3 { grid-column: span 3; }
+@media (max-width: 760px) { .fbb-grid .fbb-field { grid-column: span 12 !important; } }
 .fbb-palette { background: var(--adam-card); border: 1px solid var(--adam-border); border-radius: 14px; padding: 1rem; position: sticky; top: 1rem; }
 .fbb-palette h3 { font-size: .7rem; letter-spacing: .12em; text-transform: uppercase; color: var(--adam-muted); margin: 0 0 .7rem; }
 .fbb-palette button { display: block; width: 100%; text-align: left; border: 1px solid var(--adam-border); background: var(--adam-bg); color: var(--adam-text); border-radius: 9px; padding: .5rem .75rem; font-size: .82rem; font-weight: 600; cursor: pointer; margin-bottom: .4rem; font-family: inherit; transition: all .15s; }

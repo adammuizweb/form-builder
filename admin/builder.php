@@ -23,8 +23,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && function_exists('csrf_ch
         $pdo->prepare('INSERT INTO `fb_fields` (form_id, type, label, field_key, sort_order, width) VALUES (?, ?, ?, ?, ?, 12)')
             ->execute([$formId, $type, $types[$type]['label'], $key, $maxSort + 10]);
         $pdo->prepare('UPDATE `fb_forms` SET updated_at = NOW() WHERE id = ?')->execute([$formId]);
-        header('Location: ' . fb_url(['view' => 'builder', 'id' => $formId]), true, 303);
-        exit;
+        fb_js_redirect(fb_url(['view' => 'builder', 'id' => $formId]));
+        return;
     }
 
     if ($act === 'save_field') {
@@ -87,15 +87,15 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && function_exists('csrf_ch
                 $fieldId, $formId,
             ]);
         $pdo->prepare('UPDATE `fb_forms` SET updated_at = NOW() WHERE id = ?')->execute([$formId]);
-        header('Location: ' . fb_url(['view' => 'builder', 'id' => $formId]), true, 303);
-        exit;
+        fb_js_redirect(fb_url(['view' => 'builder', 'id' => $formId]));
+        return;
     }
 
     if ($act === 'delete_field') {
         $pdo->prepare('DELETE FROM `fb_fields` WHERE id = ? AND form_id = ?')->execute([(int)$_POST['field_id'], $formId]);
         $pdo->prepare('UPDATE `fb_forms` SET updated_at = NOW() WHERE id = ?')->execute([$formId]);
-        header('Location: ' . fb_url(['view' => 'builder', 'id' => $formId]), true, 303);
-        exit;
+        fb_js_redirect(fb_url(['view' => 'builder', 'id' => $formId]));
+        return;
     }
 
     if ($act === 'move_field') {
@@ -113,8 +113,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && function_exists('csrf_ch
                 $pdo->prepare('UPDATE `fb_forms` SET updated_at = NOW() WHERE id = ?')->execute([$formId]);
             }
         }
-        header('Location: ' . fb_url(['view' => 'builder', 'id' => $formId]), true, 303);
-        exit;
+        fb_js_redirect(fb_url(['view' => 'builder', 'id' => $formId]));
+        return;
     }
 }
 
@@ -132,7 +132,7 @@ $fields = fb_get_fields($pdo, $formId);
 
   <div class="fba-card">
     <span class="fba-hint">Shortcode:</span> <span class="fba-code">[form slug=&quot;<?= htmlspecialchars($form['slug'], ENT_QUOTES) ?>&quot;]</span>
-    <span class="fba-hint">&mdash; paste it into any page or post. Click a field to edit it.</span>
+    <span class="fba-hint">&mdash; klik field untuk edit. <strong>Baris &amp; kolom:</strong> atur <em>Column width</em> tiap field (12 = 1 kolom penuh, 6 = ½, 4 = ⅓, 3 = ¼); field yang muat dalam 12 kolom akan berdampingan, sisanya turun ke baris baru. Tata letak di bawah mengikuti pengaturan.</span>
   </div>
 
   <div class="fbb-layout">
@@ -148,9 +148,9 @@ $fields = fb_get_fields($pdo, $formId);
       <?php endforeach; ?>
     </div>
 
-    <div>
+    <div class="fbb-grid">
       <?php if (!$fields): ?>
-        <div class="fba-empty">No fields yet. Add one from the palette.</div>
+        <div class="fba-empty" style="grid-column:span 12">No fields yet. Add one from the palette.</div>
       <?php endif; ?>
 
       <?php foreach ($fields as $f):
@@ -161,8 +161,9 @@ $fields = fb_get_fields($pdo, $formId);
         $valid = fb_field_validation($f);
         $optLines = [];
         foreach ($opts as $o) $optLines[] = $o['value'] . '|' . $o['label'] . ($o['price'] !== 0 ? '|' . $o['price'] : '');
+        $wCls = in_array((int)$f['width'], [3, 4, 6], true) ? ' w' . (int)$f['width'] : '';
         ?>
-      <div class="fbb-field <?= !empty($f['is_hidden']) ? 'hidden-f' : '' ?>" id="fb-field-<?= $fid ?>">
+      <div class="fbb-field<?= $wCls ?> <?= !empty($f['is_hidden']) ? 'hidden-f' : '' ?>" id="fb-field-<?= $fid ?>">
         <div class="fbb-field-head" onclick="this.parentElement.classList.toggle('open')">
           <span class="type"><?= htmlspecialchars($meta['label'], ENT_QUOTES) ?></span>
           <span class="lbl"><?= htmlspecialchars($f['label'] !== '' ? $f['label'] : '(no label)', ENT_QUOTES) ?> <?= !empty($f['required']) ? '<span class="req-star">*</span>' : '' ?></span>
@@ -189,13 +190,14 @@ $fields = fb_get_fields($pdo, $formId);
               </div>
             </div>
             <div class="fba-row3">
-              <div class="fba-field"><label>Width</label>
+              <div class="fba-field"><label>Column width</label>
                 <select name="width">
-                  <option value="12" <?= (int)$f['width'] === 12 ? 'selected' : '' ?>>Full (12/12)</option>
-                  <option value="6" <?= (int)$f['width'] === 6 ? 'selected' : '' ?>>Half (6/12)</option>
-                  <option value="4" <?= (int)$f['width'] === 4 ? 'selected' : '' ?>>Third (4/12)</option>
-                  <option value="3" <?= (int)$f['width'] === 3 ? 'selected' : '' ?>>Quarter (3/12)</option>
+                  <option value="12" <?= (int)$f['width'] === 12 ? 'selected' : '' ?>>1 kolom — penuh (12/12)</option>
+                  <option value="6" <?= (int)$f['width'] === 6 ? 'selected' : '' ?>>½ kolom (6/12)</option>
+                  <option value="4" <?= (int)$f['width'] === 4 ? 'selected' : '' ?>>⅓ kolom (4/12)</option>
+                  <option value="3" <?= (int)$f['width'] === 3 ? 'selected' : '' ?>>¼ kolom (3/12)</option>
                 </select>
+                <div class="fba-hint">Field berdampingan otomatis membentuk kolom; total per baris = 12.</div>
               </div>
               <div class="fba-field"><label>Placeholder</label><input type="text" name="placeholder" value="<?= htmlspecialchars((string)$f['placeholder'], ENT_QUOTES) ?>"></div>
               <div class="fba-field"><label>Help text</label><input type="text" name="help_text" value="<?= htmlspecialchars((string)$f['help_text'], ENT_QUOTES) ?>"></div>

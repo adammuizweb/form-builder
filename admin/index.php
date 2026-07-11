@@ -39,8 +39,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 $uid,
             ]);
         $newId = (int)$pdo->lastInsertId();
-        header('Location: ' . fb_url(['view' => 'builder', 'id' => $newId]), true, 303);
-        exit;
+        fb_js_redirect(fb_url(['view' => 'builder', 'id' => $newId]));
+        return;
     } elseif ($act === 'save_recaptcha') {
         settings_set($pdo, FB_RECAPTCHA_SITEKEY_KEY, trim((string)($_POST['sitekey'] ?? '')), 1);
         settings_set($pdo, FB_RECAPTCHA_SECRET_KEY, trim((string)($_POST['secret'] ?? '')), 1);
@@ -71,7 +71,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             // remove uploaded files
             $subs = $pdo->prepare('SELECT files_json FROM `fb_submissions` WHERE form_id = ?');
             $subs->execute([$fid]);
-            $root = dirname(__DIR__, 3) . '/private_files/form-builder/';
+            $root = fb_files_base_dir($target) . '/';
             while ($r = $subs->fetch(PDO::FETCH_ASSOC)) {
                 $fj = json_decode((string)($r['files_json'] ?? ''), true);
                 if (is_array($fj)) foreach ($fj as $info) {

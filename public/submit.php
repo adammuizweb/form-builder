@@ -69,6 +69,9 @@ if ($errors) {
 // Store files (after validation passed)
 $stored = [];
 $types = fb_field_types();
+$baseDir = fb_files_base_dir($form);
+$relDir = $formId . '/' . date('Y') . '/' . date('m');
+if (!is_dir($baseDir . '/' . $relDir)) @mkdir($baseDir . '/' . $relDir, 0755, true);
 foreach ($fields as $f) {
     if (empty($types[$f['type']]['file']) || !empty($f['is_hidden'])) continue;
     $key = (string)$f['field_key'];
@@ -76,11 +79,11 @@ foreach ($fields as $f) {
     if (!is_array($file) || (int)($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) continue;
     $orig = basename((string)($file['name'] ?? 'file'));
     $ext = strtolower(pathinfo($orig, PATHINFO_EXTENSION));
-    $dir = fb_upload_dir($formId);
-    $rel = $formId . '/' . date('Y') . '/' . date('m') . '/' . bin2hex(random_bytes(12)) . ($ext !== '' ? '.' . $ext : '');
-    $dest = dirname(__DIR__, 3) . '/private_files/form-builder/' . $rel;
+    $rel = $relDir . '/' . bin2hex(random_bytes(12)) . ($ext !== '' ? '.' . $ext : '');
+    $dest = $baseDir . '/' . $rel;
     if (@move_uploaded_file((string)$file['tmp_name'], $dest)) {
         $stored[$key] = ['stored' => $rel, 'original' => $orig];
+        if (function_exists('do_action')) do_action('fb_file_stored', $form, $f, $stored[$key]);
     }
 }
 
@@ -101,6 +104,10 @@ $stmt->execute([
 ]);
 $subId = (int)$pdo->lastInsertId();
 $ref = 'FB-' . $formId . '-' . str_pad((string)$subId, 5, '0', STR_PAD_LEFT);
+
+// Extensibility: other plugins can react to new submissions
+//   add_action('fb_after_submit', fn($form, $data, $subId, $ref) => ...);
+if (function_exists('do_action')) do_action('fb_after_submit', $form, $data, $subId, $ref);
 
 // Optional email notification (best-effort)
 $notify = trim((string)$settings['notify_email']);

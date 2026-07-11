@@ -26,7 +26,7 @@ if (($_GET['action'] ?? '') === 'file') {
     $info = is_array($fj) ? ($fj[$fkey] ?? null) : null;
     $rel = is_array($info) ? (string)($info['stored'] ?? '') : '';
     if ($rel === '' || str_contains($rel, '..') || str_starts_with($rel, '/')) { http_response_code(404); exit('File not found'); }
-    $path = dirname(__DIR__, 3) . '/private_files/form-builder/' . $rel;
+    $path = fb_files_base_dir($form) . '/' . $rel;
     if (!is_file($path)) { http_response_code(404); exit('File not found'); }
     $mime = 'application/octet-stream';
     if (function_exists('finfo_open')) { $fi = finfo_open(FILEINFO_MIME_TYPE); $mime = (string)finfo_file($fi, $path); finfo_close($fi); }
@@ -126,7 +126,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && function_exists('csrf_ch
             case 'delete':
                 $st = $pdo->prepare("SELECT files_json FROM `fb_submissions` WHERE id IN ({$in}) AND form_id = ?");
                 $st->execute($args);
-                $root = dirname(__DIR__, 3) . '/private_files/form-builder/';
+                $root = fb_files_base_dir($form) . '/';
                 while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
                     $fj = json_decode((string)($r['files_json'] ?? ''), true);
                     if (is_array($fj)) foreach ($fj as $info) {
@@ -137,8 +137,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && function_exists('csrf_ch
                 $pdo->prepare("DELETE FROM `fb_submissions` WHERE id IN ({$in}) AND form_id = ?")->execute($args);
                 break;
         }
-        header('Location: ' . fb_url(), true, 303);
-        exit;
+        fb_js_redirect(fb_url());
+        return;
     }
 }
 

@@ -368,6 +368,17 @@ function fb_search_blob(array $fields, array $data): string {
 }
 
 // Storage dir for a form's uploads (outside web root): private_files/form-builder/{formId}/YYYY/MM
+// Base dir for a form's uploads (outside web root). Filterable so other plugins
+// can relocate storage (e.g. another disk/S3 bridge) without patching the CMS core:
+//   add_filter('fb_files_base_dir', fn($base, $form) => '/mnt/uploads/fb');
+function fb_files_base_dir(array $form): string {
+    $base = dirname(__DIR__, 2) . '/private_files/form-builder';
+    if (function_exists('apply_filters')) {
+        $base = apply_filters('fb_files_base_dir', $base, $form);
+    }
+    return rtrim((string)$base, '/');
+}
+
 function fb_upload_dir(int $formId): string {
     $dir = dirname(__DIR__, 2) . '/private_files/form-builder/' . $formId . '/' . date('Y') . '/' . date('m');
     if (!is_dir($dir)) @mkdir($dir, 0755, true);

@@ -65,8 +65,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && function_exists('csrf_ch
     }
 
     if ($saved) {
-        header('Location: ' . fb_url(['view' => 'settings', 'id' => $formId, 'saved' => 1]), true, 303);
-        exit;
+        fb_js_redirect(fb_url(['view' => 'settings', 'id' => $formId, 'saved' => 1]));
+        return;
     }
 }
 
