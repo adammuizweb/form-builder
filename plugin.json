@@ -1,0 +1,34 @@
+{
+  "name": "form-builder",
+  "version": "1.0.0",
+  "title": "Form Builder",
+  "icon": "icon.png",
+  "description": "Dynamic form builder for Jyavani CMS: unlimited forms (text, email, number, select, checkbox, date, file & image uploads, priced options with live totals), embed via [form slug=\"...\"] shortcode, per-form submissions with auto filters, bulk actions, CSV export, custom CSS/JS, and per-form access control.",
+  "author": "Adam Muiz",
+  "author_uri": "https://jyavani.com/member/adammuiz/",
+  "plugin_uri": "https://github.com/adammuizweb/form-builder",
+  "homepage": "https://github.com/adammuizweb/form-builder",
+  "requires": {
+    "php": ">=8.1",
+    "extensions": ["pdo", "json"]
+  },
+  "admin": {
+    "pages": [
+      {
+        "route": "admin/tools/form-builder",
+        "file": "admin/index.php",
+        "title": "Form Builder",
+        "roles": ["admin", "author"]
+      }
+    ],
+    "nav": [
+      {
+        "label": "Form Builder",
+        "icon": "list",
+        "page": "admin/tools/form-builder",
+        "parent": "tools",
+        "roles": ["admin", "author"]
+      }
+    ]
+  }
+}
