@@ -33,7 +33,7 @@ if (trim((string)($_POST['fb_slug'] ?? '')) !== (string)$form['slug']) {
 }
 
 $settings = fb_form_settings($form);
-$fields = fb_get_fields($pdo, $formId, false);
+$fields = fb_flat_fields(fb_get_fields($pdo, $formId, false));
 
 // CSRF
 $ctx = fb_public_ctx($pdo);

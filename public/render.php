@@ -8,12 +8,87 @@ function fb_h(?string $v): string {
     return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
 }
 
+// Render a single (non-container) field. Returns '' for hidden/unknown types.
+function fb_render_field_html(array $f, string $slug): string {
+    $types = fb_field_types();
+    $type = (string)$f['type'];
+    $meta = $types[$type] ?? null;
+    if ($meta === null || !empty($meta['container']) || !empty($f['is_hidden'])) return '';
+    $key = (string)$f['field_key'];
+    $label = (string)$f['label'];
+    $req = !empty($f['required']);
+    $valid = fb_field_validation($f);
+    $maxBytes = (int)($valid['max_bytes'] ?? 5 * 1024 * 1024);
+    $id = 'fb-' . $slug . '-' . $key;
+
+    ob_start(); ?>
+    <div class="fb-field" data-key="<?= fb_h($key) ?>">
+      <?php if (!empty($meta['display'])): ?>
+        <?php if ($type === 'heading'): ?><div class="fb-heading"><?= fb_h($label) ?></div>
+        <?php elseif ($type === 'paragraph'): ?><div class="fb-paragraph"><?= nl2br(fb_h($label)) ?></div>
+        <?php else: ?><hr class="fb-divider"><?php endif; ?>
+      <?php elseif (!empty($meta['file'])): ?>
+        <label class="fb-label"><?= fb_h($label) ?> <?= $req ? '<span class="req">*</span>' : '' ?></label>
+        <div class="fb-drop" data-max="<?= $maxBytes ?>" data-image="<?= !empty($meta['image']) ? '1' : '0' ?>">
+          <?php if (!empty($meta['image'])): ?>
+          <input type="file" name="<?= fb_h($key) ?>" accept="image/*" <?= $req ? 'required' : '' ?>>
+          <img class="up-preview" alt="">
+          <div class="up-ic">&#128444;</div>
+          <?php else: ?>
+          <input type="file" name="<?= fb_h($key) ?>" <?= $req ? 'required' : '' ?>>
+          <div class="up-ic">&#8682;</div>
+          <?php endif; ?>
+          <div class="up-t">Drop file here or click to browse</div>
+          <div class="up-s">Max <?= round($maxBytes / 1048576, 1) ?> MB</div>
+        </div>
+        <?php if (!empty($f['help_text'])): ?><div class="fb-help"><?= fb_h($f['help_text']) ?></div><?php endif; ?>
+      <?php elseif ($type === 'textarea'): ?>
+        <label class="fb-label" for="<?= fb_h($id) ?>"><?= fb_h($label) ?> <?= $req ? '<span class="req">*</span>' : '' ?></label>
+        <textarea id="<?= fb_h($id) ?>" name="<?= fb_h($key) ?>" placeholder="<?= fb_h($f['placeholder'] ?? '') ?>" <?= $req ? 'required' : '' ?>></textarea>
+        <?php if (!empty($f['help_text'])): ?><div class="fb-help"><?= fb_h($f['help_text']) ?></div><?php endif; ?>
+      <?php elseif ($type === 'select'): ?>
+        <label class="fb-label" for="<?= fb_h($id) ?>"><?= fb_h($label) ?> <?= $req ? '<span class="req">*</span>' : '' ?></label>
+        <select id="<?= fb_h($id) ?>" name="<?= fb_h($key) ?>" <?= $req ? 'required' : '' ?>>
+          <option value="" disabled selected><?= fb_h($f['placeholder'] ?? '-- Select --') ?></option>
+          <?php foreach (fb_field_options($f) as $o): ?>
+          <option value="<?= fb_h($o['value']) ?>"><?= fb_h($o['label'] . ($o['price'] > 0 ? ' (+' . fb_format_rupiah($o['price']) . ')' : '')) ?></option>
+          <?php endforeach; ?>
+        </select>
+        <?php if (!empty($f['help_text'])): ?><div class="fb-help"><?= fb_h($f['help_text']) ?></div><?php endif; ?>
+      <?php elseif ($type === 'radio' || $type === 'checkbox'): ?>
+        <span class="fb-label" style="display:block"><?= fb_h($label) ?> <?= $req ? '<span class="req">*</span>' : '' ?></span>
+        <div class="fb-choices">
+          <?php foreach (fb_field_options($f) as $o): ?>
+          <label class="fb-choice">
+            <input type="<?= $type ?>" name="<?= fb_h($key) ?><?= $type === 'checkbox' ? '[]' : '' ?>" value="<?= fb_h($o['value']) ?>" <?= ($req && $type === 'radio') ? 'required' : '' ?>>
+            <span><?= fb_h($o['label']) ?></span>
+            <?php if ($o['price'] > 0): ?><span class="price">+<?= fb_h(fb_format_rupiah($o['price'])) ?></span><?php endif; ?>
+          </label>
+          <?php endforeach; ?>
+        </div>
+        <?php if (!empty($f['help_text'])): ?><div class="fb-help"><?= fb_h($f['help_text']) ?></div><?php endif; ?>
+      <?php else:
+        $inputType = in_array($type, ['email', 'tel', 'number', 'date'], true) ? $type : 'text';
+        $attrs = '';
+        if (isset($valid['min']) && $valid['min'] !== '') $attrs .= ' min="' . fb_h((string)$valid['min']) . '"';
+        if (isset($valid['max']) && $valid['max'] !== '') $attrs .= ' max="' . fb_h((string)$valid['max']) . '"';
+        if (!empty($valid['maxlength'])) $attrs .= ' maxlength="' . (int)$valid['maxlength'] . '"';
+        ?>
+        <label class="fb-label" for="<?= fb_h($id) ?>"><?= fb_h($label) ?> <?= $req ? '<span class="req">*</span>' : '' ?></label>
+        <input type="<?= $inputType ?>" id="<?= fb_h($id) ?>" name="<?= fb_h($key) ?>" placeholder="<?= fb_h($f['placeholder'] ?? '') ?>" <?= $req ? 'required' : '' ?><?= $attrs ?>>
+        <?php if (!empty($f['help_text'])): ?><div class="fb-help"><?= fb_h($f['help_text']) ?></div><?php endif; ?>
+      <?php endif; ?>
+    </div>
+    <?php
+    return (string)ob_get_clean();
+}
+
 function fb_render_form(PDO $pdo, array $form): string {
     $formId = (int)$form['id'];
     $slug = (string)$form['slug'];
     $settings = fb_form_settings($form);
-    $fields = fb_get_fields($pdo, $formId, false);
-    $types = fb_field_types();
+    $tree = fb_get_tree($pdo, $formId);
+    $allFields = fb_flat_fields(fb_get_fields($pdo, $formId, false));
     $ctx = fb_public_ctx($pdo);
     $self = fb_safe_return_url((string)($_SERVER['REQUEST_URI'] ?? '/'));
 
@@ -24,7 +99,7 @@ function fb_render_form(PDO $pdo, array $form): string {
 
     // Price map for JS live total
     $priceMap = [];
-    foreach ($fields as $f) {
+    foreach ($allFields as $f) {
         if (!in_array($f['type'], ['select', 'radio', 'checkbox'], true)) continue;
         foreach (fb_field_options($f) as $o) {
             if ($o['price'] !== 0) $priceMap[$f['field_key'] . '::' . $o['value']] = $o['price'];
@@ -49,10 +124,11 @@ function fb_render_form(PDO $pdo, array $form): string {
 }
 .fb-title { font-size: 1.35rem; font-weight: 700; margin-bottom: .35rem; }
 .fb-desc { color: var(--fb-muted); font-size: .94rem; margin-bottom: 1.4rem; }
-.fb-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 1rem 1.1rem; }
-.fb-cell { grid-column: span 12; }
-.fb-cell.w6 { grid-column: span 6; } .fb-cell.w4 { grid-column: span 4; } .fb-cell.w3 { grid-column: span 3; }
-@media (max-width: 640px) { .fb-cell { grid-column: span 12 !important; } }
+.fb-rows { display: flex; flex-direction: column; gap: 1rem; }
+.fb-row { display: grid; grid-template-columns: repeat(12, 1fr); gap: 1rem 1.1rem; }
+.fb-col { grid-column: span 12; display: flex; flex-direction: column; gap: 1rem; }
+.fb-col.c6 { grid-column: span 6; } .fb-col.c4 { grid-column: span 4; } .fb-col.c3 { grid-column: span 3; }
+@media (max-width: 640px) { .fb-col { grid-column: span 12 !important; } }
 .fb-field label.fb-label { display: block; font-size: .74rem; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; margin-bottom: .42rem; color: var(--fb-text); }
 .fb-label .req { color: var(--fb-danger); }
 .fb-field input[type=text], .fb-field input[type=email], .fb-field input[type=tel], .fb-field input[type=number], .fb-field input[type=date], .fb-field textarea, .fb-field select {
@@ -81,14 +157,14 @@ function fb_render_form(PDO $pdo, array $form): string {
 .fb-drop .up-s { font-size: .74rem; color: var(--fb-muted); margin-top: .2rem; }
 .fb-drop .up-preview { display: none; margin: 0 auto .5rem; max-width: 160px; max-height: 120px; border-radius: 10px; object-fit: cover; box-shadow: 0 4px 14px rgba(0 0 0 / .12); }
 .fb-drop.has-file { border-style: solid; border-color: var(--fb-accent); background: rgba(43 122 74 / .06); }
-.fb-total { display: flex; justify-content: space-between; align-items: center; gap: 1rem; background: rgba(43 122 74 / .07); border: 1.5px dashed var(--fb-accent); border-radius: var(--fb-radius); padding: .9rem 1.2rem; }
+.fb-total { display: flex; justify-content: space-between; align-items: center; gap: 1rem; background: rgba(43 122 74 / .07); border: 1.5px dashed var(--fb-accent); border-radius: var(--fb-radius); padding: .9rem 1.2rem; margin-top: 1rem; }
 .fb-total .lbl { font-size: .72rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--fb-accent-deep); }
 .fb-total .amt { font-size: 1.35rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .fb-total .amt.pop { animation: fb-pop .45s cubic-bezier(.34,1.56,.64,1); }
-.fb-submit { grid-column: span 12; display: inline-flex; align-items: center; justify-content: center; gap: .5rem; border: none; cursor: pointer; font: inherit; font-size: 1rem; font-weight: 700; color: #fff; background: linear-gradient(135deg, var(--fb-accent), var(--fb-accent-deep)); border-radius: var(--fb-radius); padding: .9rem 1.5rem; box-shadow: 0 8px 22px rgba(43 122 74 / .3); transition: transform .2s, box-shadow .2s; }
+.fb-submit { width: 100%; margin-top: 1rem; display: inline-flex; align-items: center; justify-content: center; gap: .5rem; border: none; cursor: pointer; font: inherit; font-size: 1rem; font-weight: 700; color: #fff; background: linear-gradient(135deg, var(--fb-accent), var(--fb-accent-deep)); border-radius: var(--fb-radius); padding: .9rem 1.5rem; box-shadow: 0 8px 22px rgba(43 122 74 / .3); transition: transform .2s, box-shadow .2s; }
 .fb-submit:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(43 122 74 / .4); }
 .fb-submit:disabled { opacity: .75; cursor: wait; transform: none; }
-.fb-flash-err { grid-column: span 12; background: rgba(190 45 45 / .08); border: 1.5px solid rgba(190 45 45 / .4); color: var(--fb-danger); border-radius: var(--fb-radius); padding: .8rem 1rem; font-size: .9rem; font-weight: 600; }
+.fb-flash-err { background: rgba(190 45 45 / .08); border: 1.5px solid rgba(190 45 45 / .4); color: var(--fb-danger); border-radius: var(--fb-radius); padding: .8rem 1rem; font-size: .9rem; font-weight: 600; margin-bottom: 1rem; }
 .fb-success { text-align: center; padding: 2.5rem 1rem; }
 .fb-success .check { width: 72px; height: 72px; margin: 0 auto 1rem; border-radius: 50%; background: linear-gradient(135deg, var(--fb-accent), var(--fb-accent-deep)); color: #fff; display: grid; place-items: center; font-size: 2rem; animation: fb-pop .55s cubic-bezier(.34,1.56,.64,1); }
 .fb-success h3 { font-size: 1.4rem; margin-bottom: .5rem; }
@@ -116,7 +192,7 @@ function fb_render_form(PDO $pdo, array $form): string {
   <div class="fb-title"><?= fb_h($form['title']) ?></div>
   <?php if (!empty($form['description'])): ?><div class="fb-desc"><?= nl2br(fb_h($form['description'])) ?></div><?php endif; ?>
 
-  <form class="fb-grid" method="post" action="/form-submit/" enctype="multipart/form-data" data-fb-form="<?= fb_h($slug) ?>" novalidate>
+  <form method="post" action="/form-submit/" enctype="multipart/form-data" data-fb-form="<?= fb_h($slug) ?>" novalidate>
     <input type="hidden" name="fb_form_id" value="<?= $formId ?>">
     <input type="hidden" name="fb_slug" value="<?= fb_h($slug) ?>">
     <input type="hidden" name="csrf_token" value="<?= fb_h($ctx['csrf']) ?>">
@@ -127,82 +203,25 @@ function fb_render_form(PDO $pdo, array $form): string {
     <div class="fb-flash-err"><?= fb_h($msg !== '' ? $msg : 'Submission failed. Please check your input.') ?></div>
     <?php endif; ?>
 
-    <?php foreach ($fields as $f):
-        $type = (string)$f['type'];
-        $meta = $types[$type] ?? null;
-        if ($meta === null) continue;
-        $key = (string)$f['field_key'];
-        $label = (string)$f['label'];
-        $w = in_array((int)$f['width'], [3, 4, 6], true) ? ' w' . (int)$f['width'] : '';
-        $req = !empty($f['required']);
-        $valid = fb_field_validation($f);
-        $maxBytes = (int)($valid['max_bytes'] ?? 5 * 1024 * 1024);
-        ?>
-    <div class="fb-cell<?= $w ?> fb-field" data-key="<?= fb_h($key) ?>">
-      <?php if (!empty($meta['display'])): ?>
-        <?php if ($type === 'heading'): ?><div class="fb-heading"><?= fb_h($label) ?></div>
-        <?php elseif ($type === 'paragraph'): ?><div class="fb-paragraph"><?= nl2br(fb_h($label)) ?></div>
-        <?php else: ?><hr class="fb-divider"><?php endif; ?>
-      <?php elseif (!empty($meta['file'])): ?>
-        <label class="fb-label"><?= fb_h($label) ?> <?= $req ? '<span class="req">*</span>' : '' ?></label>
-        <div class="fb-drop" data-max="<?= $maxBytes ?>" data-image="<?= !empty($meta['image']) ? '1' : '0' ?>">
-          <?php if (!empty($meta['image'])): ?>
-          <input type="file" name="<?= fb_h($key) ?>" accept="image/*" <?= $req ? 'required' : '' ?>>
-          <img class="up-preview" alt="">
-          <div class="up-ic">&#128444;</div>
-          <?php else: ?>
-          <input type="file" name="<?= fb_h($key) ?>" <?= $req ? 'required' : '' ?>>
-          <div class="up-ic">&#8682;</div>
-          <?php endif; ?>
-          <div class="up-t">Drop file here or click to browse</div>
-          <div class="up-s">Max <?= round($maxBytes / 1048576, 1) ?> MB</div>
+    <div class="fb-rows">
+    <?php foreach ($tree as $row):
+        $n = max(1, count($row['cols']));
+        $span = intdiv(12, min(4, $n));
+        $colCls = ['12' => '', '6' => ' c6', '4' => ' c4', '3' => ' c3'][$span] ?? ''; ?>
+      <div class="fb-row">
+        <?php foreach ($row['cols'] as $col): ?>
+        <div class="fb-col<?= $colCls ?>">
+          <?php foreach ($col['fields'] as $f) echo fb_render_field_html($f, $slug); ?>
         </div>
-        <?php if (!empty($f['help_text'])): ?><div class="fb-help"><?= fb_h($f['help_text']) ?></div><?php endif; ?>
-      <?php elseif ($type === 'textarea'): ?>
-        <label class="fb-label" for="fb-<?= fb_h($slug) ?>-<?= fb_h($key) ?>"><?= fb_h($label) ?> <?= $req ? '<span class="req">*</span>' : '' ?></label>
-        <textarea id="fb-<?= fb_h($slug) ?>-<?= fb_h($key) ?>" name="<?= fb_h($key) ?>" placeholder="<?= fb_h($f['placeholder'] ?? '') ?>" <?= $req ? 'required' : '' ?>></textarea>
-        <?php if (!empty($f['help_text'])): ?><div class="fb-help"><?= fb_h($f['help_text']) ?></div><?php endif; ?>
-      <?php elseif ($type === 'select'): ?>
-        <label class="fb-label" for="fb-<?= fb_h($slug) ?>-<?= fb_h($key) ?>"><?= fb_h($label) ?> <?= $req ? '<span class="req">*</span>' : '' ?></label>
-        <select id="fb-<?= fb_h($slug) ?>-<?= fb_h($key) ?>" name="<?= fb_h($key) ?>" <?= $req ? 'required' : '' ?>>
-          <option value="" disabled selected><?= fb_h($f['placeholder'] ?? '-- Select --') ?></option>
-          <?php foreach (fb_field_options($f) as $o): ?>
-          <option value="<?= fb_h($o['value']) ?>"><?= fb_h($o['label'] . ($o['price'] > 0 ? ' (+' . fb_format_rupiah($o['price']) . ')' : '')) ?></option>
-          <?php endforeach; ?>
-        </select>
-        <?php if (!empty($f['help_text'])): ?><div class="fb-help"><?= fb_h($f['help_text']) ?></div><?php endif; ?>
-      <?php elseif ($type === 'radio' || $type === 'checkbox'): ?>
-        <span class="fb-label" style="display:block"><?= fb_h($label) ?> <?= $req ? '<span class="req">*</span>' : '' ?></span>
-        <div class="fb-choices">
-          <?php foreach (fb_field_options($f) as $o): ?>
-          <label class="fb-choice">
-            <input type="<?= $type ?>" name="<?= fb_h($key) ?><?= $type === 'checkbox' ? '[]' : '' ?>" value="<?= fb_h($o['value']) ?>" <?= ($req && $type === 'radio') ? 'required' : '' ?>>
-            <span><?= fb_h($o['label']) ?></span>
-            <?php if ($o['price'] > 0): ?><span class="price">+<?= fb_h(fb_format_rupiah($o['price'])) ?></span><?php endif; ?>
-          </label>
-          <?php endforeach; ?>
-        </div>
-        <?php if (!empty($f['help_text'])): ?><div class="fb-help"><?= fb_h($f['help_text']) ?></div><?php endif; ?>
-      <?php else:
-        $inputType = in_array($type, ['email', 'tel', 'number', 'date'], true) ? $type : 'text';
-        $attrs = '';
-        if (isset($valid['min']) && $valid['min'] !== '') $attrs .= ' min="' . fb_h((string)$valid['min']) . '"';
-        if (isset($valid['max']) && $valid['max'] !== '') $attrs .= ' max="' . fb_h((string)$valid['max']) . '"';
-        if (!empty($valid['maxlength'])) $attrs .= ' maxlength="' . (int)$valid['maxlength'] . '"';
-        ?>
-        <label class="fb-label" for="fb-<?= fb_h($slug) ?>-<?= fb_h($key) ?>"><?= fb_h($label) ?> <?= $req ? '<span class="req">*</span>' : '' ?></label>
-        <input type="<?= $inputType ?>" id="fb-<?= fb_h($slug) ?>-<?= fb_h($key) ?>" name="<?= fb_h($key) ?>" placeholder="<?= fb_h($f['placeholder'] ?? '') ?>" <?= $req ? 'required' : '' ?><?= $attrs ?>>
-        <?php if (!empty($f['help_text'])): ?><div class="fb-help"><?= fb_h($f['help_text']) ?></div><?php endif; ?>
-      <?php endif; ?>
-    </div>
+        <?php endforeach; ?>
+      </div>
     <?php endforeach; ?>
+    </div>
 
     <?php if ($showTotal): ?>
-    <div class="fb-cell">
-      <div class="fb-total">
-        <span class="lbl"><?= fb_h($settings['total_label']) ?></span>
-        <span class="amt" data-fb-total><?= fb_format_rupiah(0) ?></span>
-      </div>
+    <div class="fb-total">
+      <span class="lbl"><?= fb_h($settings['total_label']) ?></span>
+      <span class="amt" data-fb-total><?= fb_format_rupiah(0) ?></span>
     </div>
     <?php endif; ?>
 

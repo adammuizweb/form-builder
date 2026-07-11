@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 $formId = (int)$form['id'];
 $settings = fb_form_settings($form);
-$fields = fb_get_fields($pdo, $formId);
+$fields = fb_flat_fields(fb_get_fields($pdo, $formId));
 $types = fb_field_types();
 $optionFields = array_values(array_filter($fields, static fn($f) => in_array($f['type'], ['select', 'radio', 'checkbox'], true) && empty($f['is_hidden'])));
 $inputFields = array_values(array_filter($fields, static fn($f) => !empty($types[$f['type']]['input']) && empty($types[$f['type']]['file']) && empty($f['is_hidden'])));

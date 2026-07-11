@@ -5,7 +5,7 @@ declare(strict_types=1);
 $formId = (int)$form['id'];
 $settings = fb_form_settings($form);
 $access = fb_form_access($form);
-$fields = fb_get_fields($pdo, $formId);
+$fields = fb_flat_fields(fb_get_fields($pdo, $formId));
 $types = fb_field_types();
 $inputFields = array_values(array_filter($fields, static fn($f) => !empty($types[$f['type']]['input']) && empty($types[$f['type']]['file'])));
 

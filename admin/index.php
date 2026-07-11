@@ -58,9 +58,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                     json_encode(['roles' => [], 'users' => [], 'owner' => $uid], JSON_UNESCAPED_UNICODE), $uid]);
             $newId = (int)$pdo->lastInsertId();
             $fields = fb_get_fields($pdo, (int)$target['id']);
-            $ins = $pdo->prepare('INSERT INTO `fb_fields` (form_id, type, label, field_key, placeholder, help_text, required, width, sort_order, is_hidden, options_json, validation_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            usort($fields, static fn($a, $b) => (int)$a['id'] <=> (int)$b['id']); // parents before children
+            $ins = $pdo->prepare('INSERT INTO `fb_fields` (form_id, parent_id, type, label, field_key, placeholder, help_text, required, width, sort_order, is_hidden, options_json, validation_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $idMap = [];
             foreach ($fields as $f) {
-                $ins->execute([$newId, $f['type'], $f['label'], $f['field_key'], $f['placeholder'], $f['help_text'], $f['required'], $f['width'], $f['sort_order'], $f['is_hidden'], $f['options_json'], $f['validation_json']]);
+                $newParent = (int)$f['parent_id'] > 0 ? ($idMap[(int)$f['parent_id']] ?? 0) : 0;
+                $ins->execute([$newId, $newParent, $f['type'], $f['label'], $f['field_key'], $f['placeholder'], $f['help_text'], $f['required'], $f['width'], $f['sort_order'], $f['is_hidden'], $f['options_json'], $f['validation_json']]);
+                $idMap[(int)$f['id']] = (int)$pdo->lastInsertId();
             }
             $flash = 'Form duplicated as draft.';
         } elseif ($act === 'archive_form') {
@@ -147,7 +151,7 @@ $rcKeys = fb_recaptcha_keys($pdo);
       <tbody>
       <?php foreach ($forms as $f):
         $fid = (int)$f['id'];
-        $fieldsCount = (int)$pdo->query("SELECT COUNT(*) FROM `fb_fields` WHERE form_id = {$fid}")->fetchColumn();
+        $fieldsCount = (int)$pdo->query("SELECT COUNT(*) FROM `fb_fields` WHERE form_id = {$fid} AND type NOT IN ('row','col')")->fetchColumn();
         $subsCount = (int)$pdo->query("SELECT COUNT(*) FROM `fb_submissions` WHERE form_id = {$fid} AND is_deleted = 0")->fetchColumn();
         $newCount = (int)$pdo->query("SELECT COUNT(*) FROM `fb_submissions` WHERE form_id = {$fid} AND is_deleted = 0 AND is_read = 0")->fetchColumn();
         $statusCls = ['active' => 'active', 'draft' => 'draft', 'archived' => 'arch'][$f['status']] ?? 'draft';

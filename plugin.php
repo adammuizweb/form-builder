@@ -10,6 +10,9 @@ if (!defined('DASHBOARD_CONTEXT') && !defined('PLUGIN_SYSTEM_LOADED')) {
 // the [form slug="..."] shortcode) POST multipart to /form-submit/ (trailing slash).
 if (function_exists('register_frontend_route')) {
     register_frontend_route('form-submit', PLUGIN_PATH . '/form-builder/public/submit.php');
+    // Builder AJAX endpoint (admin-authenticated, JSON). Frontend route keeps
+    // output clean of theme markup.
+    register_frontend_route('fb-builder', PLUGIN_PATH . '/form-builder/admin/ajax.php');
 }
 
 const FB_SECRET_KEY = 'form_builder_secret';
@@ -50,6 +53,7 @@ function fb_ensure_schema(PDO $pdo): void {
         CREATE TABLE IF NOT EXISTS `fb_fields` (
             `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
             `form_id` bigint(20) unsigned NOT NULL,
+            `parent_id` bigint(20) unsigned NOT NULL DEFAULT 0,
             `type` varchar(20) NOT NULL DEFAULT 'text',
             `label` varchar(255) NOT NULL DEFAULT '',
             `field_key` varchar(80) NOT NULL DEFAULT '',
@@ -64,9 +68,16 @@ function fb_ensure_schema(PDO $pdo): void {
             `created_at` datetime NOT NULL DEFAULT current_timestamp(),
             PRIMARY KEY (`id`),
             KEY `form_id` (`form_id`),
+            KEY `parent_id` (`parent_id`),
             KEY `sort_order` (`sort_order`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ");
+    // idempotent migration: layout tree (rows/columns contain fields)
+    try {
+        $pdo->exec("ALTER TABLE `fb_fields` ADD COLUMN IF NOT EXISTS `parent_id` bigint(20) unsigned NOT NULL DEFAULT 0 AFTER `form_id`");
+    } catch (Throwable $e) {
+        // ignore if syntax unsupported or column exists
+    }
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS `fb_submissions` (
             `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
@@ -103,6 +114,8 @@ function fb_ensure_schema(PDO $pdo): void {
 // ---------------- Field type registry ----------------
 function fb_field_types(): array {
     return [
+        'row'       => ['label' => 'Row',        'container' => true],
+        'col'       => ['label' => 'Column',     'container' => true],
         'text'      => ['label' => 'Text',       'input' => true],
         'email'     => ['label' => 'Email',      'input' => true],
         'tel'       => ['label' => 'Phone',      'input' => true],
@@ -148,6 +161,63 @@ function fb_get_fields(PDO $pdo, int $formId, bool $includeHidden = true): array
     $st->execute([$formId]);
     $rows = $st->fetchAll(PDO::FETCH_ASSOC);
     return is_array($rows) ? $rows : [];
+}
+
+// Strip layout containers (row/col) — returns only real fields.
+function fb_flat_fields(array $fields): array {
+    $types = fb_field_types();
+    return array_values(array_filter($fields, static fn($f) => empty($types[$f['type']]['container'])));
+}
+
+// Layout tree: [ ['node'=>row, 'cols'=>[ ['node'=>col, 'fields'=>[...] ], ...] ], ... ]
+function fb_get_tree(PDO $pdo, int $formId): array {
+    fb_migrate_to_tree($pdo, $formId);
+    $all = fb_get_fields($pdo, $formId);
+    $byParent = [];
+    foreach ($all as $f) $byParent[(int)$f['parent_id']][] = $f;
+    $tree = [];
+    foreach ($byParent[0] ?? [] as $row) {
+        if ($row['type'] !== 'row') continue;
+        $cols = [];
+        foreach ($byParent[(int)$row['id']] ?? [] as $col) {
+            if ($col['type'] !== 'col') continue;
+            $cols[] = ['node' => $col, 'fields' => array_values(array_filter($byParent[(int)$col['id']] ?? [], static fn($x) => $x['type'] !== 'row' && $x['type'] !== 'col'))];
+        }
+        $tree[] = ['node' => $row, 'cols' => $cols];
+    }
+    return $tree;
+}
+
+// One-time migration: wrap legacy flat fields (parent_id=0) into rows/columns,
+// grouping by their old width so the visual layout is preserved.
+function fb_migrate_to_tree(PDO $pdo, int $formId): void {
+    $hasRows = (bool)$pdo->query("SELECT 1 FROM `fb_fields` WHERE form_id = {$formId} AND type = 'row' LIMIT 1")->fetchColumn();
+    if ($hasRows) return;
+    $orphans = $pdo->query("SELECT * FROM `fb_fields` WHERE form_id = {$formId} AND parent_id = 0 AND type NOT IN ('row','col') ORDER BY sort_order, id")->fetchAll(PDO::FETCH_ASSOC);
+    if (!is_array($orphans) || !$orphans) return;
+    $groups = []; $cur = []; $sum = 0;
+    foreach ($orphans as $f) {
+        $w = max(1, min(12, (int)($f['width'] ?? 12) ?: 12));
+        if ($cur && $sum + $w > 12) { $groups[] = $cur; $cur = []; $sum = 0; }
+        $cur[] = $f; $sum += $w;
+        if ($sum >= 12) { $groups[] = $cur; $cur = []; $sum = 0; }
+    }
+    if ($cur) $groups[] = $cur;
+    $rowSort = 10;
+    foreach ($groups as $g) {
+        $pdo->prepare("INSERT INTO `fb_fields` (form_id, type, label, field_key, parent_id, sort_order) VALUES (?, 'row', '', ?, 0, ?)")
+            ->execute([$formId, 'row_' . bin2hex(random_bytes(4)), $rowSort]);
+        $rowId = (int)$pdo->lastInsertId();
+        $rowSort += 10;
+        $colSort = 10;
+        foreach ($g as $f) {
+            $pdo->prepare("INSERT INTO `fb_fields` (form_id, type, label, field_key, parent_id, sort_order) VALUES (?, 'col', '', ?, ?, ?)")
+                ->execute([$formId, 'col_' . bin2hex(random_bytes(4)), $rowId, $colSort]);
+            $colId = (int)$pdo->lastInsertId();
+            $colSort += 10;
+            $pdo->prepare('UPDATE `fb_fields` SET parent_id = ? WHERE id = ?')->execute([$colId, (int)$f['id']]);
+        }
+    }
 }
 
 function fb_field_options(array $field): array {
@@ -262,7 +332,7 @@ function fb_validate_submission(array $fields, array $post, array $files): array
     foreach ($fields as $f) {
         $type = (string)$f['type'];
         $meta = $types[$type] ?? null;
-        if ($meta === null || !empty($meta['display']) || !empty($f['is_hidden'])) continue;
+        if ($meta === null || empty($meta['input']) || !empty($f['is_hidden'])) continue;
         $key = (string)$f['field_key'];
         $label = (string)($f['label'] !== '' ? $f['label'] : $key);
         $required = !empty($f['required']);
