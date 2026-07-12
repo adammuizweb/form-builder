@@ -91,7 +91,12 @@ function fb_admin_css(): void {
 /* builder v2: palette + canvas + panel */
 .fbb3 { display: grid; grid-template-columns: 200px 1fr; gap: 1.1rem; align-items: start; }
 .fbb3.has-panel { grid-template-columns: 200px 1fr 320px; }
-@media (max-width: 1100px) { .fbb3, .fbb3.has-panel { grid-template-columns: 1fr; } }
+@media (max-width: 1100px) {
+  .fbb3, .fbb3.has-panel { grid-template-columns: 1fr; }
+  /* Mobile UX: edit panel becomes a bottom sheet with backdrop */
+  .fbb3 .fbc-panel { position: fixed; left: 0; right: 0; bottom: 0; top: auto; max-height: 88vh; border-radius: 16px 16px 0 0; z-index: 9551; box-shadow: 0 -8px 30px rgba(0 0 0 / .28); }
+  .fbb3 .fbc-panel-backdrop { position: fixed; inset: 0; background: rgba(0 0 0 / .45); z-index: 9550; }
+}
 .fbc-palette { background: var(--adam-card); border: 1px solid var(--adam-border); border-radius: 14px; padding: .9rem; position: sticky; top: 1rem; }
 .fbc-palette h3 { font-size: .68rem; letter-spacing: .12em; text-transform: uppercase; color: var(--adam-muted); margin: 0 0 .7rem; }
 .fbc-p-chip { display: block; width: 100%; text-align: left; border: 1px solid var(--adam-border); background: var(--adam-bg); color: var(--adam-text); border-radius: 9px; padding: .48rem .7rem; font-size: .8rem; font-weight: 600; cursor: grab; margin-bottom: .38rem; font-family: inherit; transition: all .15s; }

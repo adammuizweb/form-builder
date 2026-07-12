@@ -49,6 +49,7 @@ $trashedCount = (int)$pdo->query("SELECT COUNT(*) FROM `fb_fields` WHERE form_id
       <div class="fbc-panel-head"><h3>Edit Field</h3><button type="button" id="fbcPanelClose">&times;</button></div>
       <div class="fbc-panel-body" id="fbcPanelBody"></div>
     </div>
+    <div class="fbc-panel-backdrop" id="fbcPanelBackdrop" style="display:none"></div>
   </div>
 </div>
 
@@ -75,6 +76,7 @@ $trashedCount = (int)$pdo->query("SELECT COUNT(*) FROM `fb_fields` WHERE form_id
   var wrap = document.getElementById('fbcCanvasWrap');
   var panel = document.getElementById('fbcPanel');
   var panelBody = document.getElementById('fbcPanelBody');
+  var panelBackdrop = document.getElementById('fbcPanelBackdrop');
   var layout = document.getElementById('fbb3');
   var toastEl = document.getElementById('fbcToast');
   var toastTimer = null;
@@ -371,6 +373,7 @@ $trashedCount = (int)$pdo->query("SELECT COUNT(*) FROM `fb_fields` WHERE form_id
         if (!res.ok) { toast(res.error || 'Error', true); return; }
         panelBody.innerHTML = res.html;
         panel.style.display = '';
+        panelBackdrop.style.display = window.matchMedia('(max-width: 1100px)').matches ? '' : 'none';
         layout.classList.add('has-panel');
       });
     }
@@ -383,8 +386,9 @@ $trashedCount = (int)$pdo->query("SELECT COUNT(*) FROM `fb_fields` WHERE form_id
   });
 
   // Panel
-  function closePanel() { panel.style.display = 'none'; layout.classList.remove('has-panel'); panelBody.innerHTML = ''; }
+  function closePanel() { panel.style.display = 'none'; panelBackdrop.style.display = 'none'; layout.classList.remove('has-panel'); panelBody.innerHTML = ''; }
   document.getElementById('fbcPanelClose').addEventListener('click', closePanel);
+  panelBackdrop.addEventListener('click', closePanel);
   panelBody.addEventListener('submit', function (e) {
     e.preventDefault();
     var fd = new FormData(e.target);
