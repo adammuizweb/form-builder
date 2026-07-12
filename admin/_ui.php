@@ -184,11 +184,34 @@ function fb_admin_css(): void {
 .fbc-chip-al { font-size: .58rem; font-weight: 700; letter-spacing: .04em; color: var(--adam-accent); border: 1px solid var(--adam-border); border-radius: 4px; padding: .05rem .3rem; flex-shrink: 0; }
 .fbc-panel.fbc-portal { z-index: 940; }
 .fba-accents { display: flex; flex-wrap: wrap; gap: .4rem; margin: .35rem 0 .5rem; }
-.fba-accent-opt { display: inline-flex; align-items: center; gap: .35rem; border: 1px solid var(--adam-border); border-radius: 9px; padding: .28rem .6rem; cursor: pointer; font-size: .8rem; user-select: none; transition: border-color .15s, background .15s; }
-.fba-accent-opt:hover { border-color: var(--adam-accent); }
-.fba-accent-opt:has(input:checked) { border-color: var(--adam-accent); background: color-mix(in srgb, var(--adam-accent) 8%, transparent); font-weight: 600; }
+.fba-accents .fba-accent-opt { display: inline-flex; align-items: center; gap: .35rem; border: 1px solid var(--adam-border); border-radius: 9px; padding: .28rem .6rem; cursor: pointer; font-size: .8rem; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--adam-text); margin: 0; user-select: none; transition: border-color .15s, background .15s; }
+.fba-accents .fba-accent-opt:hover { border-color: var(--adam-accent); }
+.fba-accents .fba-accent-opt:has(input:checked) { border-color: var(--adam-accent); background: color-mix(in srgb, var(--adam-accent) 8%, transparent); font-weight: 600; }
 .fba-accent-opt input { display: none; }
 .fba-swatch { display: inline-block; width: 15px; height: 15px; border-radius: 50%; border: 1px solid rgba(0 0 0 / .18); flex-shrink: 0; }
+
+/* ---- v1.4.3: forms list toolbar / bulk / columns / actions menu / pager ---- */
+.fba-toolbar { display: flex; gap: .6rem; align-items: center; margin-bottom: .9rem; flex-wrap: wrap; }
+.fba-search { display: flex; gap: .35rem; align-items: center; }
+.fba-search input[type=search] { border: 1px solid var(--adam-border); background: var(--adam-bg); color: var(--adam-text); border-radius: 8px; padding: .38rem .6rem; font-size: .82rem; min-width: 210px; }
+.fba-cols-toggle { margin-left: auto; position: relative; }
+.fba-cols-menu { position: absolute; right: 0; top: calc(100% + .3rem); background: var(--adam-card); border: 1px solid var(--adam-border); border-radius: 10px; padding: .5rem .7rem; z-index: 50; box-shadow: 0 8px 24px rgba(0 0 0 / .12); display: flex; flex-direction: column; gap: .35rem; min-width: 150px; }
+.fba-cols-menu label { display: flex; align-items: center; gap: .4rem; font-size: .8rem; cursor: pointer; text-transform: none; letter-spacing: 0; color: var(--adam-text); font-weight: 400; margin: 0; }
+.fba-bulkbar { display: flex; gap: .4rem; align-items: center; margin-bottom: .7rem; }
+.fba-bulkbar select { border: 1px solid var(--adam-border); background: var(--adam-bg); color: var(--adam-text); border-radius: 8px; padding: .38rem .5rem; font-size: .82rem; }
+.fba-checkcol { width: 34px; text-align: center; }
+.fba-more { display: inline-block; position: relative; }
+.fba-more > summary { list-style: none; cursor: pointer; }
+.fba-more > summary::-webkit-details-marker { display: none; }
+.fba-more[open] > summary { border-color: var(--adam-accent); }
+.fba-more-menu { position: absolute; right: 0; top: calc(100% + .25rem); background: var(--adam-card); border: 1px solid var(--adam-border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0 0 0 / .14); z-index: 60; min-width: 160px; padding: .3rem; display: flex; flex-direction: column; }
+.fba-more-menu a, .fba-more-menu button { display: block; width: 100%; text-align: left; border: none; background: transparent; color: var(--adam-text); font: inherit; font-size: .82rem; padding: .42rem .6rem; border-radius: 7px; cursor: pointer; text-decoration: none; }
+.fba-more-menu a:hover, .fba-more-menu button:hover { background: var(--adam-bg); }
+.fba-more-menu .danger { color: var(--adam-danger); }
+.fba-pager { display: flex; gap: .3rem; align-items: center; margin-top: 1rem; flex-wrap: wrap; }
+.fba-pager a, .fba-pager span { border: 1px solid var(--adam-border); border-radius: 7px; padding: .25rem .55rem; font-size: .8rem; text-decoration: none; color: var(--adam-text); }
+.fba-pager a:hover { border-color: var(--adam-accent); }
+.fba-pager .cur { background: var(--adam-accent); border-color: var(--adam-accent); color: #fff; }
 </style>
     <?php
 }
