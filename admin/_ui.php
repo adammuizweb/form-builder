@@ -93,9 +93,11 @@ function fb_admin_css(): void {
 .fbb3.has-panel { grid-template-columns: 200px 1fr 320px; }
 @media (max-width: 1100px) {
   .fbb3, .fbb3.has-panel { grid-template-columns: 1fr; }
-  /* Mobile UX: edit panel becomes a bottom sheet with backdrop */
-  .fbb3 .fbc-panel { position: fixed; left: 0; right: 0; bottom: 0; top: auto; max-height: 88vh; border-radius: 16px 16px 0 0; z-index: 9551; box-shadow: 0 -8px 30px rgba(0 0 0 / .28); }
-  .fbb3 .fbc-panel-backdrop { position: fixed; inset: 0; background: rgba(0 0 0 / .45); z-index: 9550; }
+  /* Mobile UX: edit panel becomes a bottom sheet with backdrop.
+     Panel is portaled to <body> by JS (.fbc-portal) to escape the admin
+     theme's transformed/overflow-hidden ancestors (which break fixed/sticky). */
+  .fbc-panel.fbc-portal { position: fixed; left: 0; right: 0; bottom: 0; top: auto; width: auto; max-height: 88vh; border-radius: 16px 16px 0 0; z-index: 9551; box-shadow: 0 -8px 30px rgba(0 0 0 / .28); }
+  .fbc-panel-backdrop.fbc-portal { position: fixed; inset: 0; background: rgba(0 0 0 / .45); z-index: 9550; }
 }
 .fbc-palette { background: var(--adam-card); border: 1px solid var(--adam-border); border-radius: 14px; padding: .9rem; position: sticky; top: 1rem; }
 .fbc-palette h3 { font-size: .68rem; letter-spacing: .12em; text-transform: uppercase; color: var(--adam-muted); margin: 0 0 .7rem; }
@@ -180,6 +182,7 @@ function fb_admin_css(): void {
 .fbc-editor-foot { display: flex; justify-content: flex-end; gap: .5rem; padding: .75rem 1.1rem; border-top: 1px solid var(--adam-border); }
 .fbc-chip.is-el { background: color-mix(in srgb, var(--adam-accent) 5%, var(--adam-bg)); }
 .fbc-chip-al { font-size: .58rem; font-weight: 700; letter-spacing: .04em; color: var(--adam-accent); border: 1px solid var(--adam-border); border-radius: 4px; padding: .05rem .3rem; flex-shrink: 0; }
+.fbc-panel.fbc-portal { z-index: 940; }
 </style>
     <?php
 }

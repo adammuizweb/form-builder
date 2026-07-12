@@ -77,6 +77,13 @@ $trashedCount = (int)$pdo->query("SELECT COUNT(*) FROM `fb_fields` WHERE form_id
   var panel = document.getElementById('fbcPanel');
   var panelBody = document.getElementById('fbcPanelBody');
   var panelBackdrop = document.getElementById('fbcPanelBackdrop');
+  // Portal to <body>: the admin theme's .adam-app (overflow:hidden) and
+  // .adam-main (transform) break both sticky and fixed positioning for
+  // in-flow descendants.
+  panel.classList.add('fbc-portal');
+  panelBackdrop.classList.add('fbc-portal');
+  document.body.appendChild(panelBackdrop);
+  document.body.appendChild(panel);
   var layout = document.getElementById('fbb3');
   var toastEl = document.getElementById('fbcToast');
   var toastTimer = null;
@@ -375,6 +382,7 @@ $trashedCount = (int)$pdo->query("SELECT COUNT(*) FROM `fb_fields` WHERE form_id
         panel.style.display = '';
         panelBackdrop.style.display = window.matchMedia('(max-width: 1100px)').matches ? '' : 'none';
         layout.classList.add('has-panel');
+        pinPanel();
       });
     }
   });
@@ -386,7 +394,32 @@ $trashedCount = (int)$pdo->query("SELECT COUNT(*) FROM `fb_fields` WHERE form_id
   });
 
   // Panel
-  function closePanel() { panel.style.display = 'none'; panelBackdrop.style.display = 'none'; layout.classList.remove('has-panel'); panelBody.innerHTML = ''; }
+  var panelPinned = false;
+  function pinPanel() {
+    if (!window.matchMedia('(min-width: 1101px)').matches) { unpinPanel(); return; }
+    var gridRect = layout.getBoundingClientRect();
+    var w = 320;
+    var top = Math.max(72, gridRect.top);
+    panel.style.position = 'fixed';
+    panel.style.width = w + 'px';
+    panel.style.left = (gridRect.right - w) + 'px';
+    panel.style.top = top + 'px';
+    panel.style.maxHeight = 'calc(100vh - ' + (top + 16) + 'px)';
+    panelPinned = true;
+  }
+  function unpinPanel() {
+    if (!panelPinned) return;
+    panel.style.position = '';
+    panel.style.width = '';
+    panel.style.left = '';
+    panel.style.top = '';
+    panel.style.maxHeight = '';
+    panelPinned = false;
+  }
+  window.addEventListener('scroll', function () { if (panelPinned) pinPanel(); }, { passive: true });
+  window.addEventListener('resize', function () { if (panel.style.display !== 'none') pinPanel(); });
+
+  function closePanel() { unpinPanel(); panel.style.display = 'none'; panelBackdrop.style.display = 'none'; layout.classList.remove('has-panel'); panelBody.innerHTML = ''; }
   document.getElementById('fbcPanelClose').addEventListener('click', closePanel);
   panelBackdrop.addEventListener('click', closePanel);
   panelBody.addEventListener('submit', function (e) {
