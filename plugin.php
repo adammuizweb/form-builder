@@ -42,13 +42,21 @@ function fb_ensure_schema(PDO $pdo): void {
             `js` mediumtext DEFAULT NULL,
             `access_json` longtext DEFAULT NULL,
             `created_by` bigint(20) unsigned DEFAULT NULL,
+            `deleted_at` datetime DEFAULT NULL,
             `created_at` datetime NOT NULL DEFAULT current_timestamp(),
             `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
             PRIMARY KEY (`id`),
             UNIQUE KEY `slug` (`slug`),
-            KEY `status` (`status`)
+            KEY `status` (`status`),
+            KEY `deleted_at` (`deleted_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ");
+    try {
+        $pdo->exec("ALTER TABLE `fb_forms` ADD COLUMN IF NOT EXISTS `deleted_at` datetime DEFAULT NULL AFTER `created_by`");
+        $pdo->exec("ALTER TABLE `fb_forms` ADD INDEX IF NOT EXISTS `deleted_at` (`deleted_at`)");
+    } catch (Throwable $e) {
+        // ignore if syntax unsupported or column exists
+    }
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS `fb_fields` (
             `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
@@ -344,14 +352,58 @@ function fb_can_access_form(PDO $pdo, array $form, ?int $uid = null, ?string $ro
 }
 
 // All forms the current user may manage (PHP-filtered; form counts are small).
+// Trashed forms (deleted_at) are always excluded — they live in the Bin.
 function fb_accessible_forms(PDO $pdo, string $statusFilter = "status != 'archived'"): array {
-    $rows = $pdo->query("SELECT * FROM `fb_forms` WHERE {$statusFilter} ORDER BY updated_at DESC, id DESC")->fetchAll(PDO::FETCH_ASSOC);
+    $rows = $pdo->query("SELECT * FROM `fb_forms` WHERE {$statusFilter} AND deleted_at IS NULL ORDER BY updated_at DESC, id DESC")->fetchAll(PDO::FETCH_ASSOC);
     $rows = is_array($rows) ? $rows : [];
     if (!function_exists('current_user_id')) return $rows;
     $role = function_exists('current_user_role') ? current_user_role($pdo) : null;
     if ($role === 'admin') return $rows;
     $uid = current_user_id();
     return array_values(array_filter($rows, static fn($f) => fb_can_access_form($pdo, $f, $uid, $role)));
+}
+
+// ---------------- Form Bin (soft delete) ----------------
+// Move a form to the Bin. Slug is suffixed so it can be reused and restored later.
+function fb_trash_form(PDO $pdo, array $form): void {
+    $fid = (int)$form['id'];
+    $trashedSlug = substr((string)$form['slug'], 0, 60) . '--trash-' . $fid;
+    $pdo->prepare('UPDATE `fb_forms` SET deleted_at = NOW(), slug = ? WHERE id = ?')->execute([$trashedSlug, $fid]);
+}
+
+// Restore a trashed form. Original slug is recovered if still free.
+function fb_restore_form(PDO $pdo, array $form): void {
+    $fid = (int)$form['id'];
+    $base = (string)preg_replace('/--trash-\d+$/', '', (string)$form['slug']);
+    if ($base === '') $base = 'form-' . $fid;
+    $slug = $base;
+    $i = 2;
+    $chk = $pdo->prepare('SELECT id FROM `fb_forms` WHERE slug = ? AND id != ? LIMIT 1');
+    while (true) {
+        $chk->execute([$slug, $fid]);
+        if ($chk->fetchColumn() === false) break;
+        $slug = $base . '-' . $i++;
+    }
+    $pdo->prepare('UPDATE `fb_forms` SET deleted_at = NULL, slug = ?, updated_at = NOW() WHERE id = ?')->execute([$slug, $fid]);
+}
+
+// Hard delete a form: submissions, uploaded files, fields, the form itself.
+function fb_hard_delete_form(PDO $pdo, array $form): void {
+    $fid = (int)$form['id'];
+    $subs = $pdo->prepare('SELECT files_json FROM `fb_submissions` WHERE form_id = ?');
+    $subs->execute([$fid]);
+    $root = fb_files_base_dir($form) . '/';
+    while ($r = $subs->fetch(PDO::FETCH_ASSOC)) {
+        $fj = json_decode((string)($r['files_json'] ?? ''), true);
+        if (is_array($fj)) foreach ($fj as $info) {
+            $rel = (string)($info['stored'] ?? '');
+            if ($rel !== '' && !str_contains($rel, '..') && !str_starts_with($rel, '/')) @unlink($root . $rel);
+        }
+    }
+    @rmdir($root . $fid);
+    $pdo->prepare('DELETE FROM `fb_submissions` WHERE form_id = ?')->execute([$fid]);
+    $pdo->prepare('DELETE FROM `fb_fields` WHERE form_id = ?')->execute([$fid]);
+    $pdo->prepare('DELETE FROM `fb_forms` WHERE id = ?')->execute([$fid]);
 }
 
 // ---------------- Pricing ----------------
@@ -555,6 +607,7 @@ add_filter('bin_items', function (array $items, $pdo = null, ...$rest): array {
     if (!($pdo instanceof PDO)) return $items;
     try {
         $cnt = (int)$pdo->query("SELECT COUNT(*) FROM `fb_fields` WHERE deleted_at IS NOT NULL AND type NOT IN ('row','col')")->fetchColumn();
+        $cnt += (int)$pdo->query("SELECT COUNT(*) FROM `fb_forms` WHERE deleted_at IS NOT NULL")->fetchColumn();
     } catch (Throwable $e) {
         $cnt = 0;
     }
@@ -565,8 +618,8 @@ add_filter('bin_items', function (array $items, $pdo = null, ...$rest): array {
     }
     $items[] = [
         'key'   => 'form-builder',
-        'title' => 'Bin Form Fields',
-        'desc'  => 'Trash for deleted form builder fields & elements (restorable).',
+        'title' => 'Bin Form Builder',
+        'desc'  => 'Trash for deleted forms, fields & elements (restorable).',
         'count' => $cnt,
         'href'  => $base . '/?page=admin/bin/form-builder/index',
         'svg'   => 'list',

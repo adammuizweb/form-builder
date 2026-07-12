@@ -19,25 +19,6 @@ $csrf = function_exists('csrf_token') ? csrf_token() : '';
 $flash = '';
 $flashOk = true;
 
-// Hard delete a form: submissions, uploaded files, fields, the form itself.
-$hardDeleteForm = static function (array $target) use ($pdo): void {
-    $fid = (int)$target['id'];
-    $subs = $pdo->prepare('SELECT files_json FROM `fb_submissions` WHERE form_id = ?');
-    $subs->execute([$fid]);
-    $root = fb_files_base_dir($target) . '/';
-    while ($r = $subs->fetch(PDO::FETCH_ASSOC)) {
-        $fj = json_decode((string)($r['files_json'] ?? ''), true);
-        if (is_array($fj)) foreach ($fj as $info) {
-            $rel = (string)($info['stored'] ?? '');
-            if ($rel !== '' && !str_contains($rel, '..') && !str_starts_with($rel, '/')) @unlink($root . $rel);
-        }
-    }
-    @rmdir($root . $fid);
-    $pdo->prepare('DELETE FROM `fb_submissions` WHERE form_id = ?')->execute([$fid]);
-    $pdo->prepare('DELETE FROM `fb_fields` WHERE form_id = ?')->execute([$fid]);
-    $pdo->prepare('DELETE FROM `fb_forms` WHERE id = ?')->execute([$fid]);
-};
-
 // ---------------- Global POST actions ----------------
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $okCsrf = function_exists('csrf_check') ? csrf_check($_POST['csrf_token'] ?? '') : true;
@@ -90,8 +71,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             $pdo->prepare('UPDATE `fb_forms` SET status = "archived" WHERE id = ?')->execute([(int)$target['id']]);
             $flash = 'Form archived.';
         } elseif ($act === 'delete_form') {
-            $hardDeleteForm($target);
-            $flash = 'Form permanently deleted.';
+            fb_trash_form($pdo, $target);
+            $flash = 'Form dipindahkan ke Bin. Admin bisa me-restore dari Bin.';
         }
     } elseif ($act === 'bulk') {
         $do = (string)($_POST['do'] ?? '');
@@ -106,11 +87,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 if ($do === 'archive') {
                     $pdo->prepare('UPDATE `fb_forms` SET status = "archived" WHERE id = ?')->execute([$bid]);
                 } else {
-                    $hardDeleteForm($target);
+                    fb_trash_form($pdo, $target);
                 }
                 $n++;
             }
-            $flash = $n . ' form ' . ($do === 'archive' ? 'diarsipkan.' : 'dihapus permanen.');
+            $flash = $n . ' form ' . ($do === 'archive' ? 'diarsipkan.' : 'dipindahkan ke Bin.');
             if ($n === 0) $flashOk = false;
         }
     }
@@ -123,7 +104,7 @@ $view = (string)($_GET['view'] ?? 'forms');
 // otherwise headers are already sent and the download is corrupted.
 if ($view === 'submissions' && in_array(($_GET['action'] ?? ''), ['file', 'export'], true)) {
     $form = fb_get_form($pdo, (int)($_GET['id'] ?? 0));
-    if ($form === null || !fb_can_access_form($pdo, $form, $uid, $role)) {
+    if ($form === null || ($form['deleted_at'] ?? null) !== null || !fb_can_access_form($pdo, $form, $uid, $role)) {
         http_response_code(403);
         exit('Access denied');
     }
@@ -139,7 +120,7 @@ if ($flash !== '') {
 
 if ($view === 'builder' || $view === 'settings' || $view === 'submissions') {
     $form = fb_get_form($pdo, (int)($_GET['id'] ?? 0));
-    if ($form === null || !fb_can_access_form($pdo, $form, $uid, $role)) {
+    if ($form === null || ($form['deleted_at'] ?? null) !== null || !fb_can_access_form($pdo, $form, $uid, $role)) {
         echo '<div class="fba-empty">Form not found or access denied. <a href="' . fb_url(['view' => 'forms', 'id' => null]) . '">Back to forms</a></div>';
         return;
     }
@@ -213,7 +194,7 @@ $listUrl = static function (array $extra = []) use ($q, $pageNum): string {
       <select name="do">
         <option value="">Bulk action…</option>
         <option value="archive">Arsipkan</option>
-        <option value="delete">Hapus permanen</option>
+        <option value="delete">Pindahkan ke Bin</option>
       </select>
       <button class="fba-btn sm" type="submit">Terapkan</button>
       <span class="fba-hint" id="fbaBulkCount"></span>
@@ -256,6 +237,7 @@ $listUrl = static function (array $extra = []) use ($q, $pageNum): string {
                   <a href="<?= fb_url(['view' => 'settings', 'id' => $fid]) ?>">⚙ Settings</a>
                   <button type="submit" form="fba-dup-<?= $fid ?>">⧉ Duplikat</button>
                   <button type="submit" form="fba-arch-<?= $fid ?>" class="danger">🗄 Arsipkan</button>
+                  <button type="submit" form="fba-del-<?= $fid ?>" class="danger">🗑 Hapus</button>
                 </div>
               </details>
             </td>
@@ -289,6 +271,11 @@ $listUrl = static function (array $extra = []) use ($q, $pageNum): string {
     <input type="hidden" name="fb_action" value="archive_form">
     <input type="hidden" name="form_id" value="<?= $fid ?>">
   </form>
+  <form method="post" id="fba-del-<?= $fid ?>" style="display:none" onsubmit="return confirm('Pindahkan form ini ke Bin? Admin masih bisa me-restore dari Bin.')">
+    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>">
+    <input type="hidden" name="fb_action" value="delete_form">
+    <input type="hidden" name="form_id" value="<?= $fid ?>">
+  </form>
   <?php endforeach; ?>
   <?php endif; ?>
 </div>
@@ -312,7 +299,7 @@ $listUrl = static function (array $extra = []) use ($q, $pageNum): string {
       var sel = bulkForm.querySelector('select[name="do"]').value;
       var n = bulkForm.querySelectorAll('input[name="ids[]"]:checked').length;
       if (!sel || n === 0) { e.preventDefault(); return; }
-      if (sel === 'delete' && !confirm('Hapus permanen ' + n + ' form beserta submissions & file upload-nya? Tindakan ini tidak bisa dibatalkan.')) e.preventDefault();
+      if (sel === 'delete' && !confirm('Pindahkan ' + n + ' form ke Bin? Admin masih bisa me-restore dari Bin.')) e.preventDefault();
     });
   }
   // Column visibility (persisted per browser)
@@ -339,6 +326,34 @@ $listUrl = static function (array $extra = []) use ($q, $pageNum): string {
     });
     applyCols();
   }
+  // Actions menu portal: an open menu is moved to <body> with fixed coords so it
+  // is never clipped by the table wrapper's overflow or the .adam-main transform.
+  var mores = document.querySelectorAll('.fba-more');
+  mores.forEach(function (det) {
+    var menu = det.querySelector('.fba-more-menu');
+    var sum = det.querySelector('summary');
+    if (!menu || !sum) return;
+    function place() {
+      var r = sum.getBoundingClientRect();
+      menu.style.top = (r.bottom + 4) + 'px';
+      menu.style.left = Math.max(8, r.right - menu.offsetWidth) + 'px';
+    }
+    det.addEventListener('toggle', function () {
+      if (det.open) {
+        mores.forEach(function (o) { if (o !== det) o.open = false; });
+        document.body.appendChild(menu);
+        menu.classList.add('fba-portal');
+        place();
+        requestAnimationFrame(place);
+      } else {
+        menu.classList.remove('fba-portal');
+        det.appendChild(menu);
+      }
+    });
+  });
+  function closeAllMores() { mores.forEach(function (o) { o.open = false; }); }
+  window.addEventListener('scroll', closeAllMores, true);
+  window.addEventListener('resize', closeAllMores);
 })();
 </script>
 

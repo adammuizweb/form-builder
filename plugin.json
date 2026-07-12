@@ -1,6 +1,6 @@
 {
   "name": "form-builder",
-  "version": "1.4.3",
+  "version": "1.5.0",
   "title": "Form Builder",
   "icon": "icon.png",
   "description": "Dynamic form builder for Jyavani CMS: Elementor-style drag-and-drop builder (rows → columns → fields), input fields & content elements (heading levels, rich text with Quill + CMS gallery/file modals, image, raw HTML with CodeMirror), priced options with live totals, soft-delete Bin with restore, embed via [form slug=\"...\"] shortcode, per-form submissions with auto filters, bulk actions, CSV export, custom CSS/JS, and per-form access control.",

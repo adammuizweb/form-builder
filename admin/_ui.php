@@ -205,6 +205,7 @@ function fb_admin_css(): void {
 .fba-more > summary::-webkit-details-marker { display: none; }
 .fba-more[open] > summary { border-color: var(--adam-accent); }
 .fba-more-menu { position: absolute; right: 0; top: calc(100% + .25rem); background: var(--adam-card); border: 1px solid var(--adam-border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0 0 0 / .14); z-index: 60; min-width: 160px; padding: .3rem; display: flex; flex-direction: column; }
+.fba-more-menu.fba-portal { position: fixed; right: auto; z-index: 9999; }
 .fba-more-menu a, .fba-more-menu button { display: block; width: 100%; text-align: left; border: none; background: transparent; color: var(--adam-text); font: inherit; font-size: .82rem; padding: .42rem .6rem; border-radius: 7px; cursor: pointer; text-decoration: none; }
 .fba-more-menu a:hover, .fba-more-menu button:hover { background: var(--adam-bg); }
 .fba-more-menu .danger { color: var(--adam-danger); }
