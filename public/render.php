@@ -154,7 +154,7 @@ function fb_render_form(PDO $pdo, array $form): string {
   --fb-surface: #ffffff; --fb-bg: #f4f7f2; --fb-text: #1d241d; --fb-muted: #6b776b;
   --fb-border: #d9e2d6; --fb-radius: 14px;
   font-family: inherit; color: var(--fb-text); line-height: 1.55;
-  background: var(--fb-bg); border: 1px solid var(--fb-border);
+  background: linear-gradient(165deg, var(--fb-bg) 0%, var(--fb-surface) 75%); border: 1px solid var(--fb-border);
   border-radius: 20px; padding: clamp(1.4rem, 3.5vw, 2.6rem); margin: 1.5rem 0;
 }
 .fb-title { font-size: 1.35rem; font-weight: 700; margin-bottom: .35rem; }

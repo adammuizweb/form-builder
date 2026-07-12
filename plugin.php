@@ -152,21 +152,24 @@ function fb_field_types(): array {
 const FB_HEADING_LEVELS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
 
 // Accent color presets for the public form. Each preset is a complete
-// contrast-safe mini palette: accent, deep shade, text-on-accent, soft tint.
+// contrast-safe mini palette: accent, deep shade, text-on-accent, soft tint,
+// and a light background tint for the wrapper gradient.
 // Scoped to .fb-wrap via CSS variables — no leakage into site themes.
 function fb_accent_presets(): array {
     return [
-        'green'  => ['label' => 'Hijau',   'accent' => '#2b7a4a', 'deep' => '#1c5633', 'on' => '#ffffff', 'soft' => 'rgba(43 122 74 / .12)'],
-        'blue'   => ['label' => 'Biru',    'accent' => '#2563eb', 'deep' => '#1d4ed8', 'on' => '#ffffff', 'soft' => 'rgba(37 99 235 / .12)'],
-        'aqua'   => ['label' => 'Aqua',    'accent' => '#0891b2', 'deep' => '#155e75', 'on' => '#ffffff', 'soft' => 'rgba(8 145 178 / .12)'],
-        'red'    => ['label' => 'Merah',   'accent' => '#dc2626', 'deep' => '#991b1b', 'on' => '#ffffff', 'soft' => 'rgba(220 38 38 / .10)'],
-        'yellow' => ['label' => 'Kuning',  'accent' => '#ca8a04', 'deep' => '#854d0e', 'on' => '#ffffff', 'soft' => 'rgba(202 138 4 / .14)'],
-        'orange' => ['label' => 'Orange',  'accent' => '#ea580c', 'deep' => '#9a3412', 'on' => '#ffffff', 'soft' => 'rgba(234 88 12 / .12)'],
-        'purple' => ['label' => 'Ungu',    'accent' => '#7c3aed', 'deep' => '#5b21b6', 'on' => '#ffffff', 'soft' => 'rgba(124 58 237 / .12)'],
-        'white'  => ['label' => 'Putih',   'accent' => '#cbd5e1', 'deep' => '#64748b', 'on' => '#0f172a', 'soft' => 'rgba(100 116 139 / .16)'],
-        'black'  => ['label' => 'Hitam',   'accent' => '#1f2937', 'deep' => '#030712', 'on' => '#ffffff', 'soft' => 'rgba(31 41 55 / .12)'],
-        'pink'   => ['label' => 'Pink',    'accent' => '#db2777', 'deep' => '#9d174d', 'on' => '#ffffff', 'soft' => 'rgba(219 39 119 / .12)'],
-        'gray'   => ['label' => 'Abu-abu', 'accent' => '#6b7280', 'deep' => '#374151', 'on' => '#ffffff', 'soft' => 'rgba(107 114 128 / .14)'],
+        'green'  => ['label' => 'Hijau',   'accent' => '#2b7a4a', 'deep' => '#1c5633', 'on' => '#ffffff', 'soft' => 'rgba(43 122 74 / .12)',  'bg' => '#f4f7f2'],
+        'blue'   => ['label' => 'Biru',    'accent' => '#2563eb', 'deep' => '#1d4ed8', 'on' => '#ffffff', 'soft' => 'rgba(37 99 235 / .12)',  'bg' => '#f0f5fe'],
+        'aqua'   => ['label' => 'Aqua',    'accent' => '#0891b2', 'deep' => '#155e75', 'on' => '#ffffff', 'soft' => 'rgba(8 145 178 / .12)',  'bg' => '#effbfc'],
+        'red'    => ['label' => 'Merah',   'accent' => '#dc2626', 'deep' => '#991b1b', 'on' => '#ffffff', 'soft' => 'rgba(220 38 38 / .10)',  'bg' => '#fdf3f3'],
+        'yellow' => ['label' => 'Kuning',  'accent' => '#ca8a04', 'deep' => '#854d0e', 'on' => '#ffffff', 'soft' => 'rgba(202 138 4 / .14)',  'bg' => '#fdf9ec'],
+        'orange' => ['label' => 'Orange',  'accent' => '#ea580c', 'deep' => '#9a3412', 'on' => '#ffffff', 'soft' => 'rgba(234 88 12 / .12)',  'bg' => '#fdf4ee'],
+        'purple' => ['label' => 'Ungu',    'accent' => '#7c3aed', 'deep' => '#5b21b6', 'on' => '#ffffff', 'soft' => 'rgba(124 58 237 / .12)', 'bg' => '#f6f2fe'],
+        'white'  => ['label' => 'Putih',   'accent' => '#cbd5e1', 'deep' => '#64748b', 'on' => '#0f172a', 'soft' => 'rgba(100 116 139 / .16)','bg' => '#f8fafc'],
+        'black'  => ['label' => 'Hitam',   'accent' => '#1f2937', 'deep' => '#030712', 'on' => '#ffffff', 'soft' => 'rgba(31 41 55 / .12)',   'bg' => '#f3f4f6'],
+        'pink'   => ['label' => 'Pink',    'accent' => '#db2777', 'deep' => '#9d174d', 'on' => '#ffffff', 'soft' => 'rgba(219 39 119 / .12)', 'bg' => '#fdf2f8'],
+        'gray'   => ['label' => 'Abu-abu', 'accent' => '#6b7280', 'deep' => '#374151', 'on' => '#ffffff', 'soft' => 'rgba(107 114 128 / .14)','bg' => '#f4f5f7'],
+        'navy'   => ['label' => 'Navy',    'accent' => '#1b3a6b', 'deep' => '#0c2340', 'on' => '#ffffff', 'soft' => 'rgba(27 58 107 / .12)',  'bg' => '#f0f4fa'],
+        'gold'   => ['label' => 'Gold',    'accent' => '#b8860b', 'deep' => '#7a5a08', 'on' => '#1c1917', 'soft' => 'rgba(184 134 11 / .14)', 'bg' => '#faf6ea'],
     ];
 }
 
@@ -176,7 +179,7 @@ function fb_accent_style(array $settings): string {
     $key = (string)($settings['accent'] ?? 'green');
     if (!isset($presets[$key]) || $key === 'green') return '';
     $p = $presets[$key];
-    return '--fb-accent:' . $p['accent'] . ';--fb-accent-deep:' . $p['deep'] . ';--fb-on-accent:' . $p['on'] . ';--fb-accent-soft:' . $p['soft'] . ';';
+    return '--fb-accent:' . $p['accent'] . ';--fb-accent-deep:' . $p['deep'] . ';--fb-on-accent:' . $p['on'] . ';--fb-accent-soft:' . $p['soft'] . ';--fb-bg:' . $p['bg'] . ';';
 }
 
 // Per-field type-specific settings (heading level, rich text/html content, image data).
