@@ -24,8 +24,28 @@ function fb_render_field_html(array $f, string $slug): string {
     ob_start(); ?>
     <div class="fb-field" data-key="<?= fb_h($key) ?>">
       <?php if (!empty($meta['display'])): ?>
-        <?php if ($type === 'heading'): ?><div class="fb-heading"><?= fb_h($label) ?></div>
+        <?php if ($type === 'heading'):
+          $fs = fb_field_settings($f);
+          $lvl = in_array(($fs['level'] ?? ''), FB_HEADING_LEVELS, true) ? $fs['level'] : 'h2'; ?>
+        <<?= $lvl ?> class="fb-heading fb-<?= $lvl ?>"><?= fb_h($label) ?></<?= $lvl ?>>
         <?php elseif ($type === 'paragraph'): ?><div class="fb-paragraph"><?= nl2br(fb_h($label)) ?></div>
+        <?php elseif ($type === 'richtext'):
+          $fs = fb_field_settings($f); ?>
+        <div class="fb-richtext"><?= (string)($fs['html'] ?? '') ?></div>
+        <?php elseif ($type === 'raw_html'):
+          $fs = fb_field_settings($f); ?>
+        <div class="fb-rawhtml"><?= (string)($fs['html'] ?? '') ?></div>
+        <?php elseif ($type === 'image_block'):
+          $fs = fb_field_settings($f);
+          $url = (string)($fs['url'] ?? '');
+          if ($url !== ''):
+            $w = (string)($fs['width'] ?? '');
+            $style = in_array($w, ['25', '50', '75'], true) ? ' style="max-width:' . $w . '%"' : ''; ?>
+        <figure class="fb-image"<?= $style ?>>
+          <img src="<?= fb_h($url) ?>" alt="<?= fb_h((string)($fs['alt'] ?? '')) ?>" loading="lazy">
+          <?php if (trim((string)($fs['caption'] ?? '')) !== ''): ?><figcaption><?= fb_h((string)$fs['caption']) ?></figcaption><?php endif; ?>
+        </figure>
+          <?php endif; ?>
         <?php else: ?><hr class="fb-divider"><?php endif; ?>
       <?php elseif (!empty($meta['file'])): ?>
         <label class="fb-label"><?= fb_h($label) ?> <?= $req ? '<span class="req">*</span>' : '' ?></label>
@@ -145,9 +165,18 @@ function fb_render_form(PDO $pdo, array $form): string {
 .fb-choice:hover { border-color: var(--fb-accent); }
 .fb-choice input { accent-color: var(--fb-accent); width: 16px; height: 16px; flex-shrink: 0; }
 .fb-choice .price { margin-left: auto; font-size: .76rem; font-weight: 700; color: var(--fb-accent-deep); white-space: nowrap; }
-.fb-heading { font-size: 1.12rem; font-weight: 700; padding-bottom: .4rem; border-bottom: 2px solid var(--fb-border); }
+.fb-heading { font-weight: 700; padding-bottom: .4rem; border-bottom: 2px solid var(--fb-border); margin: 0; }
+.fb-h1 { font-size: 1.9rem; } .fb-h2 { font-size: 1.5rem; } .fb-h3 { font-size: 1.25rem; }
+.fb-h4 { font-size: 1.12rem; } .fb-h5 { font-size: 1rem; } .fb-h6 { font-size: .9rem; text-transform: uppercase; letter-spacing: .05em; }
 .fb-paragraph { color: var(--fb-muted); font-size: .94rem; }
 .fb-divider { border: none; border-top: 1.5px dashed var(--fb-border); margin: .4rem 0; }
+.fb-richtext { font-size: .94rem; line-height: 1.6; }
+.fb-richtext img { max-width: 100%; height: auto; border-radius: 8px; }
+.fb-richtext figure { margin: .5rem 0; }
+.fb-richtext figcaption, .fb-image figcaption { font-size: .8rem; color: var(--fb-muted); text-align: center; margin-top: .35rem; }
+.fb-image { margin: 0; }
+.fb-image img { max-width: 100%; height: auto; border-radius: 10px; display: block; }
+.fb-rawhtml > *:first-child { margin-top: 0; }
 .fb-drop { position: relative; border: 2px dashed var(--fb-border); border-radius: var(--fb-radius); padding: 1.5rem 1rem; text-align: center; background: var(--fb-surface); transition: border-color .25s, background .25s; cursor: pointer; }
 .fb-drop:hover, .fb-drop.dragover { border-color: var(--fb-accent); background: rgba(43 122 74 / .05); }
 .fb-drop input[type=file] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 2; }

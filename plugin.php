@@ -65,16 +65,26 @@ function fb_ensure_schema(PDO $pdo): void {
             `is_hidden` tinyint(1) NOT NULL DEFAULT 0,
             `options_json` longtext DEFAULT NULL,
             `validation_json` longtext DEFAULT NULL,
+            `settings_json` longtext DEFAULT NULL,
+            `deleted_at` datetime DEFAULT NULL,
             `created_at` datetime NOT NULL DEFAULT current_timestamp(),
             PRIMARY KEY (`id`),
             KEY `form_id` (`form_id`),
             KEY `parent_id` (`parent_id`),
-            KEY `sort_order` (`sort_order`)
+            KEY `sort_order` (`sort_order`),
+            KEY `deleted_at` (`deleted_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ");
-    // idempotent migration: layout tree (rows/columns contain fields)
+    // idempotent migrations
     try {
         $pdo->exec("ALTER TABLE `fb_fields` ADD COLUMN IF NOT EXISTS `parent_id` bigint(20) unsigned NOT NULL DEFAULT 0 AFTER `form_id`");
+    } catch (Throwable $e) {
+        // ignore if syntax unsupported or column exists
+    }
+    try {
+        $pdo->exec("ALTER TABLE `fb_fields` ADD COLUMN IF NOT EXISTS `settings_json` longtext DEFAULT NULL AFTER `validation_json`");
+        $pdo->exec("ALTER TABLE `fb_fields` ADD COLUMN IF NOT EXISTS `deleted_at` datetime DEFAULT NULL AFTER `settings_json`");
+        $pdo->exec("ALTER TABLE `fb_fields` ADD INDEX IF NOT EXISTS `deleted_at` (`deleted_at`)");
     } catch (Throwable $e) {
         // ignore if syntax unsupported or column exists
     }
@@ -112,25 +122,38 @@ function fb_ensure_schema(PDO $pdo): void {
 }
 
 // ---------------- Field type registry ----------------
+// group: 'input' = fillable by the visitor; 'element' = display-only content.
+// editor: panel editor kind for elements ('quill' | 'code' | 'media').
 function fb_field_types(): array {
     return [
-        'row'       => ['label' => 'Row',        'container' => true],
-        'col'       => ['label' => 'Column',     'container' => true],
-        'text'      => ['label' => 'Text',       'input' => true],
-        'email'     => ['label' => 'Email',      'input' => true],
-        'tel'       => ['label' => 'Phone',      'input' => true],
-        'number'    => ['label' => 'Number',     'input' => true],
-        'textarea'  => ['label' => 'Textarea',   'input' => true],
-        'date'      => ['label' => 'Date',       'input' => true],
-        'select'    => ['label' => 'Select',     'input' => true, 'options' => true],
-        'radio'     => ['label' => 'Radio',      'input' => true, 'options' => true],
-        'checkbox'  => ['label' => 'Checkbox',   'input' => true, 'options' => true, 'multi' => true],
-        'file'      => ['label' => 'File Upload','input' => true, 'file' => true],
-        'image'     => ['label' => 'Image Upload','input' => true, 'file' => true, 'image' => true],
-        'heading'   => ['label' => 'Heading',    'display' => true],
-        'paragraph' => ['label' => 'Paragraph',  'display' => true],
-        'divider'   => ['label' => 'Divider',    'display' => true],
+        'row'       => ['label' => 'Row',         'container' => true],
+        'col'       => ['label' => 'Column',      'container' => true],
+        'text'      => ['label' => 'Text',        'input' => true, 'group' => 'input'],
+        'email'     => ['label' => 'Email',       'input' => true, 'group' => 'input'],
+        'tel'       => ['label' => 'Phone',       'input' => true, 'group' => 'input'],
+        'number'    => ['label' => 'Number',      'input' => true, 'group' => 'input'],
+        'textarea'  => ['label' => 'Textarea',    'input' => true, 'group' => 'input'],
+        'date'      => ['label' => 'Date',        'input' => true, 'group' => 'input'],
+        'select'    => ['label' => 'Select',      'input' => true, 'group' => 'input', 'options' => true],
+        'radio'     => ['label' => 'Radio',       'input' => true, 'group' => 'input', 'options' => true],
+        'checkbox'  => ['label' => 'Checkbox',    'input' => true, 'group' => 'input', 'options' => true, 'multi' => true],
+        'file'      => ['label' => 'File Upload', 'input' => true, 'group' => 'input', 'file' => true],
+        'image'     => ['label' => 'Image Upload','input' => true, 'group' => 'input', 'file' => true, 'image' => true],
+        'heading'   => ['label' => 'Heading',     'display' => true, 'group' => 'element'],
+        'paragraph' => ['label' => 'Paragraph',   'display' => true, 'group' => 'element'],
+        'divider'   => ['label' => 'Divider',     'display' => true, 'group' => 'element'],
+        'richtext'  => ['label' => 'Rich Text',   'display' => true, 'group' => 'element', 'editor' => 'quill'],
+        'image_block' => ['label' => 'Image',     'display' => true, 'group' => 'element', 'editor' => 'media'],
+        'raw_html'  => ['label' => 'Raw HTML',    'display' => true, 'group' => 'element', 'editor' => 'code'],
     ];
+}
+
+const FB_HEADING_LEVELS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
+
+// Per-field type-specific settings (heading level, rich text/html content, image data).
+function fb_field_settings(array $f): array {
+    $s = json_decode((string)($f['settings_json'] ?? ''), true);
+    return is_array($s) ? $s : [];
 }
 
 function fb_normalize_key(string $s): string {
@@ -156,7 +179,7 @@ function fb_get_form_by_slug(PDO $pdo, string $slug): ?array {
 }
 
 function fb_get_fields(PDO $pdo, int $formId, bool $includeHidden = true): array {
-    $sql = 'SELECT * FROM `fb_fields` WHERE form_id = ?' . ($includeHidden ? '' : ' AND is_hidden = 0') . ' ORDER BY sort_order ASC, id ASC';
+    $sql = 'SELECT * FROM `fb_fields` WHERE form_id = ? AND deleted_at IS NULL' . ($includeHidden ? '' : ' AND is_hidden = 0') . ' ORDER BY sort_order ASC, id ASC';
     $st = $pdo->prepare($sql);
     $st->execute([$formId]);
     $rows = $st->fetchAll(PDO::FETCH_ASSOC);
@@ -193,7 +216,7 @@ function fb_get_tree(PDO $pdo, int $formId): array {
 function fb_migrate_to_tree(PDO $pdo, int $formId): void {
     $hasRows = (bool)$pdo->query("SELECT 1 FROM `fb_fields` WHERE form_id = {$formId} AND type = 'row' LIMIT 1")->fetchColumn();
     if ($hasRows) return;
-    $orphans = $pdo->query("SELECT * FROM `fb_fields` WHERE form_id = {$formId} AND parent_id = 0 AND type NOT IN ('row','col') ORDER BY sort_order, id")->fetchAll(PDO::FETCH_ASSOC);
+    $orphans = $pdo->query("SELECT * FROM `fb_fields` WHERE form_id = {$formId} AND parent_id = 0 AND deleted_at IS NULL AND type NOT IN ('row','col') ORDER BY sort_order, id")->fetchAll(PDO::FETCH_ASSOC);
     if (!is_array($orphans) || !$orphans) return;
     $groups = []; $cur = []; $sum = 0;
     foreach ($orphans as $f) {
@@ -492,6 +515,32 @@ add_action('admin_init', function (): void {
     fb_get_secret($pdo);
     fb_ensure_schema($pdo);
 });
+
+// ---------------- Bin integration (soft-deleted fields/elements) ----------------
+// Core bin hub calls apply_filters('bin_items', $items, $pdo, ...counts, $base).
+add_filter('bin_items', function (array $items, $pdo = null, ...$rest): array {
+    if (!($pdo instanceof PDO)) return $items;
+    try {
+        $cnt = (int)$pdo->query("SELECT COUNT(*) FROM `fb_fields` WHERE deleted_at IS NOT NULL AND type NOT IN ('row','col')")->fetchColumn();
+    } catch (Throwable $e) {
+        $cnt = 0;
+    }
+    $base = '';
+    if ($rest) {
+        $last = end($rest);
+        $base = is_string($last) ? $last : '';
+    }
+    $items[] = [
+        'key'   => 'form-builder',
+        'title' => 'Bin Form Fields',
+        'desc'  => 'Trash for deleted form builder fields & elements (restorable).',
+        'count' => $cnt,
+        'href'  => $base . '/?page=admin/bin/form-builder/index',
+        'svg'   => 'list',
+        'route' => 'admin/bin/form-builder/index',
+    ];
+    return $items;
+}, 10);
 
 add_action('plugin_uninstall', function (string $name): void {
     if ($name !== 'form-builder') return;

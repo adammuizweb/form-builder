@@ -59,11 +59,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             $newId = (int)$pdo->lastInsertId();
             $fields = fb_get_fields($pdo, (int)$target['id']);
             usort($fields, static fn($a, $b) => (int)$a['id'] <=> (int)$b['id']); // parents before children
-            $ins = $pdo->prepare('INSERT INTO `fb_fields` (form_id, parent_id, type, label, field_key, placeholder, help_text, required, width, sort_order, is_hidden, options_json, validation_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $ins = $pdo->prepare('INSERT INTO `fb_fields` (form_id, parent_id, type, label, field_key, placeholder, help_text, required, width, sort_order, is_hidden, options_json, validation_json, settings_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             $idMap = [];
             foreach ($fields as $f) {
                 $newParent = (int)$f['parent_id'] > 0 ? ($idMap[(int)$f['parent_id']] ?? 0) : 0;
-                $ins->execute([$newId, $newParent, $f['type'], $f['label'], $f['field_key'], $f['placeholder'], $f['help_text'], $f['required'], $f['width'], $f['sort_order'], $f['is_hidden'], $f['options_json'], $f['validation_json']]);
+                $ins->execute([$newId, $newParent, $f['type'], $f['label'], $f['field_key'], $f['placeholder'], $f['help_text'], $f['required'], $f['width'], $f['sort_order'], $f['is_hidden'], $f['options_json'], $f['validation_json'], $f['settings_json'] ?? null]);
                 $idMap[(int)$f['id']] = (int)$pdo->lastInsertId();
             }
             $flash = 'Form duplicated as draft.';

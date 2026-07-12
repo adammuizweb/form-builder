@@ -110,7 +110,7 @@ try {
             $base = fb_normalize_key($types[$type]['label']);
             $key = $base; $i = 2;
             while (true) {
-                $st = $pdo->prepare('SELECT COUNT(*) FROM `fb_fields` WHERE form_id = ? AND field_key = ?');
+                $st = $pdo->prepare('SELECT COUNT(*) FROM `fb_fields` WHERE form_id = ? AND field_key = ? AND deleted_at IS NULL');
                 $st->execute([$formId, $key]);
                 if ((int)$st->fetchColumn() === 0) break;
                 $key = $base . '_' . $i++;
@@ -160,19 +160,20 @@ try {
         }
 
         case 'delete': {
+            // Soft delete: move node (+ descendants) to Bin. Restorable via Bin page.
             $id = (int)($_POST['id'] ?? 0);
             $n = $node($id);
             if ($n === null) fb_json(['ok' => false, 'error' => 'Node not found'], 404);
-            $deleteSubtree = static function (int $rootId) use ($pdo, $formId, &$deleteSubtree): void {
+            $trashSubtree = static function (int $rootId) use ($pdo, $formId, &$trashSubtree): void {
                 $st = $pdo->prepare('SELECT id, type FROM `fb_fields` WHERE form_id = ? AND parent_id = ?');
                 $st->execute([$formId, $rootId]);
                 foreach ($st->fetchAll(PDO::FETCH_ASSOC) ?: [] as $ch) {
-                    if (in_array($ch['type'], ['row', 'col'], true)) $deleteSubtree((int)$ch['id']);
-                    $pdo->prepare('DELETE FROM `fb_fields` WHERE id = ?')->execute([(int)$ch['id']]);
+                    if (in_array($ch['type'], ['row', 'col'], true)) $trashSubtree((int)$ch['id']);
+                    $pdo->prepare('UPDATE `fb_fields` SET deleted_at = NOW() WHERE id = ?')->execute([(int)$ch['id']]);
                 }
             };
-            if (in_array($n['type'], ['row', 'col'], true)) $deleteSubtree($id);
-            $pdo->prepare('DELETE FROM `fb_fields` WHERE id = ? AND form_id = ?')->execute([$id, $formId]);
+            if (in_array($n['type'], ['row', 'col'], true)) $trashSubtree($id);
+            $pdo->prepare('UPDATE `fb_fields` SET deleted_at = NOW() WHERE id = ? AND form_id = ?')->execute([$id, $formId]);
             $touch();
             fb_json(['ok' => true, 'html' => fb_render_canvas($form, fb_get_tree($pdo, $formId))]);
         }
@@ -188,13 +189,13 @@ try {
             $id = (int)($_POST['field_id'] ?? 0);
             $n = $node($id);
             if ($n === null) fb_json(['ok' => false, 'error' => 'Field not found'], 404);
-            $type = (string)($_POST['type'] ?? 'text');
-            if (!isset($types[$type]) || !empty($types[$type]['container'])) $type = 'text';
+            // Type is immutable after creation.
+            $type = (string)$n['type'];
             $label = trim((string)($_POST['label'] ?? ''));
-            $key = fb_normalize_key((string)($_POST['field_key'] ?? '') !== '' ? (string)$_POST['field_key'] : $label);
+            $key = fb_normalize_key((string)($_POST['field_key'] ?? '') !== '' ? (string)$_POST['field_key'] : ($label !== '' ? $label : (string)$n['field_key']));
             $base = $key; $i = 2;
             while (true) {
-                $st = $pdo->prepare('SELECT COUNT(*) FROM `fb_fields` WHERE form_id = ? AND field_key = ? AND id != ?');
+                $st = $pdo->prepare('SELECT COUNT(*) FROM `fb_fields` WHERE form_id = ? AND field_key = ? AND id != ? AND deleted_at IS NULL');
                 $st->execute([$formId, $key, $id]);
                 if ((int)$st->fetchColumn() === 0) break;
                 $key = $base . '_' . $i++;
@@ -222,11 +223,26 @@ try {
                 $exts = array_values(array_filter(array_map(static fn($e) => strtolower(trim($e, " .")), explode(',', (string)($_POST['v_exts'] ?? '')))));
                 if ($exts) $validation['exts'] = $exts;
             }
-            $pdo->prepare('UPDATE `fb_fields` SET type = ?, label = ?, field_key = ?, placeholder = ?, help_text = ?, required = ?, is_hidden = ?, options_json = ?, validation_json = ? WHERE id = ? AND form_id = ?')
-                ->execute([$type, $label, $key, trim((string)($_POST['placeholder'] ?? '')) ?: null, trim((string)($_POST['help_text'] ?? '')) ?: null,
+            // Type-specific element settings
+            $settings = [];
+            if ($type === 'heading') {
+                $lvl = (string)($_POST['s_level'] ?? 'h2');
+                $settings['level'] = in_array($lvl, FB_HEADING_LEVELS, true) ? $lvl : 'h2';
+            } elseif ($type === 'richtext' || $type === 'raw_html') {
+                $settings['html'] = (string)($_POST['s_html'] ?? '');
+            } elseif ($type === 'image_block') {
+                $settings['url'] = trim((string)($_POST['s_url'] ?? ''));
+                $settings['alt'] = trim((string)($_POST['s_alt'] ?? ''));
+                $settings['caption'] = trim((string)($_POST['s_caption'] ?? ''));
+                $w = trim((string)($_POST['s_width'] ?? ''));
+                if (in_array($w, ['25', '50', '75'], true)) $settings['width'] = $w;
+            }
+            $pdo->prepare('UPDATE `fb_fields` SET label = ?, field_key = ?, placeholder = ?, help_text = ?, required = ?, is_hidden = ?, options_json = ?, validation_json = ?, settings_json = ? WHERE id = ? AND form_id = ?')
+                ->execute([$label, $key, trim((string)($_POST['placeholder'] ?? '')) ?: null, trim((string)($_POST['help_text'] ?? '')) ?: null,
                     !empty($_POST['required']) ? 1 : 0, !empty($_POST['is_hidden']) ? 1 : 0,
                     $options ? json_encode($options, JSON_UNESCAPED_UNICODE) : null,
-                    $validation ? json_encode($validation, JSON_UNESCAPED_UNICODE) : null, $id, $formId]);
+                    $validation ? json_encode($validation, JSON_UNESCAPED_UNICODE) : null,
+                    $settings ? json_encode($settings, JSON_UNESCAPED_UNICODE) : null, $id, $formId]);
             $touch();
             fb_json(['ok' => true, 'html' => fb_render_canvas($form, fb_get_tree($pdo, $formId))]);
         }

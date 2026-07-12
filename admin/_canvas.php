@@ -20,7 +20,7 @@ function fb_render_canvas(array $form, array $tree): string {
               <?php endfor; ?>
             </select>
           </label>
-          <button type="button" class="fbc-row-del" data-del="<?= $rowId ?>" title="Delete row">×</button>
+          <button type="button" class="fbc-row-del" data-del="<?= $rowId ?>" title="Pindahkan row ke Bin">×</button>
         </div>
         <div class="fbc-cols" style="grid-template-columns:repeat(<?= $n ?>,minmax(0,1fr))">
           <?php foreach ($row['cols'] as $col):
@@ -28,12 +28,12 @@ function fb_render_canvas(array $form, array $tree): string {
           <div class="fbc-col" data-node="<?= $colId ?>" data-parent="<?= $rowId ?>">
             <?php foreach ($col['fields'] as $f):
               $meta = $types[$f['type']] ?? ['label' => $f['type']]; ?>
-            <div class="fbc-chip<?= !empty($f['is_hidden']) ? ' is-hidden' : '' ?>" draggable="true" data-node="<?= (int)$f['id'] ?>">
+            <div class="fbc-chip<?= !empty($f['is_hidden']) ? ' is-hidden' : '' ?><?= ($meta['group'] ?? '') === 'element' ? ' is-el' : '' ?>" draggable="true" data-node="<?= (int)$f['id'] ?>">
               <span class="fbc-chip-type"><?= htmlspecialchars($meta['label'], ENT_QUOTES) ?></span>
               <span class="fbc-chip-lbl"><?= htmlspecialchars($f['label'] !== '' ? $f['label'] : '(no label)', ENT_QUOTES) ?><?= !empty($f['required']) ? ' <b class="req">*</b>' : '' ?></span>
               <span class="fbc-chip-key"><?= htmlspecialchars($f['field_key'], ENT_QUOTES) ?></span>
               <button type="button" class="fbc-chip-edit" data-edit="<?= (int)$f['id'] ?>" title="Edit">✎</button>
-              <button type="button" class="fbc-chip-del" data-del="<?= (int)$f['id'] ?>" title="Delete">×</button>
+              <button type="button" class="fbc-chip-del" data-del="<?= (int)$f['id'] ?>" title="Pindahkan ke Bin">×</button>
             </div>
             <?php endforeach; ?>
             <?php if (!$col['fields']): ?><div class="fbc-empty">Drop a field here</div><?php endif; ?>
@@ -55,32 +55,73 @@ function fb_render_canvas(array $form, array $tree): string {
 }
 
 // Field settings form fragment (loaded into the side panel via AJAX).
+// Type is immutable after creation (shown as read-only badge).
 function fb_render_field_form(array $f): string {
     $types = fb_field_types();
     $fid = (int)$f['id'];
     $type = (string)$f['type'];
     $meta = $types[$type] ?? ['label' => $type];
     $valid = fb_field_validation($f);
+    $fs = fb_field_settings($f);
+    $isInput = !empty($meta['input']);
+    $editor = (string)($meta['editor'] ?? '');
     $optLines = [];
     foreach (fb_field_options($f) as $o) $optLines[] = $o['value'] . '|' . $o['label'] . ($o['price'] !== 0 ? '|' . $o['price'] : '');
     ob_start(); ?>
-    <form id="fbcFieldForm">
+    <form id="fbcFieldForm" data-type="<?= $type ?>" data-editor="<?= $editor ?>">
       <input type="hidden" name="field_id" value="<?= $fid ?>">
+      <input type="hidden" name="field_key" value="<?= htmlspecialchars($f['field_key'], ENT_QUOTES) ?>">
+      <div style="margin-bottom:.7rem">
+        <span class="fbc-chip-type" style="font-size:.62rem"><?= htmlspecialchars($meta['label'], ENT_QUOTES) ?></span>
+        <span class="fba-hint"><?= $isInput ? 'input' : 'element' ?> — type tidak bisa diubah; hapus &amp; buat baru untuk ganti type.</span>
+      </div>
+
+      <?php if ($type === 'richtext' || $type === 'raw_html'): ?>
+      <div class="fba-field"><label>Admin label (tidak tampil di publik)</label><input type="text" name="label" value="<?= htmlspecialchars($f['label'], ENT_QUOTES) ?>"></div>
+      <input type="hidden" name="s_html" id="fbcContentInput" value="<?= htmlspecialchars((string)($fs['html'] ?? ''), ENT_QUOTES) ?>">
+      <div class="fbc-content-prev" id="fbcContentPrev"><?= (string)($fs['html'] ?? '') !== '' ? (string)$fs['html'] : '<span class="fba-hint">(belum ada konten)</span>' ?></div>
+      <button type="button" class="fba-btn primary" id="fbcOpenEditor" data-editor="<?= $editor ?>" style="margin:.4rem 0 1rem"><?= $editor === 'code' ? 'Edit HTML (CodeMirror)' : 'Edit Content (Rich Text)' ?></button>
+
+      <?php elseif ($type === 'image_block'): ?>
+      <div class="fba-field"><label>Admin label</label><input type="text" name="label" value="<?= htmlspecialchars($f['label'], ENT_QUOTES) ?>"></div>
+      <input type="hidden" name="s_url" id="fbcImgUrl" value="<?= htmlspecialchars((string)($fs['url'] ?? ''), ENT_QUOTES) ?>">
+      <div class="fbc-img-prev" id="fbcImgPrev">
+        <?php if (($fs['url'] ?? '') !== ''): ?><img src="<?= htmlspecialchars((string)$fs['url'], ENT_QUOTES) ?>" alt=""><?php else: ?><span class="fba-hint">(belum ada gambar)</span><?php endif; ?>
+      </div>
+      <button type="button" class="fba-btn primary" id="fbcPickImage" style="margin:.4rem 0 .8rem">Pilih dari Gallery</button>
+      <div class="fba-field"><label>Alt text</label><input type="text" name="s_alt" value="<?= htmlspecialchars((string)($fs['alt'] ?? ''), ENT_QUOTES) ?>"></div>
+      <div class="fba-field"><label>Caption</label><input type="text" name="s_caption" value="<?= htmlspecialchars((string)($fs['caption'] ?? ''), ENT_QUOTES) ?>"></div>
+      <div class="fba-field"><label>Lebar</label>
+        <select name="s_width">
+          <?php foreach (['100' => 'Full (100%)', '75' => '75%', '50' => '50%', '25' => '25%'] as $wv => $wl): ?>
+          <option value="<?= $wv === '100' ? '' : $wv ?>" <?= (($fs['width'] ?? '') === ($wv === '100' ? '' : $wv)) ? 'selected' : '' ?>><?= $wl ?></option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+
+      <?php else: ?>
+      <?php if ($type === 'paragraph'): ?>
+      <div class="fba-field"><label>Teks paragraf</label><textarea name="label" rows="4"><?= htmlspecialchars($f['label'], ENT_QUOTES) ?></textarea></div>
+      <?php elseif ($type !== 'divider'): ?>
       <div class="fba-field"><label>Label</label><input type="text" name="label" value="<?= htmlspecialchars($f['label'], ENT_QUOTES) ?>"></div>
+      <?php endif; ?>
+
+      <?php if ($type === 'heading'): ?>
+      <div class="fba-field"><label>Level</label>
+        <select name="s_level">
+          <?php foreach (FB_HEADING_LEVELS as $hl): ?>
+          <option value="<?= $hl ?>" <?= (($fs['level'] ?? 'h2') === $hl) ? 'selected' : '' ?>><?= strtoupper($hl) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+      <?php endif; ?>
+
+      <?php if ($isInput): ?>
       <div class="fba-row2">
         <div class="fba-field"><label>Key</label><input type="text" name="field_key" value="<?= htmlspecialchars($f['field_key'], ENT_QUOTES) ?>"></div>
-        <div class="fba-field"><label>Type</label>
-          <select name="type">
-            <?php foreach ($types as $t => $m): if (!empty($m['container'])) continue; ?>
-            <option value="<?= $t ?>" <?= $t === $type ? 'selected' : '' ?>><?= htmlspecialchars($m['label'], ENT_QUOTES) ?></option>
-            <?php endforeach; ?>
-          </select>
-        </div>
-      </div>
-      <div class="fba-row2">
         <div class="fba-field"><label>Placeholder</label><input type="text" name="placeholder" value="<?= htmlspecialchars((string)$f['placeholder'], ENT_QUOTES) ?>"></div>
-        <div class="fba-field"><label>Help text</label><input type="text" name="help_text" value="<?= htmlspecialchars((string)$f['help_text'], ENT_QUOTES) ?>"></div>
       </div>
+      <div class="fba-field"><label>Help text</label><input type="text" name="help_text" value="<?= htmlspecialchars((string)$f['help_text'], ENT_QUOTES) ?>"></div>
       <?php if (!empty($meta['options'])): ?>
       <div class="fba-field"><label>Options — one per line: <span class="fba-mono">value|Label|price</span></label>
         <textarea name="options" rows="5" placeholder="s1|S1 UNISSULA|500000"><?= htmlspecialchars(implode("\n", $optLines), ENT_QUOTES) ?></textarea>
@@ -106,9 +147,12 @@ function fb_render_field_form(array $f): string {
         <label class="fba-check"><input type="checkbox" name="required" value="1" <?= !empty($f['required']) ? 'checked' : '' ?>> Required</label>
         <label class="fba-check"><input type="checkbox" name="is_hidden" value="1" <?= !empty($f['is_hidden']) ? 'checked' : '' ?>> Hidden</label>
       </div>
+      <?php endif; /* inputs */ ?>
+
+      <?php endif; /* per-type */ ?>
       <div style="display:flex;gap:.5rem">
         <button class="fba-btn primary" type="submit">Save field</button>
-        <button class="fba-btn danger" type="button" id="fbcFieldDelete" data-del="<?= $fid ?>">Delete field</button>
+        <button class="fba-btn danger" type="button" id="fbcFieldDelete" data-del="<?= $fid ?>" title="Pindahkan ke Bin">🗑 Bin</button>
       </div>
     </form>
     <?php

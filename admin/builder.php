@@ -7,6 +7,7 @@ require_once __DIR__ . '/_canvas.php';
 $formId = (int)$form['id'];
 $types = fb_field_types();
 $tree = fb_get_tree($pdo, $formId);
+$trashedCount = (int)$pdo->query("SELECT COUNT(*) FROM `fb_fields` WHERE form_id = {$formId} AND deleted_at IS NOT NULL AND type NOT IN ('row','col')")->fetchColumn();
 ?>
 <div class="fba">
   <div class="fba-head">
@@ -15,20 +16,30 @@ $tree = fb_get_tree($pdo, $formId);
       <a class="fba-btn" href="<?= fb_url(['view' => 'forms', 'id' => null]) ?>">&larr; Forms</a>
       <a class="fba-btn" href="<?= fb_url(['view' => 'submissions', 'id' => $formId]) ?>">Submissions</a>
       <a class="fba-btn" href="<?= fb_url(['view' => 'settings', 'id' => $formId]) ?>">Settings</a>
+      <?php if ($role === 'admin'): ?>
+      <a class="fba-btn" href="?page=admin/bin/form-builder/index">🗑 Bin<?= $trashedCount > 0 ? ' (' . $trashedCount . ')' : '' ?></a>
+      <?php endif; ?>
     </div>
   </div>
 
   <div class="fba-card">
     <span class="fba-hint">Shortcode:</span> <span class="fba-code">[form slug=&quot;<?= htmlspecialchars($form['slug'], ENT_QUOTES) ?>&quot;]</span>
-    <span class="fba-hint">&mdash; susun <strong>Row &rarr; Column &rarr; Field</strong>: klik <strong>+ Add Row</strong>, atur jumlah kolom, lalu <strong>drag</strong> field dari palette ke kolom (klik field untuk edit). Semua perubahan tersimpan otomatis.</span>
+    <span class="fba-hint">&mdash; susun <strong>Row &rarr; Column &rarr; Field</strong>: klik <strong>+ Add Row</strong>, atur jumlah kolom, lalu <strong>drag</strong> field dari palette ke kolom (klik field untuk edit). Semua perubahan tersimpan otomatis. Field yang dihapus masuk ke <strong>Bin</strong> dan bisa di-restore.</span>
   </div>
 
   <div class="fbb3" id="fbb3">
     <div class="fbc-palette">
-      <h3>Field Palette</h3>
+      <h3>Inputs</h3>
+      <p class="fba-hint" style="margin:-.3rem 0 .6rem">Field yang bisa diisi pengunjung.</p>
       <?php foreach ($types as $t => $meta):
-        if (!empty($meta['container'])) continue; ?>
+        if (!empty($meta['container']) || ($meta['group'] ?? '') !== 'input') continue; ?>
       <button type="button" class="fbc-p-chip" draggable="true" data-type="<?= $t ?>">+ <?= htmlspecialchars($meta['label'], ENT_QUOTES) ?></button>
+      <?php endforeach; ?>
+      <h3 style="margin-top:1.1rem">Elements</h3>
+      <p class="fba-hint" style="margin:-.3rem 0 .6rem">Konten tampilan (bukan isian).</p>
+      <?php foreach ($types as $t => $meta):
+        if (!empty($meta['container']) || ($meta['group'] ?? '') !== 'element') continue; ?>
+      <button type="button" class="fbc-p-chip el" draggable="true" data-type="<?= $t ?>">+ <?= htmlspecialchars($meta['label'], ENT_QUOTES) ?></button>
       <?php endforeach; ?>
     </div>
 
@@ -41,6 +52,17 @@ $tree = fb_get_tree($pdo, $formId);
   </div>
 </div>
 
+<div class="fbc-editor-overlay" id="fbcEditorOverlay" style="display:none">
+  <div class="fbc-editor-modal">
+    <div class="fbc-editor-head"><h3 id="fbcEditorTitle">Edit Content</h3><button type="button" id="fbcEditorClose">&times;</button></div>
+    <div class="fbc-editor-body" id="fbcEditorBody"></div>
+    <div class="fbc-editor-foot">
+      <button type="button" class="fba-btn" id="fbcEditorCancel">Batal</button>
+      <button type="button" class="fba-btn primary" id="fbcEditorApply">Apply</button>
+    </div>
+  </div>
+</div>
+
 <div class="fbc-toast" id="fbcToast"></div>
 
 <script>
@@ -49,6 +71,7 @@ $tree = fb_get_tree($pdo, $formId);
   var FORM_ID = <?= $formId ?>;
   var CSRF = <?= json_encode($csrf) ?>;
   var ENDPOINT = '/fb-builder/';
+  var ADMIN_BASE = <?= json_encode(rtrim((string)(defined('ADMIN_BASE_PATH') ? ADMIN_BASE_PATH : ''), '/')) ?>;
   var wrap = document.getElementById('fbcCanvasWrap');
   var panel = document.getElementById('fbcPanel');
   var panelBody = document.getElementById('fbcPanelBody');
@@ -95,6 +118,115 @@ $tree = fb_get_tree($pdo, $formId);
       return res;
     }).catch(function () { toast('Network error', true); });
   }
+
+  // ---------------- Content editor overlay (Quill / CodeMirror) ----------------
+  var overlay = document.getElementById('fbcEditorOverlay');
+  var editorBody = document.getElementById('fbcEditorBody');
+  var editorTitle = document.getElementById('fbcEditorTitle');
+  var activeEditor = null;   // {kind:'quill'|'code', get:fn, destroy:fn}
+  var editorApplyCb = null;
+
+  function closeEditor() {
+    if (activeEditor) { try { activeEditor.destroy(); } catch (e) {} activeEditor = null; }
+    editorApplyCb = null;
+    editorBody.innerHTML = '';
+    overlay.style.display = 'none';
+  }
+
+  function openEditor(kind, initialHtml, onApply) {
+    editorBody.innerHTML = '';
+    editorApplyCb = onApply;
+    if (kind === 'code') {
+      editorTitle.textContent = 'Edit Raw HTML';
+      var ta = document.createElement('textarea');
+      ta.id = 'fbcCodeArea';
+      ta.value = initialHtml || '';
+      editorBody.appendChild(ta);
+      overlay.style.display = 'flex';
+      if (typeof CodeMirror !== 'undefined') {
+        var cm = CodeMirror.fromTextArea(ta, {
+          mode: 'htmlmixed', theme: 'dracula', lineNumbers: true,
+          autoCloseTags: true, autoCloseBrackets: true, lineWrapping: true
+        });
+        cm.setSize('100%', '52vh');
+        setTimeout(function () { cm.refresh(); }, 60);
+        activeEditor = { kind: 'code', get: function () { return cm.getValue(); }, destroy: function () { cm.toTextArea(); } };
+      } else {
+        ta.style.cssText = 'width:100%;height:52vh;font-family:monospace';
+        activeEditor = { kind: 'code', get: function () { return ta.value; }, destroy: function () {} };
+      }
+    } else {
+      editorTitle.textContent = 'Edit Rich Text';
+      var box = document.createElement('div');
+      box.id = 'fbcQuillBox';
+      box.style.height = '48vh';
+      editorBody.appendChild(box);
+      overlay.style.display = 'flex';
+      if (typeof Quill === 'undefined') { toast('Quill tidak tersedia', true); closeEditor(); return; }
+      var quill = new Quill(box, {
+        modules: { toolbar: [
+          [{ header: [1, 2, 3, 4, 5, 6, false] }],
+          ['bold', 'italic', 'underline', 'strike'],
+          [{ color: [] }, { background: [] }],
+          [{ list: 'ordered' }, { list: 'bullet' }],
+          [{ indent: '-1' }, { indent: '+1' }],
+          [{ align: [] }],
+          ['blockquote', 'code-block'],
+          ['link', 'image', 'video'],
+          ['clean']
+        ] },
+        theme: 'snow',
+        placeholder: 'Tulis konten...'
+      });
+      if (initialHtml) quill.root.innerHTML = initialHtml;
+      var lastRange = null;
+      quill.on('selection-change', function (r) { if (r) lastRange = r; });
+      // Gallery integration (CMS modal_img)
+      try {
+        quill.getModule('toolbar').addHandler('image', function () {
+          if (typeof openMediaSelector !== 'function') { toast('Gallery modal tidak tersedia', true); return; }
+          var saved = quill.getSelection(); if (saved) lastRange = saved;
+          if (quill.root) quill.root.blur();
+          openMediaSelector({ url: ADMIN_BASE + '/admin/modal_img/index.php?embedded=1' }).then(function (detail) {
+            var m = (typeof normalizeMedia === 'function') ? normalizeMedia(detail) : detail;
+            if (!m || !m.url) return;
+            var at = (lastRange && typeof lastRange.index === 'number') ? lastRange.index : quill.getLength() - 1;
+            var alt = m.alt || m.title || '';
+            var html = '<img src="' + String(m.url).replace(/"/g, '&quot;') + '"' + (alt ? ' alt="' + String(alt).replace(/"/g, '&quot;') + '"' : '') + '>';
+            if (m.caption) html = '<figure>' + html + '<figcaption>' + String(m.caption).replace(/</g, '&lt;') + '</figcaption></figure>';
+            quill.clipboard.dangerouslyPasteHTML(at, html);
+          }).catch(function () {});
+        });
+      } catch (e) {}
+      // File integration (CMS modal_file) on video button
+      try {
+        quill.getModule('toolbar').addHandler('video', function () {
+          if (typeof openFileSelector !== 'function') { toast('File modal tidak tersedia', true); return; }
+          var saved = quill.getSelection(); if (saved) lastRange = saved;
+          if (quill.root) quill.root.blur();
+          openFileSelector({ url: ADMIN_BASE + '/admin/modal_file/index.php?embedded=1' }).then(function (picked) {
+            var f = (typeof normalizeFile === 'function') ? normalizeFile(picked) : picked;
+            if (!f) return;
+            var html = (typeof generateFileShortcode === 'function') ? generateFileShortcode(f) : '';
+            if (!html) return;
+            var at = (lastRange && typeof lastRange.index === 'number') ? lastRange.index : quill.getLength() - 1;
+            quill.clipboard.dangerouslyPasteHTML(at, html);
+          }).catch(function () {});
+        });
+      } catch (e) {}
+      activeEditor = { kind: 'quill', get: function () { return quill.root.innerHTML; }, destroy: function () {} };
+    }
+  }
+
+  document.getElementById('fbcEditorClose').addEventListener('click', closeEditor);
+  document.getElementById('fbcEditorCancel').addEventListener('click', closeEditor);
+  document.getElementById('fbcEditorApply').addEventListener('click', function () {
+    if (!activeEditor) { closeEditor(); return; }
+    var html = activeEditor.get();
+    var cb = editorApplyCb;
+    closeEditor();
+    if (cb) cb(html);
+  });
 
   // ---------------- Drag & Drop ----------------
   var drag = null;       // {kind:'type'|'node'|'row', type|id}
@@ -184,14 +316,47 @@ $tree = fb_get_tree($pdo, $formId);
       return;
     }
 
-    // Delete (chip or row)
+    // Rich content editor open
+    var edBtn = e.target.closest('#fbcOpenEditor');
+    if (edBtn) {
+      var kind = edBtn.getAttribute('data-editor') === 'code' ? 'code' : 'quill';
+      var input = document.getElementById('fbcContentInput');
+      openEditor(kind, input ? input.value : '', function (html) {
+        var inp = document.getElementById('fbcContentInput');
+        if (inp) inp.value = html;
+        var prev = document.getElementById('fbcContentPrev');
+        if (prev) prev.innerHTML = html !== '' ? html : '<span class="fba-hint">(belum ada konten)</span>';
+      });
+      return;
+    }
+
+    // Gallery image picker (image_block element)
+    var pickBtn = e.target.closest('#fbcPickImage');
+    if (pickBtn) {
+      if (typeof openMediaSelector !== 'function') { toast('Gallery modal tidak tersedia', true); return; }
+      openMediaSelector({ url: ADMIN_BASE + '/admin/modal_img/index.php?embedded=1' }).then(function (detail) {
+        var m = (typeof normalizeMedia === 'function') ? normalizeMedia(detail) : detail;
+        if (!m || !m.url) return;
+        var urlInp = document.getElementById('fbcImgUrl');
+        if (urlInp) urlInp.value = m.url;
+        var prev = document.getElementById('fbcImgPrev');
+        if (prev) prev.innerHTML = '<img src="' + String(m.url).replace(/"/g, '&quot;') + '" alt="">';
+        var altInp = document.querySelector('#fbcFieldForm input[name="s_alt"]');
+        if (altInp && !altInp.value && (m.alt || m.title)) altInp.value = m.alt || m.title;
+        var capInp = document.querySelector('#fbcFieldForm input[name="s_caption"]');
+        if (capInp && !capInp.value && m.caption) capInp.value = m.caption;
+      }).catch(function () {});
+      return;
+    }
+
+    // Delete → Bin (chip or row)
     var del = e.target.closest('[data-del]');
     if (del) {
       var id = del.getAttribute('data-del');
       var isRow = del.classList.contains('fbc-row-del');
       if (del.id === 'fbcFieldDelete') { closePanel(); }
-      if (confirm(isRow ? 'Delete this row and all its fields?' : 'Delete this field?')) {
-        run('delete', { id: id }, isRow ? 'Row deleted' : 'Field deleted');
+      if (confirm(isRow ? 'Pindahkan row ini (beserta semua field di dalamnya) ke Bin?' : 'Pindahkan field ini ke Bin?')) {
+        run('delete', { id: id }, 'Dipindahkan ke Bin');
       }
       return;
     }

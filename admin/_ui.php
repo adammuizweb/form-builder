@@ -157,6 +157,23 @@ function fb_admin_css(): void {
 .fbb-order { display: flex; gap: .2rem; }
 .fbb-order button { border: 1px solid var(--adam-border); background: var(--adam-bg); border-radius: 6px; width: 26px; height: 26px; cursor: pointer; font-size: .75rem; color: var(--adam-text); }
 .fbb-order button:hover { border-color: var(--adam-accent); color: var(--adam-accent); }
+
+/* ---- v1.2: element palette + content editors + bin ---- */
+.fbc-p-chip.el { border-style: dashed; color: var(--adam-muted); }
+.fbc-p-chip.el:hover { color: var(--adam-accent); border-color: var(--adam-accent); }
+.fbc-content-prev { border: 1px solid var(--adam-border); border-radius: 9px; padding: .6rem .7rem; max-height: 140px; overflow: auto; font-size: .8rem; background: var(--adam-bg); }
+.fbc-content-prev img { max-width: 100%; height: auto; }
+.fbc-img-prev { border: 1px dashed var(--adam-border); border-radius: 9px; padding: .5rem; text-align: center; background: var(--adam-bg); }
+.fbc-img-prev img { max-width: 100%; max-height: 140px; border-radius: 7px; }
+.fbc-editor-overlay { position: fixed; inset: 0; background: rgba(0 0 0 / .55); z-index: 9600; display: flex; align-items: center; justify-content: center; padding: 2rem; }
+.fbc-editor-modal { background: var(--adam-card); border: 1px solid var(--adam-border); border-radius: 16px; width: min(900px, 96vw); max-height: 92vh; display: flex; flex-direction: column; overflow: hidden; }
+.fbc-editor-head { display: flex; justify-content: space-between; align-items: center; padding: .85rem 1.1rem; border-bottom: 1px solid var(--adam-border); }
+.fbc-editor-head h3 { margin: 0; font-size: .92rem; }
+.fbc-editor-head button { border: none; background: transparent; font-size: 1.3rem; color: var(--adam-muted); cursor: pointer; }
+.fbc-editor-body { padding: 1rem 1.1rem; overflow: auto; }
+.fbc-editor-body .ql-container { font-size: .9rem; }
+.fbc-editor-foot { display: flex; justify-content: flex-end; gap: .5rem; padding: .75rem 1.1rem; border-top: 1px solid var(--adam-border); }
+.fbc-chip.is-el { background: color-mix(in srgb, var(--adam-accent) 5%, var(--adam-bg)); }
 </style>
     <?php
 }
