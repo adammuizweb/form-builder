@@ -188,7 +188,7 @@ function fb_admin_css(): void {
 .fba-accent-opt:hover { border-color: var(--adam-accent); }
 .fba-accent-opt:has(input:checked) { border-color: var(--adam-accent); background: color-mix(in srgb, var(--adam-accent) 8%, transparent); font-weight: 600; }
 .fba-accent-opt input { display: none; }
-.fba-swatch { width: 15px; height: 15px; border-radius: 50%; border: 1px solid rgba(0 0 0 / .18); flex-shrink: 0; }
+.fba-swatch { display: inline-block; width: 15px; height: 15px; border-radius: 50%; border: 1px solid rgba(0 0 0 / .18); flex-shrink: 0; }
 </style>
     <?php
 }
