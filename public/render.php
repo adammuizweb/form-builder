@@ -21,8 +21,15 @@ function fb_render_field_html(array $f, string $slug): string {
     $maxBytes = (int)($valid['max_bytes'] ?? 5 * 1024 * 1024);
     $id = 'fb-' . $slug . '-' . $key;
 
+    $fsA = fb_field_settings($f);
+    $wrapCls = '';
+    if (($fsA['align'] ?? '') === 'center') $wrapCls .= ' fb-al-c';
+    elseif (($fsA['align'] ?? '') === 'right') $wrapCls .= ' fb-al-r';
+    if (($fsA['valign'] ?? '') === 'middle') $wrapCls .= ' fb-v-m';
+    elseif (($fsA['valign'] ?? '') === 'bottom') $wrapCls .= ' fb-v-b';
+
     ob_start(); ?>
-    <div class="fb-field" data-key="<?= fb_h($key) ?>">
+    <div class="fb-field<?= $wrapCls ?>" data-key="<?= fb_h($key) ?>">
       <?php if (!empty($meta['display'])): ?>
         <?php if ($type === 'heading'):
           $fs = fb_field_settings($f);
@@ -177,6 +184,16 @@ function fb_render_form(PDO $pdo, array $form): string {
 .fb-image { margin: 0; }
 .fb-image img { max-width: 100%; height: auto; border-radius: 10px; display: block; }
 .fb-rawhtml > *:first-child { margin-top: 0; }
+.fb-al-c { text-align: center; }
+.fb-al-r { text-align: right; }
+.fb-al-c .fb-choices { align-items: center; }
+.fb-al-r .fb-choices { align-items: flex-end; }
+.fb-al-c .fb-choice, .fb-al-r .fb-choice { text-align: left; }
+.fb-al-c .fb-image { margin-left: auto; margin-right: auto; }
+.fb-al-r .fb-image { margin-left: auto; margin-right: 0; }
+.fb-al-c .fb-richtext img, .fb-al-c .fb-richtext figure { margin-left: auto; margin-right: auto; }
+.fb-v-m { margin-top: auto; margin-bottom: auto; }
+.fb-v-b { margin-top: auto; }
 .fb-drop { position: relative; border: 2px dashed var(--fb-border); border-radius: var(--fb-radius); padding: 1.5rem 1rem; text-align: center; background: var(--fb-surface); transition: border-color .25s, background .25s; cursor: pointer; }
 .fb-drop:hover, .fb-drop.dragover { border-color: var(--fb-accent); background: rgba(43 122 74 / .05); }
 .fb-drop input[type=file] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 2; }

@@ -223,8 +223,8 @@ try {
                 $exts = array_values(array_filter(array_map(static fn($e) => strtolower(trim($e, " .")), explode(',', (string)($_POST['v_exts'] ?? '')))));
                 if ($exts) $validation['exts'] = $exts;
             }
-            // Type-specific element settings
-            $settings = [];
+            // Type-specific element settings (merge: preserve existing keys)
+            $settings = fb_field_settings($n);
             if ($type === 'heading') {
                 $lvl = (string)($_POST['s_level'] ?? 'h2');
                 $settings['level'] = in_array($lvl, FB_HEADING_LEVELS, true) ? $lvl : 'h2';
@@ -235,8 +235,13 @@ try {
                 $settings['alt'] = trim((string)($_POST['s_alt'] ?? ''));
                 $settings['caption'] = trim((string)($_POST['s_caption'] ?? ''));
                 $w = trim((string)($_POST['s_width'] ?? ''));
-                if (in_array($w, ['25', '50', '75'], true)) $settings['width'] = $w;
+                if (in_array($w, ['25', '50', '75'], true)) $settings['width'] = $w; else unset($settings['width']);
             }
+            // Alignment (all fields & elements)
+            $al = (string)($_POST['s_align'] ?? '');
+            if (in_array($al, ['center', 'right'], true)) $settings['align'] = $al; else unset($settings['align']);
+            $va = (string)($_POST['s_valign'] ?? '');
+            if (in_array($va, ['middle', 'bottom'], true)) $settings['valign'] = $va; else unset($settings['valign']);
             $pdo->prepare('UPDATE `fb_fields` SET label = ?, field_key = ?, placeholder = ?, help_text = ?, required = ?, is_hidden = ?, options_json = ?, validation_json = ?, settings_json = ? WHERE id = ? AND form_id = ?')
                 ->execute([$label, $key, trim((string)($_POST['placeholder'] ?? '')) ?: null, trim((string)($_POST['help_text'] ?? '')) ?: null,
                     !empty($_POST['required']) ? 1 : 0, !empty($_POST['is_hidden']) ? 1 : 0,

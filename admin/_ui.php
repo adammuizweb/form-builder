@@ -174,6 +174,7 @@ function fb_admin_css(): void {
 .fbc-editor-body .ql-container { font-size: .9rem; }
 .fbc-editor-foot { display: flex; justify-content: flex-end; gap: .5rem; padding: .75rem 1.1rem; border-top: 1px solid var(--adam-border); }
 .fbc-chip.is-el { background: color-mix(in srgb, var(--adam-accent) 5%, var(--adam-bg)); }
+.fbc-chip-al { font-size: .58rem; font-weight: 700; letter-spacing: .04em; color: var(--adam-accent); border: 1px solid var(--adam-border); border-radius: 4px; padding: .05rem .3rem; flex-shrink: 0; }
 </style>
     <?php
 }

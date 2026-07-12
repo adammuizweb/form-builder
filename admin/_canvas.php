@@ -27,10 +27,14 @@ function fb_render_canvas(array $form, array $tree): string {
             $colId = (int)$col['node']['id']; ?>
           <div class="fbc-col" data-node="<?= $colId ?>" data-parent="<?= $rowId ?>">
             <?php foreach ($col['fields'] as $f):
-              $meta = $types[$f['type']] ?? ['label' => $f['type']]; ?>
+              $meta = $types[$f['type']] ?? ['label' => $f['type']];
+              $fsC = fb_field_settings($f);
+              $alI = ['center' => 'C', 'right' => 'R'][$fsC['align'] ?? ''] ?? '';
+              $vaI = ['middle' => 'M', 'bottom' => 'B'][$fsC['valign'] ?? ''] ?? ''; ?>
             <div class="fbc-chip<?= !empty($f['is_hidden']) ? ' is-hidden' : '' ?><?= ($meta['group'] ?? '') === 'element' ? ' is-el' : '' ?>" draggable="true" data-node="<?= (int)$f['id'] ?>">
               <span class="fbc-chip-type"><?= htmlspecialchars($meta['label'], ENT_QUOTES) ?></span>
               <span class="fbc-chip-lbl"><?= htmlspecialchars($f['label'] !== '' ? $f['label'] : '(no label)', ENT_QUOTES) ?><?= !empty($f['required']) ? ' <b class="req">*</b>' : '' ?></span>
+              <?php if ($alI || $vaI): ?><span class="fbc-chip-al" title="Perataan: <?= $alI !== '' ? ($alI === 'C' ? 'tengah' : 'kanan') : 'kiri' ?><?= $vaI !== '' ? ' / vertikal ' . ($vaI === 'M' ? 'tengah' : 'bawah') : '' ?>"><?= $alI . ($alI !== '' && $vaI !== '' ? '·' : '') . $vaI ?></span><?php endif; ?>
               <span class="fbc-chip-key"><?= htmlspecialchars($f['field_key'], ENT_QUOTES) ?></span>
               <button type="button" class="fbc-chip-edit" data-edit="<?= (int)$f['id'] ?>" title="Edit">✎</button>
               <button type="button" class="fbc-chip-del" data-del="<?= (int)$f['id'] ?>" title="Pindahkan ke Bin">×</button>
@@ -150,6 +154,24 @@ function fb_render_field_form(array $f): string {
       <?php endif; /* inputs */ ?>
 
       <?php endif; /* per-type */ ?>
+      <?php $curAlign = (string)($fs['align'] ?? ''); $curValign = (string)($fs['valign'] ?? ''); ?>
+      <div class="fba-row2" style="margin-bottom:.9rem">
+        <div class="fba-field"><label>Perataan horizontal</label>
+          <select name="s_align">
+            <option value="" <?= $curAlign === '' ? 'selected' : '' ?>>⯇ Kiri (default)</option>
+            <option value="center" <?= $curAlign === 'center' ? 'selected' : '' ?>>≡ Tengah</option>
+            <option value="right" <?= $curAlign === 'right' ? 'selected' : '' ?>>⯈ Kanan</option>
+          </select>
+        </div>
+        <div class="fba-field"><label>Perataan vertikal (dalam kolom)</label>
+          <select name="s_valign">
+            <option value="" <?= $curValign === '' ? 'selected' : '' ?>>⤒ Atas (default)</option>
+            <option value="middle" <?= $curValign === 'middle' ? 'selected' : '' ?>>↕ Tengah</option>
+            <option value="bottom" <?= $curValign === 'bottom' ? 'selected' : '' ?>>⤓ Bawah</option>
+          </select>
+        </div>
+      </div>
+      <div class="fba-hint" style="margin:-.5rem 0 .8rem">Vertikal berlaku saat kolom lebih tinggi dari isinya (misal kolom sebelah lebih panjang).</div>
       <div style="display:flex;gap:.5rem">
         <button class="fba-btn primary" type="submit">Save field</button>
         <button class="fba-btn danger" type="button" id="fbcFieldDelete" data-del="<?= $fid ?>" title="Pindahkan ke Bin">🗑 Bin</button>
