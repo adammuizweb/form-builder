@@ -30,7 +30,7 @@
       {
         "route": "admin/bin/form-builder/index",
         "file": "admin/bin.php",
-        "title": "Bin Form Fields",
+        "title": "Bin Form Builder",
         "roles": ["admin"],
         "hidden": true
       }
