@@ -191,7 +191,12 @@ function fb_render_form(PDO $pdo, array $form): string {
 .fb-al-c .fb-choice, .fb-al-r .fb-choice { text-align: left; }
 .fb-al-c .fb-image { margin-left: auto; margin-right: auto; }
 .fb-al-r .fb-image { margin-left: auto; margin-right: 0; }
+.fb-al-c .fb-image img { margin-left: auto; margin-right: auto; }
+.fb-al-r .fb-image img { margin-left: auto; margin-right: 0; }
+.fb-al-c .fb-image figcaption { text-align: center; }
+.fb-al-r .fb-image figcaption { text-align: right; }
 .fb-al-c .fb-richtext img, .fb-al-c .fb-richtext figure { margin-left: auto; margin-right: auto; }
+.fb-al-r .fb-richtext img, .fb-al-r .fb-richtext figure { margin-left: auto; margin-right: 0; }
 .fb-v-m { margin-top: auto; margin-bottom: auto; }
 .fb-v-b { margin-top: auto; }
 .fb-drop { position: relative; border: 2px dashed var(--fb-border); border-radius: var(--fb-radius); padding: 1.5rem 1rem; text-align: center; background: var(--fb-surface); transition: border-color .25s, background .25s; cursor: pointer; }
