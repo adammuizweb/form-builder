@@ -53,6 +53,11 @@ function fb_render_field_html(array $f, string $slug): string {
           <?php if (trim((string)($fs['caption'] ?? '')) !== ''): ?><figcaption><?= fb_h((string)$fs['caption']) ?></figcaption><?php endif; ?>
         </figure>
           <?php endif; ?>
+        <?php elseif ($type === 'total'): ?>
+        <div class="fb-total">
+          <span class="lbl"><?= fb_h($label !== '' ? $label : 'Total') ?></span>
+          <span class="amt" data-fb-total><?= fb_format_rupiah(0) ?></span>
+        </div>
         <?php else: ?><hr class="fb-divider"><?php endif; ?>
       <?php elseif (!empty($meta['file'])): ?>
         <label class="fb-label"><?= fb_h($label) ?> <?= $req ? '<span class="req">*</span>' : '' ?></label>
@@ -132,7 +137,10 @@ function fb_render_form(PDO $pdo, array $form): string {
             if ($o['price'] !== 0) $priceMap[$f['field_key'] . '::' . $o['value']] = $o['price'];
         }
     }
-    $showTotal = $settings['show_total'] === '1' && $priceMap !== [];
+    $hasTotalEl = false;
+    foreach ($allFields as $f) { if ($f['type'] === 'total') { $hasTotalEl = true; break; } }
+    // Legacy auto-total: only when the toggle is on and no Total element is placed on the canvas.
+    $showTotal = $settings['show_total'] === '1' && $priceMap !== [] && !$hasTotalEl;
 
     static $cssPrinted = false;
     ob_start();
@@ -290,10 +298,10 @@ function fb_render_form(PDO $pdo, array $form): string {
 
   // ---- Live total ----
   var PRICES = <?= json_encode($priceMap, JSON_UNESCAPED_UNICODE) ?>;
-  var totalEl = root.querySelector('[data-fb-total]');
+  var totalEls = root.querySelectorAll('[data-fb-total]');
   function rp(n) { return 'Rp ' + (n || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
   function recalc() {
-    if (!totalEl) return;
+    if (!totalEls.length) return;
     var total = 0;
     form.querySelectorAll('input[name$="[]"]:checked, input[type=radio]:checked, select').forEach(function (el) {
       var name = el.name.replace(/\[\]$/, '');
@@ -304,10 +312,12 @@ function fb_render_form(PDO $pdo, array $form): string {
       }
     });
     var txt = rp(total);
-    if (totalEl.textContent !== txt) {
-      totalEl.textContent = txt;
-      totalEl.classList.remove('pop'); void totalEl.offsetWidth; totalEl.classList.add('pop');
-    }
+    totalEls.forEach(function (totalEl) {
+      if (totalEl.textContent !== txt) {
+        totalEl.textContent = txt;
+        totalEl.classList.remove('pop'); void totalEl.offsetWidth; totalEl.classList.add('pop');
+      }
+    });
   }
   form.addEventListener('change', recalc);
   recalc();

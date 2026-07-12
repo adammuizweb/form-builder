@@ -130,6 +130,7 @@ $allUsers = $pdo->query("SELECT id, name, email, role FROM `users` WHERE is_dele
       <div class="fba-checks" style="margin:.3rem 0 .8rem">
         <label class="fba-check"><input type="checkbox" name="recaptcha" value="1" <?= $settings['recaptcha'] === '1' ? 'checked' : '' ?>> Enable reCAPTCHA</label>
         <label class="fba-check"><input type="checkbox" name="show_total" value="1" <?= $settings['show_total'] === '1' ? 'checked' : '' ?>> Show total (sums priced options)</label>
+        <div class="fba-hint" style="margin-top:.3rem">Legacy: total otomatis di akhir form. <strong>Diabaikan</strong> jika ada element <strong>Total</strong> di canvas builder (cara yang disarankan — posisi &amp; alignment bisa diatur).</div>
       </div>
       <div class="fba-row2">
         <div class="fba-field"><label>Total label</label><input type="text" name="total_label" value="<?= htmlspecialchars($settings['total_label'], ENT_QUOTES) ?>"></div>

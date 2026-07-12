@@ -145,6 +145,7 @@ function fb_field_types(): array {
         'richtext'  => ['label' => 'Rich Text',   'display' => true, 'group' => 'element', 'editor' => 'quill'],
         'image_block' => ['label' => 'Image',     'display' => true, 'group' => 'element', 'editor' => 'media'],
         'raw_html'  => ['label' => 'Raw HTML',    'display' => true, 'group' => 'element', 'editor' => 'code'],
+        'total'     => ['label' => 'Total',        'display' => true, 'group' => 'element'],
     ];
 }
 
