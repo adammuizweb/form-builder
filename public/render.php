@@ -173,7 +173,7 @@ function fb_render_form(PDO $pdo, array $form): string {
 }
 .fb-field textarea { min-height: 110px; resize: vertical; }
 .fb-field select { cursor: pointer; }
-.fb-field input:focus, .fb-field textarea:focus, .fb-field select:focus { border-color: var(--fb-accent); box-shadow: 0 0 0 4px rgba(43 122 74 / .14); }
+.fb-field input:focus, .fb-field textarea:focus, .fb-field select:focus { border-color: var(--fb-accent); box-shadow: 0 0 0 4px var(--fb-accent-soft, rgba(43 122 74 / .14)); }
 .fb-help { font-size: .76rem; color: var(--fb-muted); margin-top: .35rem; }
 .fb-choices { display: flex; flex-direction: column; gap: .5rem; }
 .fb-choice { display: flex; align-items: center; gap: .55rem; font-size: .94rem; background: var(--fb-surface); border: 1.5px solid var(--fb-border); border-radius: var(--fb-radius); padding: .6rem .9rem; cursor: pointer; transition: border-color .2s, background .2s; }
@@ -208,24 +208,24 @@ function fb_render_form(PDO $pdo, array $form): string {
 .fb-v-m { margin-top: auto; margin-bottom: auto; }
 .fb-v-b { margin-top: auto; }
 .fb-drop { position: relative; border: 2px dashed var(--fb-border); border-radius: var(--fb-radius); padding: 1.5rem 1rem; text-align: center; background: var(--fb-surface); transition: border-color .25s, background .25s; cursor: pointer; }
-.fb-drop:hover, .fb-drop.dragover { border-color: var(--fb-accent); background: rgba(43 122 74 / .05); }
+.fb-drop:hover, .fb-drop.dragover { border-color: var(--fb-accent); background: var(--fb-accent-soft, rgba(43 122 74 / .05)); }
 .fb-drop input[type=file] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 2; }
 .fb-drop .up-t, .fb-drop .up-s, .fb-drop .up-ic, .fb-drop .up-preview { position: relative; z-index: 1; pointer-events: none; }
 .fb-drop .up-ic { font-size: 1.5rem; margin-bottom: .35rem; }
 .fb-drop .up-t { font-weight: 600; font-size: .92rem; }
 .fb-drop .up-s { font-size: .74rem; color: var(--fb-muted); margin-top: .2rem; }
 .fb-drop .up-preview { display: none; margin: 0 auto .5rem; max-width: 160px; max-height: 120px; border-radius: 10px; object-fit: cover; box-shadow: 0 4px 14px rgba(0 0 0 / .12); }
-.fb-drop.has-file { border-style: solid; border-color: var(--fb-accent); background: rgba(43 122 74 / .06); }
-.fb-total { display: flex; justify-content: space-between; align-items: center; gap: 1rem; background: rgba(43 122 74 / .07); border: 1.5px dashed var(--fb-accent); border-radius: var(--fb-radius); padding: .9rem 1.2rem; margin-top: 1rem; }
+.fb-drop.has-file { border-style: solid; border-color: var(--fb-accent); background: var(--fb-accent-soft, rgba(43 122 74 / .06)); }
+.fb-total { display: flex; justify-content: space-between; align-items: center; gap: 1rem; background: var(--fb-accent-soft, rgba(43 122 74 / .07)); border: 1.5px dashed var(--fb-accent); border-radius: var(--fb-radius); padding: .9rem 1.2rem; margin-top: 1rem; }
 .fb-total .lbl { font-size: .72rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--fb-accent-deep); }
 .fb-total .amt { font-size: 1.35rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .fb-total .amt.pop { animation: fb-pop .45s cubic-bezier(.34,1.56,.64,1); }
-.fb-submit { width: 100%; margin-top: 1rem; display: inline-flex; align-items: center; justify-content: center; gap: .5rem; border: none; cursor: pointer; font: inherit; font-size: 1rem; font-weight: 700; color: #fff; background: linear-gradient(135deg, var(--fb-accent), var(--fb-accent-deep)); border-radius: var(--fb-radius); padding: .9rem 1.5rem; box-shadow: 0 8px 22px rgba(43 122 74 / .3); transition: transform .2s, box-shadow .2s; }
-.fb-submit:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(43 122 74 / .4); }
+.fb-submit { width: 100%; margin-top: 1rem; display: inline-flex; align-items: center; justify-content: center; gap: .5rem; border: none; cursor: pointer; font: inherit; font-size: 1rem; font-weight: 700; color: var(--fb-on-accent, #fff); background: linear-gradient(135deg, var(--fb-accent), var(--fb-accent-deep)); border-radius: var(--fb-radius); padding: .9rem 1.5rem; box-shadow: 0 8px 22px var(--fb-accent-soft, rgba(43 122 74 / .3)); transition: transform .2s, box-shadow .2s; }
+.fb-submit:hover { transform: translateY(-2px); box-shadow: 0 12px 28px var(--fb-accent-soft, rgba(43 122 74 / .4)); }
 .fb-submit:disabled { opacity: .75; cursor: wait; transform: none; }
 .fb-flash-err { background: rgba(190 45 45 / .08); border: 1.5px solid rgba(190 45 45 / .4); color: var(--fb-danger); border-radius: var(--fb-radius); padding: .8rem 1rem; font-size: .9rem; font-weight: 600; margin-bottom: 1rem; }
 .fb-success { text-align: center; padding: 2.5rem 1rem; }
-.fb-success .check { width: 72px; height: 72px; margin: 0 auto 1rem; border-radius: 50%; background: linear-gradient(135deg, var(--fb-accent), var(--fb-accent-deep)); color: #fff; display: grid; place-items: center; font-size: 2rem; animation: fb-pop .55s cubic-bezier(.34,1.56,.64,1); }
+.fb-success .check { width: 72px; height: 72px; margin: 0 auto 1rem; border-radius: 50%; background: linear-gradient(135deg, var(--fb-accent), var(--fb-accent-deep)); color: var(--fb-on-accent, #fff); display: grid; place-items: center; font-size: 2rem; animation: fb-pop .55s cubic-bezier(.34,1.56,.64,1); }
 .fb-success h3 { font-size: 1.4rem; margin-bottom: .5rem; }
 .fb-success p { color: var(--fb-muted); max-width: 44ch; margin: 0 auto 1.2rem; }
 .fb-ref { display: inline-block; font-family: ui-monospace, monospace; font-weight: 700; letter-spacing: .08em; background: var(--fb-surface); border: 1.5px dashed var(--fb-accent); color: var(--fb-accent-deep); border-radius: 10px; padding: .5rem 1.1rem; }
@@ -239,7 +239,7 @@ function fb_render_form(PDO $pdo, array $form): string {
 </style>
 <?php endif; ?>
 
-<div class="fb-wrap" id="fb-<?= fb_h($slug) ?>">
+<div class="fb-wrap" id="fb-<?= fb_h($slug) ?>"<?= ($accentStyle = fb_accent_style($settings)) !== '' ? ' style="' . fb_h($accentStyle) . '"' : '' ?>>
 <?php if ($flash === 'ok'): ?>
   <div class="fb-success">
     <div class="check">&#10003;</div>

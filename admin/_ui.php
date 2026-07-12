@@ -183,6 +183,12 @@ function fb_admin_css(): void {
 .fbc-chip.is-el { background: color-mix(in srgb, var(--adam-accent) 5%, var(--adam-bg)); }
 .fbc-chip-al { font-size: .58rem; font-weight: 700; letter-spacing: .04em; color: var(--adam-accent); border: 1px solid var(--adam-border); border-radius: 4px; padding: .05rem .3rem; flex-shrink: 0; }
 .fbc-panel.fbc-portal { z-index: 940; }
+.fba-accents { display: flex; flex-wrap: wrap; gap: .4rem; margin: .35rem 0 .5rem; }
+.fba-accent-opt { display: inline-flex; align-items: center; gap: .35rem; border: 1px solid var(--adam-border); border-radius: 9px; padding: .28rem .6rem; cursor: pointer; font-size: .8rem; user-select: none; transition: border-color .15s, background .15s; }
+.fba-accent-opt:hover { border-color: var(--adam-accent); }
+.fba-accent-opt:has(input:checked) { border-color: var(--adam-accent); background: color-mix(in srgb, var(--adam-accent) 8%, transparent); font-weight: 600; }
+.fba-accent-opt input { display: none; }
+.fba-swatch { width: 15px; height: 15px; border-radius: 50%; border: 1px solid rgba(0 0 0 / .18); flex-shrink: 0; }
 </style>
     <?php
 }

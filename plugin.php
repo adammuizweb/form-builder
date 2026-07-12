@@ -151,6 +151,34 @@ function fb_field_types(): array {
 
 const FB_HEADING_LEVELS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
 
+// Accent color presets for the public form. Each preset is a complete
+// contrast-safe mini palette: accent, deep shade, text-on-accent, soft tint.
+// Scoped to .fb-wrap via CSS variables — no leakage into site themes.
+function fb_accent_presets(): array {
+    return [
+        'green'  => ['label' => 'Hijau',   'accent' => '#2b7a4a', 'deep' => '#1c5633', 'on' => '#ffffff', 'soft' => 'rgba(43 122 74 / .12)'],
+        'blue'   => ['label' => 'Biru',    'accent' => '#2563eb', 'deep' => '#1d4ed8', 'on' => '#ffffff', 'soft' => 'rgba(37 99 235 / .12)'],
+        'aqua'   => ['label' => 'Aqua',    'accent' => '#0891b2', 'deep' => '#155e75', 'on' => '#ffffff', 'soft' => 'rgba(8 145 178 / .12)'],
+        'red'    => ['label' => 'Merah',   'accent' => '#dc2626', 'deep' => '#991b1b', 'on' => '#ffffff', 'soft' => 'rgba(220 38 38 / .10)'],
+        'yellow' => ['label' => 'Kuning',  'accent' => '#ca8a04', 'deep' => '#854d0e', 'on' => '#ffffff', 'soft' => 'rgba(202 138 4 / .14)'],
+        'orange' => ['label' => 'Orange',  'accent' => '#ea580c', 'deep' => '#9a3412', 'on' => '#ffffff', 'soft' => 'rgba(234 88 12 / .12)'],
+        'purple' => ['label' => 'Ungu',    'accent' => '#7c3aed', 'deep' => '#5b21b6', 'on' => '#ffffff', 'soft' => 'rgba(124 58 237 / .12)'],
+        'white'  => ['label' => 'Putih',   'accent' => '#cbd5e1', 'deep' => '#64748b', 'on' => '#0f172a', 'soft' => 'rgba(100 116 139 / .16)'],
+        'black'  => ['label' => 'Hitam',   'accent' => '#1f2937', 'deep' => '#030712', 'on' => '#ffffff', 'soft' => 'rgba(31 41 55 / .12)'],
+        'pink'   => ['label' => 'Pink',    'accent' => '#db2777', 'deep' => '#9d174d', 'on' => '#ffffff', 'soft' => 'rgba(219 39 119 / .12)'],
+        'gray'   => ['label' => 'Abu-abu', 'accent' => '#6b7280', 'deep' => '#374151', 'on' => '#ffffff', 'soft' => 'rgba(107 114 128 / .14)'],
+    ];
+}
+
+// Inline CSS-variable style for a form's accent preset ('' = default green).
+function fb_accent_style(array $settings): string {
+    $presets = fb_accent_presets();
+    $key = (string)($settings['accent'] ?? 'green');
+    if (!isset($presets[$key]) || $key === 'green') return '';
+    $p = $presets[$key];
+    return '--fb-accent:' . $p['accent'] . ';--fb-accent-deep:' . $p['deep'] . ';--fb-on-accent:' . $p['on'] . ';--fb-accent-soft:' . $p['soft'] . ';';
+}
+
 // Per-field type-specific settings (heading level, rich text/html content, image data).
 function fb_field_settings(array $f): array {
     $s = json_decode((string)($f['settings_json'] ?? ''), true);
@@ -277,6 +305,7 @@ function fb_default_settings(): array {
         'show_total'      => '0',
         'total_label'     => 'Total',
         'columns'         => [],
+        'accent'          => 'green',
     ];
 }
 

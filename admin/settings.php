@@ -45,8 +45,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && function_exists('csrf_ch
     }
 
     if ($act === 'save_display') {
-        $pdo->prepare('UPDATE `fb_forms` SET css = ?, js = ? WHERE id = ?')
+        $presets = fb_accent_presets();
+        $accent = (string)($_POST['accent'] ?? 'green');
+        $settings['accent'] = isset($presets[$accent]) ? $accent : 'green';
+        $pdo->prepare('UPDATE `fb_forms` SET settings_json = ?, css = ?, js = ? WHERE id = ?')
             ->execute([
+                json_encode($settings, JSON_UNESCAPED_UNICODE),
                 trim((string)($_POST['css'] ?? '')) !== '' ? (string)$_POST['css'] : null,
                 trim((string)($_POST['js'] ?? '')) !== '' ? (string)$_POST['js'] : null,
                 $formId,
@@ -149,10 +153,22 @@ $allUsers = $pdo->query("SELECT id, name, email, role FROM `users` WHERE is_dele
   </div>
 
   <div class="fba-card">
-    <div class="fba-sec">Custom CSS &amp; JavaScript</div>
+    <div class="fba-sec">Warna &amp; Custom CSS/JS</div>
     <form method="post">
       <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>">
       <input type="hidden" name="fb_action" value="save_display">
+      <div class="fba-field"><label>Warna aksen form</label>
+        <div class="fba-accents">
+          <?php foreach (fb_accent_presets() as $ak => $ap): ?>
+          <label class="fba-accent-opt" title="<?= htmlspecialchars($ap['label'], ENT_QUOTES) ?>">
+            <input type="radio" name="accent" value="<?= $ak ?>" <?= ($settings['accent'] ?? 'green') === $ak ? 'checked' : '' ?>>
+            <span class="fba-swatch" style="background:<?= htmlspecialchars($ap['accent'], ENT_QUOTES) ?>"></span>
+            <span><?= htmlspecialchars($ap['label'], ENT_QUOTES) ?></span>
+          </label>
+          <?php endforeach; ?>
+        </div>
+        <div class="fba-hint">Warna tombol submit, focus, harga, dropzone &amp; total. Aman untuk semua tema (di-scope ke form). Untuk kustomisasi penuh, override via Custom CSS di bawah.</div>
+      </div>
       <div class="fba-field"><label>Custom CSS</label>
         <textarea name="css" rows="6" placeholder="#fb-<?= htmlspecialchars($form['slug'], ENT_QUOTES) ?> { --fb-accent: #1a73e8; }"><?= htmlspecialchars((string)$form['css'], ENT_QUOTES) ?></textarea>
         <div class="fba-hint">Injected after the base styles. Target the wrapper <span class="fba-code">#fb-<?= htmlspecialchars($form['slug'], ENT_QUOTES) ?></span>.</div>
