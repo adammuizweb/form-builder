@@ -8,12 +8,11 @@ require_once __DIR__ . '/_ui.php';
 
 $pdo = $GLOBALS['pdo'] ?? null;
 if (!($pdo instanceof PDO)) { echo '<p>Database not available.</p>'; return; }
+[$uid] = adiwira_require_permission($pdo, 'plugin.form-builder.workspace.access', false);
 
 fb_ensure_schema($pdo);
 
-$uid = function_exists('current_user_id') ? current_user_id() : 0;
-$role = function_exists('current_user_role') ? current_user_role($pdo) : null;
-if ($uid <= 0) { echo '<div class="fba-empty">Please log in.</div>'; return; }
+$canGlobalSettings = user_can($pdo, $uid, 'plugin.form-builder.global-settings.manage');
 
 $csrf = function_exists('csrf_token') ? csrf_token() : '';
 $flash = '';
@@ -21,7 +20,7 @@ $flashOk = true;
 
 // ---------------- Global POST actions ----------------
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
-    $okCsrf = function_exists('csrf_check') ? csrf_check($_POST['csrf_token'] ?? '') : true;
+    $okCsrf = function_exists('csrf_check') && csrf_check($_POST['csrf_token'] ?? '');
     $act = (string)($_POST['fb_action'] ?? '');
     if (!$okCsrf) {
         $flash = 'Invalid CSRF token.'; $flashOk = false;
@@ -42,12 +41,16 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         fb_js_redirect(fb_url(['view' => 'builder', 'id' => $newId]));
         return;
     } elseif ($act === 'save_recaptcha') {
-        settings_set($pdo, FB_RECAPTCHA_SITEKEY_KEY, trim((string)($_POST['sitekey'] ?? '')), 1);
-        settings_set($pdo, FB_RECAPTCHA_SECRET_KEY, trim((string)($_POST['secret'] ?? '')), 1);
-        $flash = 'reCAPTCHA keys saved.';
+        if (!$canGlobalSettings) {
+            $flash = 'Access denied.'; $flashOk = false;
+        } else {
+            settings_set($pdo, FB_RECAPTCHA_SITEKEY_KEY, trim((string)($_POST['sitekey'] ?? '')), 1);
+            settings_set($pdo, FB_RECAPTCHA_SECRET_KEY, trim((string)($_POST['secret'] ?? '')), 1);
+            $flash = 'reCAPTCHA keys saved.';
+        }
     } elseif (in_array($act, ['duplicate_form', 'archive_form', 'delete_form'], true)) {
         $target = fb_get_form($pdo, (int)($_POST['form_id'] ?? 0));
-        if ($target === null || !fb_can_access_form($pdo, $target, $uid, $role)) {
+        if ($target === null || !fb_can_access_form($pdo, $target, $uid)) {
             $flash = 'Form not found or access denied.'; $flashOk = false;
         } elseif ($act === 'duplicate_form') {
             $base = fb_normalize_key($target['slug'] . '-copy');
@@ -83,7 +86,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             $n = 0;
             foreach ($ids as $bid) {
                 $target = fb_get_form($pdo, $bid);
-                if ($target === null || !fb_can_access_form($pdo, $target, $uid, $role)) continue;
+                if ($target === null || !fb_can_access_form($pdo, $target, $uid)) continue;
                 if ($do === 'archive') {
                     $pdo->prepare('UPDATE `fb_forms` SET status = "archived" WHERE id = ?')->execute([$bid]);
                 } else {
@@ -104,7 +107,7 @@ $view = (string)($_GET['view'] ?? 'forms');
 // otherwise headers are already sent and the download is corrupted.
 if ($view === 'submissions' && in_array(($_GET['action'] ?? ''), ['file', 'export'], true)) {
     $form = fb_get_form($pdo, (int)($_GET['id'] ?? 0));
-    if ($form === null || ($form['deleted_at'] ?? null) !== null || !fb_can_access_form($pdo, $form, $uid, $role)) {
+    if ($form === null || ($form['deleted_at'] ?? null) !== null || !fb_can_access_form($pdo, $form, $uid)) {
         http_response_code(403);
         exit('Access denied');
     }
@@ -120,7 +123,7 @@ if ($flash !== '') {
 
 if ($view === 'builder' || $view === 'settings' || $view === 'submissions') {
     $form = fb_get_form($pdo, (int)($_GET['id'] ?? 0));
-    if ($form === null || ($form['deleted_at'] ?? null) !== null || !fb_can_access_form($pdo, $form, $uid, $role)) {
+    if ($form === null || ($form['deleted_at'] ?? null) !== null || !fb_can_access_form($pdo, $form, $uid)) {
         echo '<div class="fba-empty">Form not found or access denied. <a href="' . fb_url(['view' => 'forms', 'id' => null]) . '">Back to forms</a></div>';
         return;
     }
@@ -155,7 +158,7 @@ $listUrl = static function (array $extra = []) use ($q, $pageNum): string {
   <div class="fba-head">
     <h1>Form Builder</h1>
     <div class="fba-actions">
-      <button class="fba-btn" onclick="document.getElementById('fba-rc').style.display='flex'">reCAPTCHA</button>
+      <?php if ($canGlobalSettings): ?><button class="fba-btn" onclick="document.getElementById('fba-rc').style.display='flex'">reCAPTCHA</button><?php endif; ?>
       <form method="post" style="display:inline">
         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>">
         <input type="hidden" name="fb_action" value="create_form">
@@ -357,7 +360,7 @@ $listUrl = static function (array $extra = []) use ($q, $pageNum): string {
 })();
 </script>
 
-<div class="fba-overlay" id="fba-rc" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+<?php if ($canGlobalSettings): ?><div class="fba-overlay" id="fba-rc" style="display:none" onclick="if(event.target===this)this.style.display='none'">
   <div class="fba-modal">
     <div class="fba-modal-head"><h2>reCAPTCHA (global keys)</h2><a href="javascript:void(0)" onclick="document.getElementById('fba-rc').style.display='none'">&times;</a></div>
     <div class="fba-modal-body">
@@ -371,4 +374,4 @@ $listUrl = static function (array $extra = []) use ($q, $pageNum): string {
       </form>
     </div>
   </div>
-</div>
+</div><?php endif; ?>

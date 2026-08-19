@@ -1,5 +1,5 @@
 <?php
-// /plugins/form-builder/admin/settings.php  ($form, $pdo, $uid, $role, $csrf in scope)
+// /plugins/form-builder/admin/settings.php  ($form, $pdo, $uid, $csrf in scope)
 declare(strict_types=1);
 
 $formId = (int)$form['id'];
@@ -10,7 +10,12 @@ $types = fb_field_types();
 $inputFields = array_values(array_filter($fields, static fn($f) => !empty($types[$f['type']]['input']) && empty($types[$f['type']]['file'])));
 
 $saved = false;
-if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && function_exists('csrf_check') && csrf_check($_POST['csrf_token'] ?? '')) {
+$canDelegate = user_can($pdo, $uid, 'plugin.form-builder.forms.manage-any') || $access['owner'] === $uid;
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+    if (!function_exists('csrf_check') || !csrf_check($_POST['csrf_token'] ?? '')) {
+        echo '<div class="fba-empty">Invalid CSRF token.</div>';
+        return;
+    }
     $act = (string)($_POST['fb_action'] ?? '');
 
     if ($act === 'save_general') {
@@ -59,6 +64,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && function_exists('csrf_ch
     }
 
     if ($act === 'save_access') {
+        if (!$canDelegate) {
+            echo '<div class="fba-empty">Access denied.</div>';
+            return;
+        }
         $roles = array_values(array_filter(array_map('strval', (array)($_POST['access_roles'] ?? []))));
         $users = array_values(array_filter(array_map('intval', (array)($_POST['access_users'] ?? []))));
         $access['roles'] = $roles;
@@ -79,7 +88,7 @@ $form = fb_get_form($pdo, $formId) ?? $form;
 $settings = fb_form_settings($form);
 $access = fb_form_access($form);
 
-$allRoles = $pdo->query("SELECT DISTINCT role FROM `users` WHERE is_deleted = 0 AND role != '' ORDER BY role")->fetchAll(PDO::FETCH_COLUMN) ?: [];
+$allRoles = $pdo->query("SELECT slug FROM `roles` ORDER BY is_system DESC, authority_rank DESC, name")->fetchAll(PDO::FETCH_COLUMN) ?: [];
 $allUsers = $pdo->query("SELECT id, name, email, role FROM `users` WHERE is_deleted = 0 ORDER BY name LIMIT 200")->fetchAll(PDO::FETCH_ASSOC) ?: [];
 ?>
 <div class="fba">
@@ -181,16 +190,16 @@ $allUsers = $pdo->query("SELECT id, name, email, role FROM `users` WHERE is_dele
     </form>
   </div>
 
-  <div class="fba-card">
+  <?php if ($canDelegate): ?><div class="fba-card">
     <div class="fba-sec">Access Control</div>
     <form method="post">
       <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>">
       <input type="hidden" name="fb_action" value="save_access">
-      <p class="fba-hint" style="margin-bottom:.8rem">Admins and the form owner always have access. Grant additional access below — users only see forms granted to them.</p>
+      <p class="fba-hint" style="margin-bottom:.8rem">Form owners and users with Manage Any Form access can manage this ACL. Grants below are additional to the Form Builder workspace permission.</p>
       <div class="fba-field"><label>Roles</label>
         <div class="fba-checks">
           <?php foreach ($allRoles as $r): ?>
-          <label class="fba-check"><input type="checkbox" name="access_roles[]" value="<?= htmlspecialchars((string)$r, ENT_QUOTES) ?>" <?= in_array((string)$r, $access['roles'], true) ? 'checked' : '' ?> <?= $r === 'admin' ? 'disabled checked' : '' ?>> <?= htmlspecialchars((string)$r, ENT_QUOTES) ?></label>
+          <label class="fba-check"><input type="checkbox" name="access_roles[]" value="<?= htmlspecialchars((string)$r, ENT_QUOTES) ?>" <?= in_array((string)$r, $access['roles'], true) ? 'checked' : '' ?>> <?= htmlspecialchars((string)$r, ENT_QUOTES) ?></label>
           <?php endforeach; ?>
         </div>
       </div>
@@ -203,5 +212,5 @@ $allUsers = $pdo->query("SELECT id, name, email, role FROM `users` WHERE is_dele
       </div>
       <button class="fba-btn primary" type="submit">Save access</button>
     </form>
-  </div>
+  </div><?php endif; ?>
 </div>

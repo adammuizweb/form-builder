@@ -18,14 +18,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') fb_json(['ok' => false, 'e
 
 $uid = function_exists('current_user_id') ? current_user_id() : 0;
 if ($uid <= 0) fb_json(['ok' => false, 'error' => 'Login required'], 401);
-if (function_exists('csrf_check') && !csrf_check((string)($_POST['csrf_token'] ?? ''))) fb_json(['ok' => false, 'error' => 'Invalid CSRF'], 403);
+if (!function_exists('user_can') || !user_can($pdo, $uid, 'plugin.form-builder.workspace.access')) fb_json(['ok' => false, 'error' => 'Access denied'], 403);
+if (!function_exists('csrf_check') || !csrf_check((string)($_POST['csrf_token'] ?? ''))) fb_json(['ok' => false, 'error' => 'Invalid CSRF'], 403);
 
 fb_ensure_schema($pdo);
 $formId = (int)($_POST['form_id'] ?? 0);
 $form = $formId > 0 ? fb_get_form($pdo, $formId) : null;
-if ($form === null) fb_json(['ok' => false, 'error' => 'Form not found'], 404);
-$role = function_exists('current_user_role') ? current_user_role($pdo) : null;
-if (!fb_can_access_form($pdo, $form, $uid, $role)) fb_json(['ok' => false, 'error' => 'Access denied'], 403);
+if ($form === null || ($form['deleted_at'] ?? null) !== null) fb_json(['ok' => false, 'error' => 'Form not found'], 404);
+if (!fb_can_access_form($pdo, $form, $uid)) fb_json(['ok' => false, 'error' => 'Access denied'], 403);
 
 $action = (string)($_POST['fb_action'] ?? '');
 $types = fb_field_types();

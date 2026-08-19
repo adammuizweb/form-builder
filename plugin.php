@@ -339,14 +339,29 @@ function fb_form_access(array $form): array {
     ];
 }
 
-function fb_can_access_form(PDO $pdo, array $form, ?int $uid = null, ?string $role = null): bool {
-    if (!function_exists('current_user_id')) return true; // CLI/tests
-    $uid = $uid ?? current_user_id();
-    $role = $role ?? (function_exists('current_user_role') ? current_user_role($pdo) : null);
-    if ($role === 'admin') return true;
+function fb_user_role_slugs(PDO $pdo, int $uid): array {
+    if ($uid <= 0) return [];
+    if (function_exists('authorization_actor')) {
+        $actor = authorization_actor($pdo, $uid);
+        if ($actor === null) return [];
+        return array_values(array_unique(array_filter(array_map(
+            static fn(array $role): string => strtolower(trim((string)($role['slug'] ?? ''))),
+            (array)$actor['roles']
+        ))));
+    }
+    $legacy = function_exists('current_user_role') ? current_user_role($pdo) : null;
+    return is_string($legacy) && $legacy !== '' ? [$legacy] : [];
+}
+
+function fb_can_access_form(PDO $pdo, array $form, ?int $uid = null): bool {
+    $uid = $uid ?? (function_exists('current_user_id') ? (int)current_user_id() : 0);
+    if ($uid <= 0 || !function_exists('user_can')
+        || !user_can($pdo, $uid, 'plugin.form-builder.workspace.access')) return false;
+    if (user_can($pdo, $uid, 'plugin.form-builder.forms.manage-any')) return true;
+    $roles = fb_user_role_slugs($pdo, $uid);
     $acc = fb_form_access($form);
     if ($acc['owner'] > 0 && $acc['owner'] === $uid) return true;
-    if ($role !== null && in_array($role, $acc['roles'], true)) return true;
+    if (array_intersect($roles, $acc['roles']) !== []) return true;
     if (in_array($uid, $acc['users'], true)) return true;
     return false;
 }
@@ -356,11 +371,8 @@ function fb_can_access_form(PDO $pdo, array $form, ?int $uid = null, ?string $ro
 function fb_accessible_forms(PDO $pdo, string $statusFilter = "status != 'archived'"): array {
     $rows = $pdo->query("SELECT * FROM `fb_forms` WHERE {$statusFilter} AND deleted_at IS NULL ORDER BY updated_at DESC, id DESC")->fetchAll(PDO::FETCH_ASSOC);
     $rows = is_array($rows) ? $rows : [];
-    if (!function_exists('current_user_id')) return $rows;
-    $role = function_exists('current_user_role') ? current_user_role($pdo) : null;
-    if ($role === 'admin') return $rows;
-    $uid = current_user_id();
-    return array_values(array_filter($rows, static fn($f) => fb_can_access_form($pdo, $f, $uid, $role)));
+    $uid = function_exists('current_user_id') ? (int)current_user_id() : 0;
+    return array_values(array_filter($rows, static fn($f) => fb_can_access_form($pdo, $f, $uid)));
 }
 
 // ---------------- Form Bin (soft delete) ----------------
@@ -605,6 +617,10 @@ add_action('admin_init', function (): void {
 // Core bin hub calls apply_filters('bin_items', $items, $pdo, ...counts, $base).
 add_filter('bin_items', function (array $items, $pdo = null, ...$rest): array {
     if (!($pdo instanceof PDO)) return $items;
+    $uid = function_exists('current_user_id') ? (int)current_user_id() : 0;
+    if ($uid <= 0 || !function_exists('user_can')
+        || !user_can($pdo, $uid, 'plugin.form-builder.bin.manage')
+        || !user_can($pdo, $uid, 'plugin.form-builder.forms.manage-any')) return $items;
     try {
         $cnt = (int)$pdo->query("SELECT COUNT(*) FROM `fb_fields` WHERE deleted_at IS NOT NULL AND type NOT IN ('row','col')")->fetchColumn();
         $cnt += (int)$pdo->query("SELECT COUNT(*) FROM `fb_forms` WHERE deleted_at IS NOT NULL")->fetchColumn();

@@ -1,48 +1,100 @@
 {
-  "name": "form-builder",
-  "version": "1.5.0",
-  "title": "Form Builder",
-  "icon": "icon.png",
-  "description": "Dynamic form builder for Jyavani CMS: Elementor-style drag-and-drop builder (rows → columns → fields), input fields & content elements (heading levels, rich text with Quill + CMS gallery/file modals, image, raw HTML with CodeMirror), priced options with live totals, soft-delete Bin with restore, embed via [form slug=\"...\"] shortcode, per-form submissions with auto filters, bulk actions, CSV export, custom CSS/JS, and per-form access control.",
-  "author": "Adam Muiz",
-  "author_uri": "https://jyavani.com/member/adammuiz/",
-  "plugin_uri": "https://github.com/adammuizweb/form-builder",
-  "homepage": "https://github.com/adammuizweb/form-builder",
-  "requires": {
-    "php": ">=8.1",
-    "extensions": ["pdo", "json"]
-  },
-  "assets": {
-    "js": [
-      "/static/js/add/modal-helpers.js",
-      "/static/js/add/media-selector.js",
-      "/static/js/add/file-selector.js"
-    ]
-  },
-  "admin": {
-    "pages": [
-      {
-        "route": "admin/tools/form-builder",
-        "file": "admin/index.php",
-        "title": "Form Builder",
-        "roles": ["admin", "author"]
-      },
-      {
-        "route": "admin/bin/form-builder/index",
-        "file": "admin/bin.php",
-        "title": "Bin Form Builder",
-        "roles": ["admin"],
-        "hidden": true
-      }
+    "name": "form-builder",
+    "version": "1.5.2",
+    "title": "Form Builder",
+    "icon": "icon.png",
+    "description": "Dynamic form builder for Jyavani CMS: Elementor-style drag-and-drop builder (rows \u2192 columns \u2192 fields), input fields & content elements (heading levels, rich text with Quill + CMS gallery/file modals, image, raw HTML with CodeMirror), priced options with live totals, soft-delete Bin with restore, embed via [form slug=\"...\"] shortcode, per-form submissions with auto filters, bulk actions, CSV export, custom CSS/JS, and per-form access control.",
+    "author": "Adam Muiz",
+    "author_uri": "https://jyavani.com/member/adammuiz/",
+    "plugin_uri": "https://jyavani.com/plugin/form-builder/",
+    "homepage": "https://jyavani.com/plugin/form-builder/",
+    "requires": {
+        "jyavani": ">=2.3.74",
+        "php": ">=8.1",
+        "extensions": [
+            "pdo",
+            "json",
+            "mbstring"
+        ]
+    },
+    "permissions": [
+        {
+            "key": "plugin.form-builder.workspace.access",
+            "label": "Access Form Builder",
+            "supports_scope": false,
+            "default_roles": [
+                "author",
+                "admin"
+            ]
+        },
+        {
+            "key": "plugin.form-builder.forms.manage-any",
+            "label": "Manage Any Form",
+            "supports_scope": false,
+            "default_roles": [
+                "admin"
+            ],
+            "delegable": true
+        },
+        {
+            "key": "plugin.form-builder.global-settings.manage",
+            "label": "Manage Global Form Builder Settings",
+            "supports_scope": false,
+            "default_roles": [
+                "admin"
+            ]
+        },
+        {
+            "key": "plugin.form-builder.bin.manage",
+            "label": "Manage the Form Builder Bin",
+            "supports_scope": false,
+            "default_roles": [
+                "admin"
+            ],
+            "delegable": true
+        }
     ],
-    "nav": [
-      {
-        "label": "Form Builder",
-        "icon": "list",
-        "page": "admin/tools/form-builder",
-        "parent": "pages",
-        "roles": ["admin", "author"]
-      }
-    ]
-  }
+    "dependencies": {
+        "js": [
+            "modal-helpers",
+            "media-selector",
+            "file-selector"
+        ]
+    },
+    "admin": {
+        "pages": [
+            {
+                "route": "admin/tools/form-builder",
+                "file": "admin/index.php",
+                "title": "Form Builder",
+                "permission": "plugin.form-builder.workspace.access",
+                "roles": [
+                    "admin",
+                    "author"
+                ]
+            },
+            {
+                "route": "admin/bin/form-builder/index",
+                "file": "admin/bin.php",
+                "title": "Bin Form Builder",
+                "permission": "plugin.form-builder.bin.manage",
+                "roles": [
+                    "admin"
+                ],
+                "hidden": true
+            }
+        ],
+        "nav": [
+            {
+                "label": "Form Builder",
+                "icon": "list",
+                "page": "admin/tools/form-builder",
+                "parent": "pages",
+                "roles": [
+                    "admin",
+                    "author"
+                ]
+            }
+        ]
+    }
 }

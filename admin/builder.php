@@ -1,5 +1,5 @@
 <?php
-// /plugins/form-builder/admin/builder.php  ($form, $pdo, $uid, $role, $csrf in scope)
+// /plugins/form-builder/admin/builder.php  ($form, $pdo, $uid, $csrf in scope)
 declare(strict_types=1);
 
 require_once __DIR__ . '/_canvas.php';
@@ -8,6 +8,8 @@ $formId = (int)$form['id'];
 $types = fb_field_types();
 $tree = fb_get_tree($pdo, $formId);
 $trashedCount = (int)$pdo->query("SELECT COUNT(*) FROM `fb_fields` WHERE form_id = {$formId} AND deleted_at IS NOT NULL AND type NOT IN ('row','col')")->fetchColumn();
+$canManageBin = user_can($pdo, $uid, 'plugin.form-builder.bin.manage')
+    && user_can($pdo, $uid, 'plugin.form-builder.forms.manage-any');
 ?>
 <div class="fba">
   <div class="fba-head">
@@ -16,7 +18,7 @@ $trashedCount = (int)$pdo->query("SELECT COUNT(*) FROM `fb_fields` WHERE form_id
       <a class="fba-btn" href="<?= fb_url(['view' => 'forms', 'id' => null]) ?>">&larr; Forms</a>
       <a class="fba-btn" href="<?= fb_url(['view' => 'submissions', 'id' => $formId]) ?>">Submissions</a>
       <a class="fba-btn" href="<?= fb_url(['view' => 'settings', 'id' => $formId]) ?>">Settings</a>
-      <?php if ($role === 'admin'): ?>
+      <?php if ($canManageBin): ?>
       <a class="fba-btn" href="?page=admin/bin/form-builder/index">🗑 Bin<?= $trashedCount > 0 ? ' (' . $trashedCount . ')' : '' ?></a>
       <?php endif; ?>
     </div>

@@ -1,6 +1,6 @@
 <?php
 // /plugins/form-builder/admin/bin.php — Bin page for soft-deleted fields/elements
-// Route: admin/bin/form-builder/index (admin only, via plugin.json roles)
+// Route: admin/bin/form-builder/index (requires bin.manage and forms.manage-any)
 declare(strict_types=1);
 
 if (!defined('DASHBOARD_CONTEXT')) exit;
@@ -12,9 +12,8 @@ if (!($pdo instanceof PDO)) { echo '<p>Database not available.</p>'; return; }
 
 fb_ensure_schema($pdo);
 
-$uid = function_exists('current_user_id') ? current_user_id() : 0;
-$role = function_exists('current_user_role') ? current_user_role($pdo) : null;
-if ($role !== 'admin') { echo '<div class="fba-empty">Hanya admin yang bisa mengakses Bin.</div>'; return; }
+[$uid] = adiwira_require_permission($pdo, 'plugin.form-builder.bin.manage', false);
+adiwira_require_permission($pdo, 'plugin.form-builder.forms.manage-any', false);
 
 $csrf = function_exists('csrf_token') ? csrf_token() : '';
 $flash = '';
@@ -45,7 +44,7 @@ $fbPruneAncestors = static function (?int $parentId) use ($pdo, $fbGetNode, &$fb
 
 // ---------------- POST actions ----------------
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
-    $okCsrf = function_exists('csrf_check') ? csrf_check($_POST['csrf_token'] ?? '') : true;
+    $okCsrf = function_exists('csrf_check') && csrf_check($_POST['csrf_token'] ?? '');
     $act = (string)($_POST['fb_action'] ?? '');
     if (!$okCsrf) {
         $flash = 'Invalid CSRF token.'; $flashOk = false;
@@ -211,7 +210,7 @@ fb_admin_css();
   <?php endif; ?>
 
   <div class="fba-card">
-    <span class="fba-hint"><strong>Fields</strong> &amp; element yang dihapus dari builder disembunyikan di sini. <strong>Restore</strong> mengembalikan field beserta data &amp; pengaturannya ke posisi semula (atau row baru jika row aslinya sudah tidak ada). Hanya admin yang bisa melihat halaman ini.</span>
+    <span class="fba-hint"><strong>Fields</strong> &amp; element yang dihapus dari builder disembunyikan di sini. <strong>Restore</strong> mengembalikan field beserta data &amp; pengaturannya ke posisi semula (atau row baru jika row aslinya sudah tidak ada). Hanya pengguna dengan izin Bin yang bisa melihat halaman ini.</span>
   </div>
 
   <?php if (!$items): ?>

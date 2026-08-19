@@ -1,5 +1,5 @@
 <?php
-// /plugins/form-builder/admin/submissions.php  ($form, $pdo, $uid, $role, $csrf in scope)
+// /plugins/form-builder/admin/submissions.php  ($form, $pdo, $uid, $csrf in scope)
 declare(strict_types=1);
 
 $formId = (int)$form['id'];
@@ -111,7 +111,11 @@ if (($_GET['action'] ?? '') === 'export') {
 }
 
 // ---------------- Bulk POST ----------------
-if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && function_exists('csrf_check') && csrf_check($_POST['csrf_token'] ?? '')) {
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+    if (!function_exists('csrf_check') || !csrf_check($_POST['csrf_token'] ?? '')) {
+        echo '<div class="fba-empty">Invalid CSRF token.</div>';
+        return;
+    }
     $act = (string)($_POST['fb_action'] ?? '');
     $ids = array_values(array_filter(array_map('intval', (array)($_POST['ids'] ?? []))));
     if (!$ids && isset($_POST['id_one'])) $ids = [(int)$_POST['id_one']];
@@ -159,10 +163,6 @@ if (isset($_GET['detail'])) {
     $st = $pdo->prepare('SELECT * FROM `fb_submissions` WHERE id = ? AND form_id = ? LIMIT 1');
     $st->execute([(int)$_GET['detail'], $formId]);
     $detail = $st->fetch(PDO::FETCH_ASSOC) ?: null;
-    if ($detail && !(int)$detail['is_read']) {
-        $pdo->prepare('UPDATE `fb_submissions` SET is_read = 1 WHERE id = ?')->execute([(int)$detail['id']]);
-        $detail['is_read'] = 1;
-    }
 }
 
 $stats = [
