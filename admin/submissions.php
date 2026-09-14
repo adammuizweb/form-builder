@@ -6,6 +6,8 @@ $formId = (int)$form['id'];
 $settings = fb_form_settings($form);
 $fields = fb_flat_fields(fb_get_fields($pdo, $formId));
 $types = fb_field_types();
+$canWorkflow = user_can($pdo, $uid, 'plugin.form-builder.workflow.manage');
+$workflowStatuses = $settings['workflow_statuses'];
 $optionFields = array_values(array_filter($fields, static fn($f) => in_array($f['type'], ['select', 'radio', 'checkbox'], true) && empty($f['is_hidden'])));
 $inputFields = array_values(array_filter($fields, static fn($f) => !empty($types[$f['type']]['input']) && empty($types[$f['type']]['file']) && empty($f['is_hidden'])));
 
@@ -26,13 +28,14 @@ if (($_GET['action'] ?? '') === 'file') {
     $info = is_array($fj) ? ($fj[$fkey] ?? null) : null;
     $rel = is_array($info) ? (string)($info['stored'] ?? '') : '';
     if ($rel === '' || str_contains($rel, '..') || str_starts_with($rel, '/')) { http_response_code(404); exit('File not found'); }
-    $path = fb_files_base_dir($form) . '/' . $rel;
-    if (!is_file($path)) { http_response_code(404); exit('File not found'); }
-    $mime = 'application/octet-stream';
-    if (function_exists('finfo_open')) { $fi = finfo_open(FILEINFO_MIME_TYPE); $mime = (string)finfo_file($fi, $path); finfo_close($fi); }
+    $path = fb_contained_path(fb_files_base_dir($form), $rel, true);
+    if ($path === null || !is_file($path)) { http_response_code(404); exit('File not found'); }
+    $mime = is_string($info['mime'] ?? null) && preg_match('#\A[a-z0-9.+-]+/[a-z0-9.+-]+\z#i', $info['mime']) ? $info['mime'] : 'application/octet-stream';
+    header('Cache-Control: private, no-store, max-age=0');
+    header('Pragma: no-cache');
     header('Content-Type: ' . $mime);
     header('Content-Length: ' . filesize($path));
-    header('Content-Disposition: inline; filename="' . preg_replace('/[^A-Za-z0-9._-]/', '_', (string)($info['original'] ?? 'file')) . '"');
+    header('Content-Disposition: attachment; filename="' . preg_replace('/[^A-Za-z0-9._-]/', '_', (string)($info['original'] ?? 'file')) . '"');
     header('X-Content-Type-Options: nosniff');
     readfile($path);
     exit;
@@ -49,15 +52,17 @@ $perPage = 20;
 
 $where = ['form_id = :fid'];
 $params = [':fid' => $formId];
+$workflow = (string)($_GET['workflow'] ?? '');
+if ($workflow !== '' && in_array($workflow, $workflowStatuses, true)) { $where[] = 'workflow_status = :workflow'; $params[':workflow'] = $workflow; }
 if ($state === 'trash') $where[] = 'is_deleted = 1';
 else {
     $where[] = 'is_deleted = 0';
     if ($state === 'new') $where[] = 'is_read = 0';
     if ($state === 'read') $where[] = 'is_read = 1';
 }
-if ($q !== '') { $where[] = 'search_blob LIKE :q'; $params[':q'] = '%' . $q . '%'; }
-if ($df !== '' && strtotime($df) !== false) { $where[] = 'created_at >= :df'; $params[':df'] = $df . ' 00:00:00'; }
-if ($dt !== '' && strtotime($dt) !== false) { $where[] = 'created_at <= :dt'; $params[':dt'] = $dt . ' 23:59:59'; }
+if ($q !== '') { $where[] = '(search_blob LIKE :q OR reference_code LIKE :q)'; $params[':q'] = '%' . $q . '%'; }
+if (preg_match('/\A\d{4}-\d{2}-\d{2}\z/', $df)) { $where[] = 'created_at >= :df'; $params[':df'] = $df . ' 00:00:00'; }
+if (preg_match('/\A\d{4}-\d{2}-\d{2}\z/', $dt)) { $where[] = 'created_at <= :dt'; $params[':dt'] = $dt . ' 23:59:59'; }
 
 // Auto option-field filters: ff_{key}
 foreach ($optionFields as $of) {
@@ -85,24 +90,24 @@ if (($_GET['action'] ?? '') === 'export') {
     $out = fopen('php://output', 'w');
     fwrite($out, "\xEF\xBB\xBF");
     $esc = '\\';
-    $header = ['Ref', 'Submitted', 'IP'];
+    $header = ['Ref', 'Workflow', 'Submitted', 'Updated', 'IP'];
     foreach ($inputFields as $f) $header[] = $f['label'];
     $fileFields = array_values(array_filter($fields, static fn($f) => !empty($types[$f['type']]['file'])));
     foreach ($fileFields as $f) $header[] = $f['label'] . ' (file)';
     if ($settings['show_total'] === '1') $header[] = $settings['total_label'];
-    fputcsv($out, $header, ',', '"', $esc);
+    fputcsv($out, array_map('fb_csv_cell', $header), ',', '"', $esc);
     $n = 0;
     while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
         $n++;
         $data = json_decode((string)$r['data_json'], true) ?: [];
         $filesJ = json_decode((string)$r['files_json'], true) ?: [];
         $tot = json_decode((string)$r['totals_json'], true) ?: [];
-        $row = ['FB-' . $formId . '-' . str_pad((string)$r['id'], 5, '0', STR_PAD_LEFT), $r['created_at'], $r['ip']];
+        $row = [$r['reference_code'], $r['workflow_status'], $r['created_at'], $r['updated_at'], $r['ip']];
         foreach ($inputFields as $f) {
             $v = $data[$f['field_key']] ?? '';
-            $row[] = is_array($v) ? implode(', ', $v) : (string)$v;
+            $row[] = fb_csv_cell($v);
         }
-        foreach ($fileFields as $f) $row[] = (string)($filesJ[$f['field_key']]['original'] ?? '');
+        foreach ($fileFields as $f) $row[] = fb_csv_cell((string)($filesJ[$f['field_key']]['original'] ?? ''));
         if ($settings['show_total'] === '1') $row[] = (string)($tot['total'] ?? 0);
         fputcsv($out, $row, ',', '"', $esc);
     }
@@ -117,7 +122,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         return;
     }
     $act = (string)($_POST['fb_action'] ?? '');
-    $ids = array_values(array_filter(array_map('intval', (array)($_POST['ids'] ?? []))));
+    $ids = array_slice(array_values(array_unique(array_filter(array_map('intval', (array)($_POST['ids'] ?? []))))), 0, 200);
     if (!$ids && isset($_POST['id_one'])) $ids = [(int)$_POST['id_one']];
     if ($ids && in_array($act, ['read', 'unread', 'trash', 'restore', 'delete'], true)) {
         $in = implode(',', array_fill(0, count($ids), '?'));
@@ -130,12 +135,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             case 'delete':
                 $st = $pdo->prepare("SELECT files_json FROM `fb_submissions` WHERE id IN ({$in}) AND form_id = ?");
                 $st->execute($args);
-                $root = fb_files_base_dir($form) . '/';
+                $root = fb_files_base_dir($form);
                 while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
                     $fj = json_decode((string)($r['files_json'] ?? ''), true);
                     if (is_array($fj)) foreach ($fj as $info) {
                         $rel = (string)($info['stored'] ?? '');
-                        if ($rel !== '' && !str_contains($rel, '..') && !str_starts_with($rel, '/')) @unlink($root . $rel);
+                        $path = fb_contained_path($root, $rel, true);
+                        if ($rel !== '' && $path === null) throw new RuntimeException('Refusing unsafe private attachment path.');
+                        if ($path !== null && is_file($path) && !unlink($path)) throw new RuntimeException('Unable to remove private attachment.');
                     }
                 }
                 $pdo->prepare("DELETE FROM `fb_submissions` WHERE id IN ({$in}) AND form_id = ?")->execute($args);
@@ -143,6 +150,28 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         }
         fb_js_redirect(fb_url());
         return;
+    }
+    if ($ids && $canWorkflow && ($act === 'workflow' || $act === 'note')) {
+        $next = strtolower(trim((string)($_POST['workflow_status'] ?? '')));
+        $note = trim((string)($_POST['reviewer_note'] ?? ''));
+        if (($act === 'workflow' && !in_array($next, $workflowStatuses, true)) || mb_strlen($note) > 4000 || ($act === 'note' && $note === '')) { echo '<div class="fba-empty">Invalid workflow update.</div>'; return; }
+        $pdo->beginTransaction();
+        try {
+            $select = $pdo->prepare('SELECT id,workflow_status,notes_json,history_json FROM fb_submissions WHERE id = ? AND form_id = ? FOR UPDATE');
+            $update = $pdo->prepare('UPDATE fb_submissions SET workflow_status=?,notes_json=?,history_json=?,updated_at=NOW() WHERE id=? AND form_id=?');
+            foreach ($ids as $sid) {
+                $select->execute([$sid,$formId]); $submission = $select->fetch(PDO::FETCH_ASSOC); if (!$submission) continue;
+                $notes = json_decode((string)$submission['notes_json'], true); if (!is_array($notes)) $notes = [];
+                $history = json_decode((string)$submission['history_json'], true); if (!is_array($history)) $history = [];
+                $target = $act === 'workflow' ? $next : (string)$submission['workflow_status'];
+                $at = gmdate('c');
+                if ($note !== '') $notes[] = ['at'=>$at,'actor'=>$uid,'text'=>$note];
+                $history[] = ['at'=>$at,'actor'=>$uid,'from'=>$submission['workflow_status'],'to'=>$target,'note_added'=>$note !== ''];
+                $update->execute([$target,fb_json_encode($notes),fb_json_encode($history),$sid,$formId]);
+            }
+            $pdo->commit();
+        } catch (Throwable $error) { if ($pdo->inTransaction()) $pdo->rollBack(); throw $error; }
+        fb_js_redirect(fb_url()); return;
     }
 }
 
@@ -229,6 +258,7 @@ function fb_render_value(array $field, mixed $v, int $sid, array $filesJ, string
       <input type="hidden" name="id" value="<?= $formId ?>">
       <input type="hidden" name="st" value="<?= htmlspecialchars($state, ENT_QUOTES) ?>">
       <input type="search" name="q" value="<?= htmlspecialchars($q, ENT_QUOTES) ?>" placeholder="Search…" style="width:160px">
+      <select name="workflow"><option value="">All workflow statuses</option><?php foreach ($workflowStatuses as $ws): ?><option value="<?= htmlspecialchars($ws, ENT_QUOTES) ?>" <?= $workflow === $ws ? 'selected' : '' ?>><?= htmlspecialchars(ucfirst($ws), ENT_QUOTES) ?></option><?php endforeach; ?></select>
       <input type="date" name="df" value="<?= htmlspecialchars($df, ENT_QUOTES) ?>" title="From">
       <input type="date" name="dt" value="<?= htmlspecialchars($dt, ENT_QUOTES) ?>" title="To">
       <?php foreach ($optionFields as $of):
@@ -257,7 +287,7 @@ function fb_render_value(array $field, mixed $v, int $sid, array $filesJ, string
           <th>Ref</th>
           <?php foreach ($columns as $c): ?><th><?= htmlspecialchars($c['label'], ENT_QUOTES) ?></th><?php endforeach; ?>
           <?php if ($settings['show_total'] === '1'): ?><th><?= htmlspecialchars($settings['total_label'], ENT_QUOTES) ?></th><?php endif; ?>
-          <th>Date</th><th>State</th><th>Actions</th>
+          <th>Date</th><th>Workflow</th><th>State</th><th>Actions</th>
         </tr></thead>
         <tbody>
         <?php foreach ($rows as $r):
@@ -267,7 +297,7 @@ function fb_render_value(array $field, mixed $v, int $sid, array $filesJ, string
           ?>
           <tr class="<?= (int)$r['is_deleted'] ? '' : ((int)$r['is_read'] ? '' : 'unread') ?>">
             <td><input type="checkbox" class="fba-row-check" name="ids[]" value="<?= $sid ?>"></td>
-            <td class="fba-mono">FB-<?= $formId ?>-<?= str_pad((string)$sid, 5, '0', STR_PAD_LEFT) ?></td>
+             <td class="fba-mono"><?= htmlspecialchars((string)$r['reference_code'], ENT_QUOTES) ?></td>
             <?php foreach ($columns as $c):
               $v = $data[$c['field_key']] ?? '';
               $txt = is_array($v) ? implode(', ', $v) : (string)$v;
@@ -275,7 +305,8 @@ function fb_render_value(array $field, mixed $v, int $sid, array $filesJ, string
             <td><?= htmlspecialchars(mb_strimwidth($txt, 0, 60, '…'), ENT_QUOTES) ?></td>
             <?php endforeach; ?>
             <?php if ($settings['show_total'] === '1'): ?><td class="fba-mono"><?= fb_format_rupiah((int)($tot['total'] ?? 0)) ?></td><?php endif; ?>
-            <td style="white-space:nowrap" class="fba-sub"><?= htmlspecialchars(date('d M Y H:i', strtotime((string)$r['created_at'])), ENT_QUOTES) ?></td>
+             <td style="white-space:nowrap" class="fba-sub"><?= htmlspecialchars(date('d M Y H:i', strtotime((string)$r['created_at'])), ENT_QUOTES) ?></td>
+             <td><span class="fba-badge read"><?= htmlspecialchars(ucfirst((string)$r['workflow_status']), ENT_QUOTES) ?></span></td>
             <td>
               <?php if ((int)$r['is_deleted']): ?><span class="fba-badge trash">Trash</span>
               <?php elseif ((int)$r['is_read']): ?><span class="fba-badge read">Read</span>
@@ -305,6 +336,7 @@ function fb_render_value(array $field, mixed $v, int $sid, array $filesJ, string
         <option value="delete">Delete permanently</option>
         <?php endif; ?>
       </select>
+      <?php if ($canWorkflow): ?><select name="workflow_status"><?php foreach ($workflowStatuses as $ws): ?><option value="<?= htmlspecialchars($ws, ENT_QUOTES) ?>"><?= htmlspecialchars(ucfirst($ws), ENT_QUOTES) ?></option><?php endforeach; ?></select><button class="fba-btn" name="fb_action" value="workflow" type="submit">Set workflow status</button><?php endif; ?>
       <button class="fba-btn" type="submit">Apply to selected</button>
     </div>
   </form>
@@ -331,7 +363,7 @@ function fb_render_value(array $field, mixed $v, int $sid, array $filesJ, string
 <div class="fba-overlay" onclick="if(event.target===this)location.href='<?= fb_url(['detail' => null]) ?>'">
   <div class="fba-modal">
     <div class="fba-modal-head">
-      <h2>FB-<?= $formId ?>-<?= str_pad((string)$sid, 5, '0', STR_PAD_LEFT) ?></h2>
+       <h2><?= htmlspecialchars((string)$detail['reference_code'], ENT_QUOTES) ?></h2>
       <a href="<?= fb_url(['detail' => null]) ?>">&times;</a>
     </div>
     <div class="fba-modal-body">
@@ -350,6 +382,9 @@ function fb_render_value(array $field, mixed $v, int $sid, array $filesJ, string
         <div class="fba-field"><label>IP</label><div class="fba-mono"><?= htmlspecialchars((string)$detail['ip'], ENT_QUOTES) ?></div></div>
         <div class="fba-field"><label>Submitted</label><div><?= htmlspecialchars(date('d M Y, H:i:s', strtotime((string)$detail['created_at'])), ENT_QUOTES) ?></div></div>
       </div>
+      <div class="fba-field"><label>Workflow</label><div><?= htmlspecialchars(ucfirst((string)$detail['workflow_status']), ENT_QUOTES) ?> (updated <?= htmlspecialchars((string)$detail['updated_at'], ENT_QUOTES) ?>)</div></div>
+      <?php $reviewNotes = json_decode((string)$detail['notes_json'], true); if (is_array($reviewNotes) && $reviewNotes): ?><div class="fba-field"><label>Reviewer notes</label><?php foreach ($reviewNotes as $reviewNote): ?><div><strong><?= htmlspecialchars((string)($reviewNote['at'] ?? ''), ENT_QUOTES) ?></strong> <?= nl2br(htmlspecialchars((string)($reviewNote['text'] ?? ''), ENT_QUOTES)) ?></div><?php endforeach; ?></div><?php endif; ?>
+      <?php if ($canWorkflow): ?><form method="post"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>"><input type="hidden" name="id_one" value="<?= $sid ?>"><input type="hidden" name="fb_action" value="note"><div class="fba-field"><label>Append reviewer note</label><textarea name="reviewer_note" maxlength="4000" required></textarea></div><button class="fba-btn primary" type="submit">Add note</button></form><form method="post"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>"><input type="hidden" name="id_one" value="<?= $sid ?>"><input type="hidden" name="fb_action" value="workflow"><div class="fba-field"><label>Change workflow status</label><select name="workflow_status"><?php foreach ($workflowStatuses as $ws): ?><option value="<?= htmlspecialchars($ws, ENT_QUOTES) ?>" <?= $detail['workflow_status'] === $ws ? 'selected' : '' ?>><?= htmlspecialchars(ucfirst($ws), ENT_QUOTES) ?></option><?php endforeach; ?></select></div><button class="fba-btn primary" type="submit">Update status</button></form><?php endif; ?>
     </div>
   </div>
 </div>

@@ -9,10 +9,10 @@ if (!defined('DASHBOARD_CONTEXT') && !defined('PLUGIN_SYSTEM_LOADED')) {
 // Submit endpoint for all public forms. Dedicated prefix; forms (rendered via
 // the [form slug="..."] shortcode) POST multipart to /form-submit/ (trailing slash).
 if (function_exists('register_frontend_route')) {
-    register_frontend_route('form-submit', PLUGIN_PATH . '/form-builder/public/submit.php');
+    register_frontend_route('form-submit', PLUGIN_PATH . '/form-builder/public/submit.php', ['match' => 'exact', 'methods' => ['POST']]);
     // Builder AJAX endpoint (admin-authenticated, JSON). Frontend route keeps
     // output clean of theme markup.
-    register_frontend_route('fb-builder', PLUGIN_PATH . '/form-builder/admin/ajax.php');
+    register_frontend_route('fb-builder', PLUGIN_PATH . '/form-builder/admin/ajax.php', ['match' => 'exact', 'methods' => ['POST']]);
 }
 
 const FB_SECRET_KEY = 'form_builder_secret';
@@ -29,105 +29,18 @@ function fb_get_secret(PDO $pdo): string {
     return $secret;
 }
 
-function fb_ensure_schema(PDO $pdo): void {
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS `fb_forms` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-            `slug` varchar(80) NOT NULL,
-            `title` varchar(255) NOT NULL,
-            `description` text DEFAULT NULL,
-            `status` varchar(20) NOT NULL DEFAULT 'active',
-            `settings_json` longtext DEFAULT NULL,
-            `css` mediumtext DEFAULT NULL,
-            `js` mediumtext DEFAULT NULL,
-            `access_json` longtext DEFAULT NULL,
-            `created_by` bigint(20) unsigned DEFAULT NULL,
-            `deleted_at` datetime DEFAULT NULL,
-            `created_at` datetime NOT NULL DEFAULT current_timestamp(),
-            `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
-            PRIMARY KEY (`id`),
-            UNIQUE KEY `slug` (`slug`),
-            KEY `status` (`status`),
-            KEY `deleted_at` (`deleted_at`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-    ");
-    try {
-        $pdo->exec("ALTER TABLE `fb_forms` ADD COLUMN IF NOT EXISTS `deleted_at` datetime DEFAULT NULL AFTER `created_by`");
-        $pdo->exec("ALTER TABLE `fb_forms` ADD INDEX IF NOT EXISTS `deleted_at` (`deleted_at`)");
-    } catch (Throwable $e) {
-        // ignore if syntax unsupported or column exists
-    }
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS `fb_fields` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-            `form_id` bigint(20) unsigned NOT NULL,
-            `parent_id` bigint(20) unsigned NOT NULL DEFAULT 0,
-            `type` varchar(20) NOT NULL DEFAULT 'text',
-            `label` varchar(255) NOT NULL DEFAULT '',
-            `field_key` varchar(80) NOT NULL DEFAULT '',
-            `placeholder` varchar(255) DEFAULT NULL,
-            `help_text` varchar(255) DEFAULT NULL,
-            `required` tinyint(1) NOT NULL DEFAULT 0,
-            `width` tinyint(3) unsigned NOT NULL DEFAULT 12,
-            `sort_order` int(11) NOT NULL DEFAULT 0,
-            `is_hidden` tinyint(1) NOT NULL DEFAULT 0,
-            `options_json` longtext DEFAULT NULL,
-            `validation_json` longtext DEFAULT NULL,
-            `settings_json` longtext DEFAULT NULL,
-            `deleted_at` datetime DEFAULT NULL,
-            `created_at` datetime NOT NULL DEFAULT current_timestamp(),
-            PRIMARY KEY (`id`),
-            KEY `form_id` (`form_id`),
-            KEY `parent_id` (`parent_id`),
-            KEY `sort_order` (`sort_order`),
-            KEY `deleted_at` (`deleted_at`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-    ");
-    // idempotent migrations
-    try {
-        $pdo->exec("ALTER TABLE `fb_fields` ADD COLUMN IF NOT EXISTS `parent_id` bigint(20) unsigned NOT NULL DEFAULT 0 AFTER `form_id`");
-    } catch (Throwable $e) {
-        // ignore if syntax unsupported or column exists
-    }
-    try {
-        $pdo->exec("ALTER TABLE `fb_fields` ADD COLUMN IF NOT EXISTS `settings_json` longtext DEFAULT NULL AFTER `validation_json`");
-        $pdo->exec("ALTER TABLE `fb_fields` ADD COLUMN IF NOT EXISTS `deleted_at` datetime DEFAULT NULL AFTER `settings_json`");
-        $pdo->exec("ALTER TABLE `fb_fields` ADD INDEX IF NOT EXISTS `deleted_at` (`deleted_at`)");
-    } catch (Throwable $e) {
-        // ignore if syntax unsupported or column exists
-    }
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS `fb_submissions` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-            `form_id` bigint(20) unsigned NOT NULL,
-            `data_json` longtext DEFAULT NULL,
-            `files_json` longtext DEFAULT NULL,
-            `totals_json` longtext DEFAULT NULL,
-            `search_blob` mediumtext DEFAULT NULL,
-            `ip` varchar(45) DEFAULT NULL,
-            `is_read` tinyint(1) NOT NULL DEFAULT 0,
-            `is_deleted` tinyint(1) NOT NULL DEFAULT 0,
-            `created_at` datetime NOT NULL DEFAULT current_timestamp(),
-            PRIMARY KEY (`id`),
-            KEY `form_id` (`form_id`),
-            KEY `created_at` (`created_at`),
-            KEY `is_read` (`is_read`),
-            KEY `is_deleted` (`is_deleted`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-    ");
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS `fb_rate_limits` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-            `ip` varchar(45) NOT NULL,
-            `action` varchar(40) NOT NULL,
-            `bucket` int(10) unsigned NOT NULL,
-            `count` int(10) unsigned NOT NULL DEFAULT 1,
-            PRIMARY KEY (`id`),
-            UNIQUE KEY `ip_action_bucket` (`ip`,`action`,`bucket`),
-            KEY `bucket` (`bucket`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-    ");
+function fb_assert_schema(PDO $pdo): void {
+    static $checked = [];
+    $key = spl_object_id($pdo);
+    if (isset($checked[$key])) return;
+    $st = $pdo->query("SELECT reference_code, workflow_status, updated_at FROM fb_submissions LIMIT 0");
+    if (!$st) throw new RuntimeException('Form Builder migrations are incomplete.');
+    if (!$pdo->query('SELECT definition_id FROM fb_import_ledger LIMIT 0') || !$pdo->query('SELECT source_namespace FROM fb_submission_imports LIMIT 0')) throw new RuntimeException('Form Builder import migrations are incomplete.');
+    $checked[$key] = true;
 }
+
+/** @deprecated Runtime schema mutation was removed in 1.6.0. */
+function fb_ensure_schema(PDO $pdo): void { fb_assert_schema($pdo); }
 
 // ---------------- Field type registry ----------------
 // group: 'input' = fillable by the visitor; 'element' = display-only content.
@@ -234,7 +147,6 @@ function fb_flat_fields(array $fields): array {
 
 // Layout tree: [ ['node'=>row, 'cols'=>[ ['node'=>col, 'fields'=>[...] ], ...] ], ... ]
 function fb_get_tree(PDO $pdo, int $formId): array {
-    fb_migrate_to_tree($pdo, $formId);
     $all = fb_get_fields($pdo, $formId);
     $byParent = [];
     foreach ($all as $f) $byParent[(int)$f['parent_id']][] = $f;
@@ -249,38 +161,6 @@ function fb_get_tree(PDO $pdo, int $formId): array {
         $tree[] = ['node' => $row, 'cols' => $cols];
     }
     return $tree;
-}
-
-// One-time migration: wrap legacy flat fields (parent_id=0) into rows/columns,
-// grouping by their old width so the visual layout is preserved.
-function fb_migrate_to_tree(PDO $pdo, int $formId): void {
-    $hasRows = (bool)$pdo->query("SELECT 1 FROM `fb_fields` WHERE form_id = {$formId} AND type = 'row' LIMIT 1")->fetchColumn();
-    if ($hasRows) return;
-    $orphans = $pdo->query("SELECT * FROM `fb_fields` WHERE form_id = {$formId} AND parent_id = 0 AND deleted_at IS NULL AND type NOT IN ('row','col') ORDER BY sort_order, id")->fetchAll(PDO::FETCH_ASSOC);
-    if (!is_array($orphans) || !$orphans) return;
-    $groups = []; $cur = []; $sum = 0;
-    foreach ($orphans as $f) {
-        $w = max(1, min(12, (int)($f['width'] ?? 12) ?: 12));
-        if ($cur && $sum + $w > 12) { $groups[] = $cur; $cur = []; $sum = 0; }
-        $cur[] = $f; $sum += $w;
-        if ($sum >= 12) { $groups[] = $cur; $cur = []; $sum = 0; }
-    }
-    if ($cur) $groups[] = $cur;
-    $rowSort = 10;
-    foreach ($groups as $g) {
-        $pdo->prepare("INSERT INTO `fb_fields` (form_id, type, label, field_key, parent_id, sort_order) VALUES (?, 'row', '', ?, 0, ?)")
-            ->execute([$formId, 'row_' . bin2hex(random_bytes(4)), $rowSort]);
-        $rowId = (int)$pdo->lastInsertId();
-        $rowSort += 10;
-        $colSort = 10;
-        foreach ($g as $f) {
-            $pdo->prepare("INSERT INTO `fb_fields` (form_id, type, label, field_key, parent_id, sort_order) VALUES (?, 'col', '', ?, ?, ?)")
-                ->execute([$formId, 'col_' . bin2hex(random_bytes(4)), $rowId, $colSort]);
-            $colId = (int)$pdo->lastInsertId();
-            $colSort += 10;
-            $pdo->prepare('UPDATE `fb_fields` SET parent_id = ? WHERE id = ?')->execute([$colId, (int)$f['id']]);
-        }
-    }
 }
 
 function fb_field_options(array $field): array {
@@ -312,11 +192,17 @@ function fb_default_settings(): array {
         'recaptcha'       => '0',
         'rate_max'        => 10,
         'rate_window'     => 3600,
+        'min_fill_seconds'=> 2,
         'notify_email'    => '',
+        'confirmation_email_field' => '',
+        'reply_to_email_field' => '',
+        'workflow_statuses' => ['submitted', 'reviewing', 'accepted', 'rejected', 'archived'],
+        'translations' => [],
         'show_total'      => '0',
         'total_label'     => 'Total',
         'columns'         => [],
         'accent'          => 'green',
+        'unsafe_code_enabled' => false,
     ];
 }
 
@@ -324,8 +210,12 @@ function fb_form_settings(array $form): array {
     $raw = json_decode((string)($form['settings_json'] ?? ''), true);
     $s = array_merge(fb_default_settings(), is_array($raw) ? $raw : []);
     $s['columns'] = is_array($s['columns'] ?? null) ? array_values(array_map('strval', $s['columns'])) : [];
-    $s['rate_max'] = max(1, (int)$s['rate_max']);
-    $s['rate_window'] = max(60, (int)$s['rate_window']);
+    $s['rate_max'] = max(1, min(10000, (int)$s['rate_max']));
+    $s['rate_window'] = max(60, min(604800, (int)$s['rate_window']));
+    $s['min_fill_seconds'] = max(0, min(30, (int)($s['min_fill_seconds'] ?? 2)));
+    $statuses = array_values(array_unique(array_filter(array_map('strval', (array)($s['workflow_statuses'] ?? [])), static fn(string $v): bool => preg_match('/\A[a-z][a-z0-9_-]{0,39}\z/', $v) === 1)));
+    $s['workflow_statuses'] = $statuses ?: ['submitted', 'reviewing', 'accepted', 'rejected', 'archived'];
+    if (!in_array('submitted', $s['workflow_statuses'], true)) array_unshift($s['workflow_statuses'], 'submitted');
     return $s;
 }
 
@@ -404,15 +294,16 @@ function fb_hard_delete_form(PDO $pdo, array $form): void {
     $fid = (int)$form['id'];
     $subs = $pdo->prepare('SELECT files_json FROM `fb_submissions` WHERE form_id = ?');
     $subs->execute([$fid]);
-    $root = fb_files_base_dir($form) . '/';
+    $root = fb_files_base_dir($form);
     while ($r = $subs->fetch(PDO::FETCH_ASSOC)) {
         $fj = json_decode((string)($r['files_json'] ?? ''), true);
         if (is_array($fj)) foreach ($fj as $info) {
             $rel = (string)($info['stored'] ?? '');
-            if ($rel !== '' && !str_contains($rel, '..') && !str_starts_with($rel, '/')) @unlink($root . $rel);
+            $path = function_exists('fb_contained_path') ? fb_contained_path($root, $rel, true) : null;
+            if ($rel !== '' && $path === null) throw new RuntimeException('Refusing unsafe private attachment path.');
+            if ($path !== null && is_file($path) && !unlink($path)) throw new RuntimeException('Unable to remove private attachment.');
         }
     }
-    @rmdir($root . $fid);
     $pdo->prepare('DELETE FROM `fb_submissions` WHERE form_id = ?')->execute([$fid]);
     $pdo->prepare('DELETE FROM `fb_fields` WHERE form_id = ?')->execute([$fid]);
     $pdo->prepare('DELETE FROM `fb_forms` WHERE id = ?')->execute([$fid]);
@@ -444,7 +335,7 @@ function fb_compute_total(array $fields, array $data): int {
 
 // ---------------- Validation engine ----------------
 // Returns [data(array key=>value), fileErrors]. Files validated; moving happens in submit.php.
-function fb_validate_submission(array $fields, array $post, array $files): array {
+function fb_validate_submission(array $fields, array $post, array $files, array $settings = []): array {
     $types = fb_field_types();
     $data = [];
     $errors = [];
@@ -459,7 +350,7 @@ function fb_validate_submission(array $fields, array $post, array $files): array
         $valid = fb_field_validation($f);
 
         if (!empty($meta['file'])) {
-            $err = fb_validate_file($f, $files[$key] ?? null);
+            $err = fb_validate_file($f, $files[$key] ?? null, $settings);
             if ($err !== null) $errors[] = $err;
             continue;
         }
@@ -468,77 +359,106 @@ function fb_validate_submission(array $fields, array $post, array $files): array
         $raw = $post[$key] ?? ($isMulti ? [] : '');
 
         if ($isMulti) {
-            $vals = is_array($raw) ? array_values(array_filter(array_map('strval', $raw), static fn($v) => $v !== '')) : [];
-            if ($required && !$vals) { $errors[] = $label . ' is required'; continue; }
+            $vals = is_array($raw) && count($raw) <= 100 ? array_values(array_filter(array_map(static fn($v): string => is_scalar($v) ? mb_substr(trim((string)$v), 0, 1000) : '', $raw), static fn($v) => $v !== '')) : [];
+            if ($required && !$vals) { $errors[] = fb_message($settings, 'required', ['field'=>$label]); continue; }
             $allowed = array_column(fb_field_options($f), 'value');
             foreach ($vals as $v) {
-                if (!in_array($v, $allowed, true)) { $errors[] = $label . ' has an invalid option'; break; }
+                if (!in_array($v, $allowed, true)) { $errors[] = fb_message($settings, 'invalid_option', ['field'=>$label]); break; }
             }
             $data[$key] = $vals;
             continue;
         }
 
-        $value = is_string($raw) ? trim($raw) : '';
-        if ($required && $value === '') { $errors[] = $label . ' is required'; continue; }
+        $value = is_string($raw) && strlen($raw) <= 65536 ? trim($raw) : '';
+        if (!is_string($raw) || strlen((string)$raw) > 65536) { $errors[] = fb_message($settings, 'invalid_input', ['field'=>$label]); continue; }
+        if ($required && $value === '') { $errors[] = fb_message($settings, 'required', ['field'=>$label]); continue; }
         if ($value === '') { $data[$key] = ''; continue; }
 
         switch ($type) {
             case 'email':
-                if (!filter_var($value, FILTER_VALIDATE_EMAIL)) $errors[] = $label . ' must be a valid email';
+                if (!filter_var($value, FILTER_VALIDATE_EMAIL)) $errors[] = fb_message($settings, 'invalid_email', ['field'=>$label]);
                 break;
             case 'tel':
-                if (!preg_match('/^[0-9+()\-.\s]{6,25}$/', $value)) $errors[] = $label . ' must be a valid phone number';
+                if (!preg_match('/^[0-9+()\-.\s]{6,25}$/', $value)) $errors[] = fb_message($settings, 'invalid_phone', ['field'=>$label]);
                 break;
             case 'number':
-                if (!is_numeric($value)) { $errors[] = $label . ' must be a number'; break; }
-                if (isset($valid['min']) && $valid['min'] !== '' && (float)$value < (float)$valid['min']) $errors[] = $label . ' must be at least ' . $valid['min'];
-                if (isset($valid['max']) && $valid['max'] !== '' && (float)$value > (float)$valid['max']) $errors[] = $label . ' must be at most ' . $valid['max'];
+                if (!is_numeric($value)) { $errors[] = fb_message($settings, 'invalid_number', ['field'=>$label]); break; }
+                if (isset($valid['min']) && $valid['min'] !== '' && (float)$value < (float)$valid['min']) $errors[] = fb_message($settings, 'number_min', ['field'=>$label,'min'=>$valid['min']]);
+                if (isset($valid['max']) && $valid['max'] !== '' && (float)$value > (float)$valid['max']) $errors[] = fb_message($settings, 'number_max', ['field'=>$label,'max'=>$valid['max']]);
                 break;
             case 'date':
-                if (strtotime($value) === false) $errors[] = $label . ' must be a valid date';
+                $date = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+                $dateErrors = DateTimeImmutable::getLastErrors();
+                if ($date === false || ($dateErrors !== false && ($dateErrors['warning_count'] > 0 || $dateErrors['error_count'] > 0)) || $date->format('Y-m-d') !== $value) $errors[] = fb_message($settings, 'invalid_date', ['field'=>$label]);
                 break;
             case 'select':
             case 'radio':
                 $allowed = array_column(fb_field_options($f), 'value');
-                if (!in_array($value, $allowed, true)) $errors[] = $label . ' has an invalid option';
+                if (!in_array($value, $allowed, true)) $errors[] = fb_message($settings, 'invalid_option', ['field'=>$label]);
                 break;
         }
-        if (!empty($valid['pattern']) && @preg_match('/' . str_replace('/', '\/', (string)$valid['pattern']) . '/', $value) !== 1) {
-            $errors[] = $label . ' has an invalid format';
+        $pattern = is_string($valid['pattern'] ?? null) && strlen($valid['pattern']) <= 500 ? $valid['pattern'] : '';
+        if ($pattern !== '' && @preg_match('/(*LIMIT_MATCH=100000)(*LIMIT_RECURSION=1000)' . str_replace('/', '\/', $pattern) . '/', $value) !== 1) {
+            $errors[] = fb_message($settings, 'invalid_format', ['field'=>$label]);
         }
         if (!empty($valid['maxlength']) && mb_strlen($value) > (int)$valid['maxlength']) {
-            $errors[] = $label . ' is too long (max ' . (int)$valid['maxlength'] . ' chars)';
+            $errors[] = fb_message($settings, 'too_long', ['field'=>$label,'max'=>(int)$valid['maxlength']]);
         }
         $data[$key] = $value;
+    }
+    $labels = [];
+    foreach ($fields as $candidate) $labels[(string)$candidate['field_key']] = (string)($candidate['label'] ?: $candidate['field_key']);
+    foreach ($fields as $field) {
+        if ((string)$field['type'] !== 'date') continue;
+        $validation = fb_field_validation($field);
+        $other = (string)($validation['after_field'] ?? '');
+        if ($other !== '' && !empty($data[$field['field_key']]) && !empty($data[$other]) && $data[$field['field_key']] <= $data[$other]) {
+            $errors[] = fb_message($settings, 'date_after', ['field'=>$labels[$field['field_key']] ?? $field['field_key'],'other'=>$labels[$other] ?? $other]);
+        }
+        $other = (string)($validation['before_field'] ?? '');
+        if ($other !== '' && !empty($data[$field['field_key']]) && !empty($data[$other]) && $data[$field['field_key']] >= $data[$other]) {
+            $errors[] = fb_message($settings, 'date_before', ['field'=>$labels[$field['field_key']] ?? $field['field_key'],'other'=>$labels[$other] ?? $other]);
+        }
     }
     return [$data, $errors];
 }
 
-function fb_validate_file(array $field, ?array $file): ?string {
+function fb_validate_file(array $field, ?array $file, array $settings = []): ?string {
     $label = (string)($field['label'] !== '' ? $field['label'] : $field['field_key']);
     $required = !empty($field['required']);
     $valid = fb_field_validation($field);
     $isImage = (string)$field['type'] === 'image';
-    $maxBytes = (int)($valid['max_bytes'] ?? 5 * 1024 * 1024);
+    $maxBytes = max(1, min(25 * 1024 * 1024, (int)($valid['max_bytes'] ?? 5 * 1024 * 1024)));
     $exts = $isImage
         ? (array)($valid['exts'] ?? ['jpg', 'jpeg', 'png', 'webp'])
-        : (array)($valid['exts'] ?? ['jpg', 'jpeg', 'png', 'pdf', 'doc', 'docx']);
+        : (array)($valid['exts'] ?? ['jpg', 'jpeg', 'png', 'webp', 'pdf']);
 
     if (!is_array($file) || (int)($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
-        return $required ? $label . ' is required' : null;
+        return $required ? fb_message($settings, 'required', ['field'=>$label]) : null;
     }
-    if ((int)$file['error'] !== UPLOAD_ERR_OK) return $label . ' upload failed (code ' . (int)$file['error'] . ')';
+    if ((int)$file['error'] !== UPLOAD_ERR_OK) return fb_message($settings, 'upload_failed', ['field'=>$label]);
+    $tmp = (string)($file['tmp_name'] ?? '');
+    if ($tmp === '' || !is_uploaded_file($tmp)) return fb_message($settings, 'upload_invalid', ['field'=>$label]);
     $size = (int)($file['size'] ?? 0);
     if ($size <= 0 || $size > $maxBytes) {
-        return $label . ' exceeds the ' . round($maxBytes / 1048576, 1) . ' MB limit';
+        return fb_message($settings, 'file_too_large_server', ['field'=>$label,'size'=>round($maxBytes / 1048576, 1)]);
     }
     $orig = basename((string)($file['name'] ?? 'file'));
     $ext = strtolower(pathinfo($orig, PATHINFO_EXTENSION));
     if (!in_array($ext, array_map('strtolower', $exts), true)) {
-        return $label . ': file type .' . $ext . ' is not allowed';
+        return fb_message($settings, 'extension_not_allowed', ['field'=>$label,'extension'=>$ext]);
     }
-    if ($isImage && function_exists('getimagesize') && @getimagesize((string)$file['tmp_name']) === false) {
-        return $label . ' is not a valid image';
+    $mimeByExtension = [
+        'jpg' => ['image/jpeg'], 'jpeg' => ['image/jpeg'], 'png' => ['image/png'], 'webp' => ['image/webp'],
+        'pdf' => ['application/pdf'],
+    ];
+    $finfo = new finfo(FILEINFO_MIME_TYPE);
+    $mime = (string)$finfo->file($tmp);
+    if (!isset($mimeByExtension[$ext]) || !in_array($mime, $mimeByExtension[$ext], true)) return fb_message($settings, 'mime_mismatch', ['field'=>$label]);
+    $perExtension = is_array($valid['max_bytes_by_ext'] ?? null) ? $valid['max_bytes_by_ext'] : [];
+    if (isset($perExtension[$ext]) && $size > max(1, min($maxBytes, (int)$perExtension[$ext]))) return fb_message($settings, 'extension_size', ['field'=>$label,'extension'=>$ext]);
+    if ($isImage && function_exists('getimagesize') && @getimagesize($tmp) === false) {
+        return fb_message($settings, 'invalid_image', ['field'=>$label]);
     }
     return null;
 }
@@ -560,19 +480,59 @@ function fb_search_blob(array $fields, array $data): string {
 // Storage dir for a form's uploads (outside web root): private_files/form-builder/{formId}/YYYY/MM
 // Base dir for a form's uploads (outside web root). Filterable so other plugins
 // can relocate storage (e.g. another disk/S3 bridge) without patching the CMS core:
-//   add_filter('fb_files_base_dir', fn($base, $form) => '/mnt/uploads/fb');
-function fb_files_base_dir(array $form): string {
-    $base = dirname(__DIR__, 2) . '/private_files/form-builder';
-    if (function_exists('apply_filters')) {
-        $base = apply_filters('fb_files_base_dir', $base, $form);
+//   add_filter('fb_files_base_dir', fn($base, $form) => '/mnt/private/form-builder');
+function fb_project_root(): string {
+    $configured = defined('PLUGIN_PATH') ? (string)PLUGIN_PATH : '';
+    $plugins = $configured !== '' ? realpath($configured) : false;
+    if ($plugins === false) {
+        $plugins = realpath(dirname(__DIR__));
+        $pluginDirectory = realpath(__DIR__);
+        if ($plugins === false || basename($plugins) !== 'plugins' || $pluginDirectory === false || dirname($pluginDirectory) !== $plugins) throw new RuntimeException('Cannot resolve the Jyavani plugin directory.');
     }
-    return rtrim((string)$base, '/');
+    if (!is_dir($plugins) || ($configured !== '' && is_link($configured))) throw new RuntimeException('Unsafe Jyavani plugin directory.');
+    $root = realpath(dirname($plugins));
+    if ($root === false || $root === DIRECTORY_SEPARATOR) throw new RuntimeException('Cannot resolve the Jyavani project root.');
+    return $root;
 }
 
-function fb_upload_dir(int $formId): string {
-    $dir = dirname(__DIR__, 2) . '/private_files/form-builder/' . $formId . '/' . date('Y') . '/' . date('m');
-    if (!is_dir($dir)) @mkdir($dir, 0755, true);
-    return $dir;
+function fb_normalize_storage_base(string $path): string {
+    if ($path === '' || $path[0] !== DIRECTORY_SEPARATOR || str_contains($path, "\0") || str_contains($path, '\\') || basename($path) !== 'form-builder') {
+        throw new RuntimeException('Form Builder storage must be an absolute dedicated form-builder directory.');
+    }
+    $parent = realpath(dirname($path));
+    if ($parent === false || $parent === DIRECTORY_SEPARATOR || is_link(dirname($path))) throw new RuntimeException('Unsafe Form Builder storage parent.');
+    $normalized = $parent . DIRECTORY_SEPARATOR . 'form-builder';
+    if (file_exists($normalized)) {
+        $real = realpath($normalized);
+        if ($real === false || $real !== $normalized || !is_dir($real) || is_link($normalized)) throw new RuntimeException('Unsafe Form Builder storage directory.');
+    }
+    return $normalized;
+}
+
+function fb_files_base_dir(array $form): string {
+    $base = fb_project_root() . '/private_files/form-builder';
+    if (function_exists('apply_filters')) $base = apply_filters('fb_files_base_dir', $base, $form);
+    if (!is_string($base)) throw new RuntimeException('Invalid Form Builder storage filter result.');
+    return fb_normalize_storage_base(rtrim($base, '/'));
+}
+
+function fb_ensure_storage_directory(string $base, array $segments): string {
+    $root = realpath($base);
+    if ($root === false || !is_dir($root) || is_link($base)) throw new RuntimeException('Unsafe Form Builder storage root.');
+    $path = $root;
+    foreach ($segments as $segment) {
+        if (!is_string($segment) || preg_match('/\A[a-zA-Z0-9._-]+\z/', $segment) !== 1 || $segment === '.' || $segment === '..') {
+            throw new RuntimeException('Invalid Form Builder storage segment.');
+        }
+        $path .= DIRECTORY_SEPARATOR . $segment;
+        if (!file_exists($path) && !mkdir($path, 0700)) throw new RuntimeException('Unable to create Form Builder storage directory.');
+        $resolved = realpath($path);
+        if ($resolved === false || $resolved !== $path || !is_dir($resolved) || is_link($path)
+            || !str_starts_with($resolved, $root . DIRECTORY_SEPARATOR)) {
+            throw new RuntimeException('Unsafe Form Builder storage directory.');
+        }
+    }
+    return $path;
 }
 
 // ---------------- reCAPTCHA (global keys, per-form toggle) ----------------
@@ -610,7 +570,7 @@ add_action('admin_init', function (): void {
     $pdo = $GLOBALS['pdo'] ?? null;
     if (!($pdo instanceof PDO)) return;
     fb_get_secret($pdo);
-    fb_ensure_schema($pdo);
+    fb_assert_schema($pdo);
 });
 
 // ---------------- Bin integration (soft-deleted fields/elements) ----------------
@@ -647,18 +607,63 @@ add_filter('bin_items', function (array $items, $pdo = null, ...$rest): array {
 add_action('plugin_uninstall', function (string $name): void {
     if ($name !== 'form-builder') return;
     $pdo = $GLOBALS['pdo'] ?? null;
-    if (!($pdo instanceof PDO)) return;
-    $pdo->exec('DROP TABLE IF EXISTS `fb_forms`');
-    $pdo->exec('DROP TABLE IF EXISTS `fb_fields`');
-    $pdo->exec('DROP TABLE IF EXISTS `fb_submissions`');
+    if (!($pdo instanceof PDO)) throw new RuntimeException('Database unavailable for Form Builder cleanup.');
+    $root = fb_files_base_dir([]);
+    if (file_exists($root)) {
+        $expected = fb_normalize_storage_base($root);
+        if ($expected !== $root || is_link($root)) {
+            throw new RuntimeException('Refusing unsafe Form Builder storage cleanup.');
+        }
+        $remove = static function (string $path) use (&$remove): void {
+            if (is_link($path)) throw new RuntimeException('Refusing symlink in Form Builder storage.');
+            if (is_dir($path)) {
+                foreach (new FilesystemIterator($path) as $entry) $remove($entry->getPathname());
+                if (!rmdir($path)) throw new RuntimeException('Unable to remove Form Builder storage directory.');
+            } elseif (!unlink($path)) throw new RuntimeException('Unable to remove Form Builder private file.');
+        };
+        $remove($root);
+    }
+    $pdo->exec('DROP TABLE IF EXISTS `fb_import_ledger`');
+    $pdo->exec('DROP TABLE IF EXISTS `fb_submission_imports`');
     $pdo->exec('DROP TABLE IF EXISTS `fb_rate_limits`');
-    settings_set($pdo, FB_SECRET_KEY, '', 1);
-    settings_set($pdo, FB_RECAPTCHA_SITEKEY_KEY, '', 1);
-    settings_set($pdo, FB_RECAPTCHA_SECRET_KEY, '', 1);
+    $pdo->exec('DROP TABLE IF EXISTS `fb_submissions`');
+    $pdo->exec('DROP TABLE IF EXISTS `fb_fields`');
+    $pdo->exec('DROP TABLE IF EXISTS `fb_forms`');
+    $deleteSettings = $pdo->prepare('DELETE FROM settings WHERE `key` IN (?,?,?)');
+    if (!$deleteSettings->execute([FB_SECRET_KEY, FB_RECAPTCHA_SITEKEY_KEY, FB_RECAPTCHA_SECRET_KEY])) throw new RuntimeException('Unable to remove Form Builder settings.');
+    unset($GLOBALS['__jy_settings_autoload_cache'][FB_SECRET_KEY], $GLOBALS['__jy_settings_autoload_cache'][FB_RECAPTCHA_SITEKEY_KEY], $GLOBALS['__jy_settings_autoload_cache'][FB_RECAPTCHA_SECRET_KEY]);
 });
 
 // ---------------- Shortcode: [form slug="..."] ----------------
+require_once __DIR__ . '/includes/definitions.php';
+require_once __DIR__ . '/includes/submission-import.php';
 require_once __DIR__ . '/public/render.php';
+
+if (function_exists('register_theme_section')) {
+    register_theme_section('form-builder', [
+        'label' => 'Form Builder',
+        'description' => 'Render a published form by slug.',
+        'defaults' => ['slug' => ''],
+        'fallback' => static function (array $attrs, array $context, ?PDO $database): string {
+            $slug = is_string($attrs['slug'] ?? null) ? $attrs['slug'] : '';
+            if (!$database instanceof PDO || preg_match('/\A[a-z0-9][a-z0-9_-]{0,79}\z/', $slug) !== 1) return '';
+            $form = fb_get_form_by_slug($database, $slug);
+            return $form !== null && $form['status'] === 'active' ? fb_render_form($database, $form) : '';
+        },
+    ]);
+}
+
+add_filter('theme_zone_widget_types', static function (array $types): array {
+    $types['tz_form_builder'] = ['label'=>'Form Builder','desc'=>'Embed a public form by slug.','default_config'=>['slug'=>'']];
+    return $types;
+});
+add_filter('theme_zone_render_widget', static function (string $html, string $type, array $config, PDO $pdo): string {
+    if ($type !== 'tz_form_builder') return $html;
+    $slug = is_string($config['slug'] ?? null) ? $config['slug'] : '';
+    if (preg_match('/\A[a-z0-9][a-z0-9_-]{0,79}\z/', $slug) !== 1) return '';
+    $form = fb_get_form_by_slug($pdo, $slug);
+    return $form !== null && $form['status'] === 'active' ? fb_render_form($pdo, $form) : '';
+}, 20);
 
 add_filter('post_content', function (string $html, array $post = []): string {
     if (strpos($html, '[form ') === false && strpos($html, '[form]') === false) {
@@ -667,7 +672,7 @@ add_filter('post_content', function (string $html, array $post = []): string {
     return preg_replace_callback('/\[form\s+slug=["\']([^"\']+)["\']\s*\]/', static function (array $m): string {
         $pdo = $GLOBALS['pdo'] ?? null;
         if (!($pdo instanceof PDO) || !function_exists('fb_render_form')) return '';
-        fb_ensure_schema($pdo);
+        fb_assert_schema($pdo);
         $form = fb_get_form_by_slug($pdo, $m[1]);
         if ($form === null || ($form['status'] ?? '') !== 'active') {
             return '<!-- form "' . htmlspecialchars($m[1], ENT_QUOTES) . '" not available -->';

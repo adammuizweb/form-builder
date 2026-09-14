@@ -21,7 +21,7 @@ if ($uid <= 0) fb_json(['ok' => false, 'error' => 'Login required'], 401);
 if (!function_exists('user_can') || !user_can($pdo, $uid, 'plugin.form-builder.workspace.access')) fb_json(['ok' => false, 'error' => 'Access denied'], 403);
 if (!function_exists('csrf_check') || !csrf_check((string)($_POST['csrf_token'] ?? ''))) fb_json(['ok' => false, 'error' => 'Invalid CSRF'], 403);
 
-fb_ensure_schema($pdo);
+fb_assert_schema($pdo);
 $formId = (int)($_POST['form_id'] ?? 0);
 $form = $formId > 0 ? fb_get_form($pdo, $formId) : null;
 if ($form === null || ($form['deleted_at'] ?? null) !== null) fb_json(['ok' => false, 'error' => 'Form not found'], 404);
@@ -29,6 +29,7 @@ if (!fb_can_access_form($pdo, $form, $uid)) fb_json(['ok' => false, 'error' => '
 
 $action = (string)($_POST['fb_action'] ?? '');
 $types = fb_field_types();
+$canUnsafeCode = user_can($pdo, $uid, 'plugin.form-builder.unsafe-code.manage');
 
 $touch = static function () use ($pdo, $formId): void {
     $pdo->prepare('UPDATE `fb_forms` SET updated_at = NOW() WHERE id = ?')->execute([$formId]);
@@ -103,6 +104,7 @@ try {
         case 'add_field': {
             $type = (string)($_POST['type'] ?? '');
             if (!isset($types[$type]) || !empty($types[$type]['container'])) fb_json(['ok' => false, 'error' => 'Invalid type'], 422);
+            if (in_array($type, ['richtext', 'raw_html'], true) && !$canUnsafeCode) fb_json(['ok' => false, 'error' => 'Unsafe-code permission required'], 403);
             $colId = (int)($_POST['col_id'] ?? 0);
             $col = $node($colId);
             if ($col === null || $col['type'] !== 'col') fb_json(['ok' => false, 'error' => 'Column not found'], 404);
@@ -182,6 +184,7 @@ try {
             $id = (int)($_POST['id'] ?? 0);
             $n = $node($id);
             if ($n === null || !empty($types[$n['type']]['container'])) fb_json(['ok' => false, 'error' => 'Field not found'], 404);
+            if (in_array($n['type'], ['richtext', 'raw_html'], true) && !$canUnsafeCode) fb_json(['ok' => false, 'error' => 'Unsafe-code permission required'], 403);
             fb_json(['ok' => true, 'html' => fb_render_field_form($n)]);
         }
 
@@ -229,6 +232,7 @@ try {
                 $lvl = (string)($_POST['s_level'] ?? 'h2');
                 $settings['level'] = in_array($lvl, FB_HEADING_LEVELS, true) ? $lvl : 'h2';
             } elseif ($type === 'richtext' || $type === 'raw_html') {
+                if (!$canUnsafeCode) fb_json(['ok' => false, 'error' => 'Unsafe-code permission required'], 403);
                 $settings['html'] = (string)($_POST['s_html'] ?? '');
             } elseif ($type === 'image_block') {
                 $settings['url'] = trim((string)($_POST['s_url'] ?? ''));
@@ -245,9 +249,9 @@ try {
             $pdo->prepare('UPDATE `fb_fields` SET label = ?, field_key = ?, placeholder = ?, help_text = ?, required = ?, is_hidden = ?, options_json = ?, validation_json = ?, settings_json = ? WHERE id = ? AND form_id = ?')
                 ->execute([$label, $key, trim((string)($_POST['placeholder'] ?? '')) ?: null, trim((string)($_POST['help_text'] ?? '')) ?: null,
                     !empty($_POST['required']) ? 1 : 0, !empty($_POST['is_hidden']) ? 1 : 0,
-                    $options ? json_encode($options, JSON_UNESCAPED_UNICODE) : null,
-                    $validation ? json_encode($validation, JSON_UNESCAPED_UNICODE) : null,
-                    $settings ? json_encode($settings, JSON_UNESCAPED_UNICODE) : null, $id, $formId]);
+                    $options ? fb_json_encode($options) : null,
+                    $validation ? fb_json_encode($validation) : null,
+                    $settings ? fb_json_encode($settings) : null, $id, $formId]);
             $touch();
             fb_json(['ok' => true, 'html' => fb_render_canvas($form, fb_get_tree($pdo, $formId))]);
         }
@@ -256,5 +260,6 @@ try {
             fb_json(['ok' => false, 'error' => 'Unknown action'], 422);
     }
 } catch (Throwable $e) {
-    fb_json(['ok' => false, 'error' => 'Server error: ' . $e->getMessage()], 500);
+    error_log('[form-builder] builder action failed: ' . $e->getMessage());
+    fb_json(['ok' => false, 'error' => 'Server error. Please try again.'], 500);
 }

@@ -9,7 +9,7 @@ function fb_h(?string $v): string {
 }
 
 // Render a single (non-container) field. Returns '' for hidden/unknown types.
-function fb_render_field_html(array $f, string $slug): string {
+function fb_render_field_html(array $f, string $slug, string $instance, bool $unsafeCode, array $publicSettings): string {
     $types = fb_field_types();
     $type = (string)$f['type'];
     $meta = $types[$type] ?? null;
@@ -19,7 +19,7 @@ function fb_render_field_html(array $f, string $slug): string {
     $req = !empty($f['required']);
     $valid = fb_field_validation($f);
     $maxBytes = (int)($valid['max_bytes'] ?? 5 * 1024 * 1024);
-    $id = 'fb-' . $slug . '-' . $key;
+    $id = 'fb-' . $slug . '-' . $instance . '-' . $key;
 
     $fsA = fb_field_settings($f);
     $wrapCls = '';
@@ -38,10 +38,10 @@ function fb_render_field_html(array $f, string $slug): string {
         <?php elseif ($type === 'paragraph'): ?><div class="fb-paragraph"><?= nl2br(fb_h($label)) ?></div>
         <?php elseif ($type === 'richtext'):
           $fs = fb_field_settings($f); ?>
-        <div class="fb-richtext"><?= (string)($fs['html'] ?? '') ?></div>
+        <div class="fb-richtext"><?= $unsafeCode ? (string)($fs['html'] ?? '') : (function_exists('cms_sanitize_restricted_html') ? cms_sanitize_restricted_html((string)($fs['html'] ?? '')) : strip_tags((string)($fs['html'] ?? ''), '<p><br><strong><em><ul><ol><li><a>')) ?></div>
         <?php elseif ($type === 'raw_html'):
           $fs = fb_field_settings($f); ?>
-        <div class="fb-rawhtml"><?= (string)($fs['html'] ?? '') ?></div>
+        <div class="fb-rawhtml"><?= $unsafeCode ? (string)($fs['html'] ?? '') : '' ?></div>
         <?php elseif ($type === 'image_block'):
           $fs = fb_field_settings($f);
           $url = (string)($fs['url'] ?? '');
@@ -63,15 +63,15 @@ function fb_render_field_html(array $f, string $slug): string {
         <label class="fb-label"><?= fb_h($label) ?> <?= $req ? '<span class="req">*</span>' : '' ?></label>
         <div class="fb-drop" data-max="<?= $maxBytes ?>" data-image="<?= !empty($meta['image']) ? '1' : '0' ?>">
           <?php if (!empty($meta['image'])): ?>
-          <input type="file" name="<?= fb_h($key) ?>" accept="image/*" <?= $req ? 'required' : '' ?>>
+          <input type="file" name="<?= fb_h($key) ?>" accept="<?= fb_h(implode(',', array_map(static fn(string $ext): string => '.' . $ext, (array)($valid['exts'] ?? ['jpg','jpeg','png','webp'])))) ?>" <?= $req ? 'required' : '' ?>>
           <img class="up-preview" alt="">
           <div class="up-ic">&#128444;</div>
           <?php else: ?>
-          <input type="file" name="<?= fb_h($key) ?>" <?= $req ? 'required' : '' ?>>
+          <input type="file" name="<?= fb_h($key) ?>" accept="<?= fb_h(implode(',', array_map(static fn(string $ext): string => '.' . $ext, (array)($valid['exts'] ?? ['jpg','jpeg','png','webp','pdf'])))) ?>" <?= $req ? 'required' : '' ?>>
           <div class="up-ic">&#8682;</div>
           <?php endif; ?>
-          <div class="up-t">Drop file here or click to browse</div>
-          <div class="up-s">Max <?= round($maxBytes / 1048576, 1) ?> MB</div>
+          <div class="up-t"><?= fb_h(fb_message($publicSettings, 'dropzone_prompt')) ?></div>
+          <div class="up-s"><?= fb_h(fb_message($publicSettings, 'max_size', ['size'=>round($maxBytes / 1048576, 1)])) ?></div>
         </div>
         <?php if (!empty($f['help_text'])): ?><div class="fb-help"><?= fb_h($f['help_text']) ?></div><?php endif; ?>
       <?php elseif ($type === 'textarea'): ?>
@@ -81,18 +81,19 @@ function fb_render_field_html(array $f, string $slug): string {
       <?php elseif ($type === 'select'): ?>
         <label class="fb-label" for="<?= fb_h($id) ?>"><?= fb_h($label) ?> <?= $req ? '<span class="req">*</span>' : '' ?></label>
         <select id="<?= fb_h($id) ?>" name="<?= fb_h($key) ?>" <?= $req ? 'required' : '' ?>>
-          <option value="" disabled selected><?= fb_h($f['placeholder'] ?? '-- Select --') ?></option>
-          <?php foreach (fb_field_options($f) as $o): ?>
+          <option value="" disabled selected><?= fb_h($f['placeholder'] ?: fb_message($publicSettings, 'select_placeholder')) ?></option>
+          <?php $choiceOptions = fb_field_options($f); foreach ($choiceOptions as $choiceIndex => $o): ?>
           <option value="<?= fb_h($o['value']) ?>"><?= fb_h($o['label'] . ($o['price'] > 0 ? ' (+' . fb_format_rupiah($o['price']) . ')' : '')) ?></option>
           <?php endforeach; ?>
         </select>
         <?php if (!empty($f['help_text'])): ?><div class="fb-help"><?= fb_h($f['help_text']) ?></div><?php endif; ?>
       <?php elseif ($type === 'radio' || $type === 'checkbox'): ?>
+        <?php $choiceOptions = fb_field_options($f); ?>
         <span class="fb-label" style="display:block"><?= fb_h($label) ?> <?= $req ? '<span class="req">*</span>' : '' ?></span>
         <div class="fb-choices">
-          <?php foreach (fb_field_options($f) as $o): ?>
+          <?php foreach ($choiceOptions as $o): ?>
           <label class="fb-choice">
-            <input type="<?= $type ?>" name="<?= fb_h($key) ?><?= $type === 'checkbox' ? '[]' : '' ?>" value="<?= fb_h($o['value']) ?>" <?= ($req && $type === 'radio') ? 'required' : '' ?>>
+            <input type="<?= $type ?>" name="<?= fb_h($key) ?><?= $type === 'checkbox' ? '[]' : '' ?>" value="<?= fb_h($o['value']) ?>" <?= ($req && ($type === 'radio' || ($type === 'checkbox' && count($choiceOptions) === 1))) ? 'required' : '' ?>>
             <span><?= fb_h($o['label']) ?></span>
             <?php if ($o['price'] > 0): ?><span class="price">+<?= fb_h(fb_format_rupiah($o['price'])) ?></span><?php endif; ?>
           </label>
@@ -119,6 +120,10 @@ function fb_render_form(PDO $pdo, array $form): string {
     $formId = (int)$form['id'];
     $slug = (string)$form['slug'];
     $settings = fb_form_settings($form);
+    [$form, $settings] = fb_localized_form($form, $settings);
+    $unsafeCode = ($settings['unsafe_code_enabled'] ?? false) === true;
+    static $instances = 0;
+    $instance = 'i' . (++$instances);
     $tree = fb_get_tree($pdo, $formId);
     $allFields = fb_flat_fields(fb_get_fields($pdo, $formId, false));
     $ctx = fb_public_ctx($pdo);
@@ -131,6 +136,10 @@ function fb_render_form(PDO $pdo, array $form): string {
 
     // Price map for JS live total
     $priceMap = [];
+    foreach ($allFields as &$localizedField) $localizedField = fb_localized_field($localizedField, $settings);
+    unset($localizedField);
+    foreach ($tree as &$treeRow) foreach ($treeRow['cols'] as &$treeCol) foreach ($treeCol['fields'] as &$treeField) $treeField = fb_localized_field($treeField, $settings);
+    unset($treeRow, $treeCol, $treeField);
     foreach ($allFields as $f) {
         if (!in_array($f['type'], ['select', 'radio', 'checkbox'], true)) continue;
         foreach (fb_field_options($f) as $o) {
@@ -233,19 +242,19 @@ function fb_render_form(PDO $pdo, array $form): string {
 </style>
 <?php endif; ?>
 
-<?php if (!empty($form['css'])): ?>
+<?php if ($unsafeCode && !empty($form['css'])): ?>
 <style>/* custom CSS for form <?= fb_h($slug) ?> */
 <?= (string)$form['css'] ?>
 </style>
 <?php endif; ?>
 
-<div class="fb-wrap" id="fb-<?= fb_h($slug) ?>"<?= ($accentStyle = fb_accent_style($settings)) !== '' ? ' style="' . fb_h($accentStyle) . '"' : '' ?>>
+<div class="fb-wrap" id="fb-<?= fb_h($slug . '-' . $instance) ?>"<?= ($accentStyle = fb_accent_style($settings)) !== '' ? ' style="' . fb_h($accentStyle) . '"' : '' ?>>
 <?php if ($flash === 'ok'): ?>
   <div class="fb-success">
     <div class="check">&#10003;</div>
-    <h3><?= fb_h($form['title']) ?></h3>
+    <h3><?= fb_h(fb_message($settings, 'success_heading')) ?></h3>
     <p><?= nl2br(fb_h($settings['success_message'])) ?></p>
-    <?php if ($ref !== ''): ?><span class="fb-ref"><?= fb_h($ref) ?></span><?php endif; ?>
+    <?php if ($ref !== ''): ?><div><?= fb_h(fb_message($settings, 'reference_label')) ?></div><span class="fb-ref"><?= fb_h($ref) ?></span><?php endif; ?>
   </div>
 <?php else: ?>
   <div class="fb-title"><?= fb_h($form['title']) ?></div>
@@ -256,10 +265,12 @@ function fb_render_form(PDO $pdo, array $form): string {
     <input type="hidden" name="fb_slug" value="<?= fb_h($slug) ?>">
     <input type="hidden" name="csrf_token" value="<?= fb_h($ctx['csrf']) ?>">
     <input type="hidden" name="fb_return" value="<?= fb_h($self) ?>">
+    <input type="hidden" name="fb_started" value="<?= fb_h(fb_started_token($pdo, $formId)) ?>">
+    <input type="hidden" name="fb_idempotency" value="<?= fb_h(bin2hex(random_bytes(16))) ?>">
     <div style="position:absolute;left:-9999px" aria-hidden="true"><input type="text" name="fb_website" tabindex="-1" autocomplete="off"></div>
 
     <?php if ($flash === 'err'): ?>
-    <div class="fb-flash-err"><?= fb_h($msg !== '' ? $msg : 'Submission failed. Please check your input.') ?></div>
+    <div class="fb-flash-err"><?= fb_h($msg !== '' ? $msg : fb_message($settings, 'generic_error')) ?></div>
     <?php endif; ?>
 
     <div class="fb-rows">
@@ -270,7 +281,7 @@ function fb_render_form(PDO $pdo, array $form): string {
       <div class="fb-row">
         <?php foreach ($row['cols'] as $col): ?>
         <div class="fb-col<?= $colCls ?>">
-          <?php foreach ($col['fields'] as $f) echo fb_render_field_html($f, $slug); ?>
+          <?php foreach ($col['fields'] as $f) echo fb_render_field_html($f, $slug, $instance, $unsafeCode, $settings); ?>
         </div>
         <?php endforeach; ?>
       </div>
@@ -291,10 +302,11 @@ function fb_render_form(PDO $pdo, array $form): string {
 
 <script>
 (function () {
-  var root = document.getElementById('fb-<?= fb_h($slug) ?>');
+  var root = document.getElementById('fb-<?= fb_h($slug . '-' . $instance) ?>');
   if (!root) return;
   var form = root.querySelector('form[data-fb-form]');
   if (!form) return;
+  var I18N = <?= json_encode(['choose_image'=>fb_message($settings,'choose_image'),'file_too_large'=>fb_message($settings,'file_too_large'),'ready_to_upload'=>fb_message($settings,'ready_to_upload'),'submitting'=>fb_message($settings,'submitting')], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>;
 
   // ---- Live total ----
   var PRICES = <?= json_encode($priceMap, JSON_UNESCAPED_UNICODE) ?>;
@@ -333,10 +345,10 @@ function fb_render_form(PDO $pdo, array $form): string {
     function fmt(b) { return b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB'; }
     function setFile(file) {
       if (!file) return;
-      if (isImage && file.type.indexOf('image/') !== 0) { title.textContent = 'Please choose an image file'; input.value = ''; zone.classList.remove('has-file'); return; }
-      if (file.size > max) { title.textContent = 'File too large (' + fmt(file.size) + ')'; input.value = ''; zone.classList.remove('has-file'); return; }
+      if (isImage && file.type.indexOf('image/') !== 0) { title.textContent = I18N.choose_image; input.value = ''; zone.classList.remove('has-file'); return; }
+      if (file.size > max) { title.textContent = I18N.file_too_large.replace('{size}', fmt(file.size)); input.value = ''; zone.classList.remove('has-file'); return; }
       title.textContent = file.name;
-      sub.textContent = fmt(file.size) + ' — ready to upload';
+      sub.textContent = I18N.ready_to_upload.replace('{size}', fmt(file.size));
       zone.classList.add('has-file');
       if (preview) {
         try { preview.src = URL.createObjectURL(file); preview.style.display = 'block'; } catch (e) {}
@@ -355,15 +367,15 @@ function fb_render_form(PDO $pdo, array $form): string {
   var btn = form.querySelector('[data-fb-submit]');
   form.addEventListener('submit', function (e) {
     if (!form.checkValidity()) { e.preventDefault(); form.reportValidity(); return; }
-    if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
+    if (btn) { btn.disabled = true; btn.textContent = I18N.submitting; }
   });
 })();
 </script>
-<?php if (!empty($form['js'])): ?>
+<?php if ($unsafeCode && !empty($form['js'])): ?>
 <script>/* custom JS for form <?= fb_h($slug) ?> */
 (function (root, form) {
 <?= (string)$form['js'] ?>
-})(document.getElementById('fb-<?= fb_h($slug) ?>'), document.querySelector('#fb-<?= fb_h($slug) ?> form'));
+})(document.getElementById('fb-<?= fb_h($slug . '-' . $instance) ?>'), document.querySelector('#fb-<?= fb_h($slug . '-' . $instance) ?> form'));
 </script>
 <?php endif; ?>
 <?php

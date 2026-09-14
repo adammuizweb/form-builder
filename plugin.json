@@ -1,18 +1,21 @@
 {
     "name": "form-builder",
-    "version": "1.5.2",
+    "version": "1.6.0",
     "title": "Form Builder",
     "icon": "icon.png",
-    "description": "Dynamic form builder for Jyavani CMS: Elementor-style drag-and-drop builder (rows \u2192 columns \u2192 fields), input fields & content elements (heading levels, rich text with Quill + CMS gallery/file modals, image, raw HTML with CodeMirror), priced options with live totals, soft-delete Bin with restore, embed via [form slug=\"...\"] shortcode, per-form submissions with auto filters, bulk actions, CSV export, custom CSS/JS, and per-form access control.",
+    "description": "Production form builder with multilingual definitions, private validated uploads, idempotent public submissions, configurable review workflows, Core Mail notifications, CSV export, and shortcode/theme-section embedding.",
     "author": "Adam Muiz",
     "author_uri": "https://jyavani.com/member/adammuiz/",
     "plugin_uri": "https://jyavani.com/plugin/form-builder/",
     "homepage": "https://jyavani.com/plugin/form-builder/",
     "requires": {
-        "jyavani": ">=2.3.74",
+        "jyavani": ">=2.3.122",
         "php": ">=8.1",
         "extensions": [
             "pdo",
+            "pdo_mysql",
+            "fileinfo",
+            "dom",
             "json",
             "mbstring"
         ]
@@ -37,6 +40,34 @@
             "delegable": true
         },
         {
+            "key": "plugin.form-builder.submissions.manage",
+            "label": "Manage Form Submissions",
+            "supports_scope": false,
+            "default_roles": ["admin"],
+            "delegable": true
+        },
+        {
+            "key": "plugin.form-builder.workflow.manage",
+            "label": "Manage Submission Workflow",
+            "supports_scope": false,
+            "default_roles": ["admin"],
+            "delegable": true
+        },
+        {
+            "key": "plugin.form-builder.definitions.manage",
+            "label": "Import and Export Form Definitions",
+            "supports_scope": false,
+            "default_roles": ["admin"],
+            "delegable": true
+        },
+        {
+            "key": "plugin.form-builder.unsafe-code.manage",
+            "label": "Manage Unsafe Form Code",
+            "supports_scope": false,
+            "default_roles": ["admin"],
+            "delegable": false
+        },
+        {
             "key": "plugin.form-builder.global-settings.manage",
             "label": "Manage Global Form Builder Settings",
             "supports_scope": false,
@@ -54,6 +85,11 @@
             "delegable": true
         }
     ],
+    "store": {
+        "url": "https://jyavani.com/plugin",
+        "slug": "form-builder"
+    },
+    "license": "MIT",
     "dependencies": {
         "js": [
             "modal-helpers",

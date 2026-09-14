@@ -10,9 +10,10 @@ $pdo = $GLOBALS['pdo'] ?? null;
 if (!($pdo instanceof PDO)) { echo '<p>Database not available.</p>'; return; }
 [$uid] = adiwira_require_permission($pdo, 'plugin.form-builder.workspace.access', false);
 
-fb_ensure_schema($pdo);
+fb_assert_schema($pdo);
 
 $canGlobalSettings = user_can($pdo, $uid, 'plugin.form-builder.global-settings.manage');
+$canDefinitions = user_can($pdo, $uid, 'plugin.form-builder.definitions.manage');
 
 $csrf = function_exists('csrf_token') ? csrf_token() : '';
 $flash = '';
@@ -33,8 +34,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $pdo->prepare('INSERT INTO `fb_forms` (slug, title, status, settings_json, access_json, created_by) VALUES (?, ?, "draft", ?, ?, ?)')
             ->execute([
                 $slug, $title,
-                json_encode(fb_default_settings(), JSON_UNESCAPED_UNICODE),
-                json_encode(['roles' => [], 'users' => [], 'owner' => $uid], JSON_UNESCAPED_UNICODE),
+                fb_json_encode(fb_default_settings()),
+                fb_json_encode(['roles' => [], 'users' => [], 'owner' => $uid]),
                 $uid,
             ]);
         $newId = (int)$pdo->lastInsertId();
@@ -48,6 +49,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             settings_set($pdo, FB_RECAPTCHA_SECRET_KEY, trim((string)($_POST['secret'] ?? '')), 1);
             $flash = 'reCAPTCHA keys saved.';
         }
+    } elseif ($act === 'import_definition') {
+        if (!$canDefinitions) { $flash = 'Access denied.'; $flashOk = false; }
+        else try { $result = fb_upsert_form_definition($pdo, (string)($_POST['definition_json'] ?? ''), $uid, user_can($pdo, $uid, 'plugin.form-builder.unsafe-code.manage')); fb_js_redirect(fb_url(['view'=>'settings','id'=>$result['form_id'],'saved'=>1])); return; }
+        catch (InvalidArgumentException|JsonException $error) { $flash = 'Import failed: ' . $error->getMessage(); $flashOk = false; }
+        catch (Throwable $error) { error_log('[form-builder] definition import failed: ' . $error->getMessage()); $flash = 'Import failed due to a server error.'; $flashOk = false; }
     } elseif (in_array($act, ['duplicate_form', 'archive_form', 'delete_form'], true)) {
         $target = fb_get_form($pdo, (int)($_POST['form_id'] ?? 0));
         if ($target === null || !fb_can_access_form($pdo, $target, $uid)) {
@@ -58,7 +64,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             while (fb_get_form_by_slug($pdo, $slug) !== null) $slug = $base . '-' . $i++;
             $pdo->prepare('INSERT INTO `fb_forms` (slug, title, description, status, settings_json, css, js, access_json, created_by) VALUES (?, ?, ?, "draft", ?, ?, ?, ?, ?)')
                 ->execute([$slug, $target['title'] . ' (Copy)', $target['description'], $target['settings_json'], $target['css'], $target['js'],
-                    json_encode(['roles' => [], 'users' => [], 'owner' => $uid], JSON_UNESCAPED_UNICODE), $uid]);
+                    fb_json_encode(['roles' => [], 'users' => [], 'owner' => $uid]), $uid]);
             $newId = (int)$pdo->lastInsertId();
             $fields = fb_get_fields($pdo, (int)$target['id']);
             usort($fields, static fn($a, $b) => (int)$a['id'] <=> (int)$b['id']); // parents before children
@@ -106,12 +112,24 @@ $view = (string)($_GET['view'] ?? 'forms');
 // Raw-output actions (file stream / CSV export) must run BEFORE any HTML is printed,
 // otherwise headers are already sent and the download is corrupted.
 if ($view === 'submissions' && in_array(($_GET['action'] ?? ''), ['file', 'export'], true)) {
+    if (!user_can($pdo, $uid, 'plugin.form-builder.submissions.manage')) { http_response_code(403); exit('Access denied'); }
     $form = fb_get_form($pdo, (int)($_GET['id'] ?? 0));
     if ($form === null || ($form['deleted_at'] ?? null) !== null || !fb_can_access_form($pdo, $form, $uid)) {
         http_response_code(403);
         exit('Access denied');
     }
     require __DIR__ . '/submissions.php'; // streams and exits
+    exit;
+}
+if (($_GET['action'] ?? '') === 'export_definition') {
+    if (!$canDefinitions) { http_response_code(403); exit('Access denied'); }
+    $target = fb_get_form($pdo, (int)($_GET['id'] ?? 0));
+    if ($target === null || !fb_can_access_form($pdo, $target, $uid)) { http_response_code(404); exit('Not found'); }
+    $includeUnsafe = user_can($pdo, $uid, 'plugin.form-builder.unsafe-code.manage') && ($_GET['unsafe'] ?? '') === '1';
+    header('Content-Type: application/json; charset=utf-8');
+    header('Content-Disposition: attachment; filename="' . preg_replace('/[^a-z0-9_-]/', '-', $target['slug']) . '.form.json"');
+    header('Cache-Control: no-store');
+    echo json_encode(fb_export_form_definition($pdo, (int)$target['id'], $includeUnsafe), JSON_PRETTY_PRINT | FB_JSON_FLAGS);
     exit;
 }
 
@@ -122,6 +140,7 @@ if ($flash !== '') {
 }
 
 if ($view === 'builder' || $view === 'settings' || $view === 'submissions') {
+    if ($view === 'submissions' && !user_can($pdo, $uid, 'plugin.form-builder.submissions.manage')) { echo '<div class="fba-empty">Access denied.</div>'; return; }
     $form = fb_get_form($pdo, (int)($_GET['id'] ?? 0));
     if ($form === null || ($form['deleted_at'] ?? null) !== null || !fb_can_access_form($pdo, $form, $uid)) {
         echo '<div class="fba-empty">Form not found or access denied. <a href="' . fb_url(['view' => 'forms', 'id' => null]) . '">Back to forms</a></div>';
@@ -159,6 +178,7 @@ $listUrl = static function (array $extra = []) use ($q, $pageNum): string {
     <h1>Form Builder</h1>
     <div class="fba-actions">
       <?php if ($canGlobalSettings): ?><button class="fba-btn" onclick="document.getElementById('fba-rc').style.display='flex'">reCAPTCHA</button><?php endif; ?>
+      <?php if ($canDefinitions): ?><button class="fba-btn" onclick="document.getElementById('fba-import').style.display='flex'">Import JSON</button><?php endif; ?>
       <form method="post" style="display:inline">
         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>">
         <input type="hidden" name="fb_action" value="create_form">
@@ -237,7 +257,8 @@ $listUrl = static function (array $extra = []) use ($q, $pageNum): string {
                 <summary class="fba-btn sm" title="Aksi lainnya">⋯</summary>
                 <div class="fba-more-menu">
                   <a href="<?= fb_url(['view' => 'submissions', 'id' => $fid]) ?>">📋 Submissions</a>
-                  <a href="<?= fb_url(['view' => 'settings', 'id' => $fid]) ?>">⚙ Settings</a>
+                   <a href="<?= fb_url(['view' => 'settings', 'id' => $fid]) ?>">⚙ Settings</a>
+                   <?php if ($canDefinitions): ?><a href="<?= fb_url(['action' => 'export_definition', 'id' => $fid]) ?>">Export definition</a><?php endif; ?>
                   <button type="submit" form="fba-dup-<?= $fid ?>">⧉ Duplikat</button>
                   <button type="submit" form="fba-arch-<?= $fid ?>" class="danger">🗄 Arsipkan</button>
                   <button type="submit" form="fba-del-<?= $fid ?>" class="danger">🗑 Hapus</button>
@@ -375,3 +396,4 @@ $listUrl = static function (array $extra = []) use ($q, $pageNum): string {
     </div>
   </div>
 </div><?php endif; ?>
+<?php if ($canDefinitions): ?><div class="fba-overlay" id="fba-import" style="display:none" onclick="if(event.target===this)this.style.display='none'"><div class="fba-modal"><div class="fba-modal-head"><h2>Import form definition</h2><a href="javascript:void(0)" onclick="document.getElementById('fba-import').style.display='none'">&times;</a></div><div class="fba-modal-body"><form method="post"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>"><input type="hidden" name="fb_action" value="import_definition"><div class="fba-field"><label>Versioned definition JSON</label><textarea name="definition_json" rows="16" maxlength="524288" required></textarea></div><button class="fba-btn primary" type="submit">Atomic upsert by slug</button></form></div></div></div><?php endif; ?>

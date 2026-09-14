@@ -10,7 +10,7 @@ require_once __DIR__ . '/_ui.php';
 $pdo = $GLOBALS['pdo'] ?? null;
 if (!($pdo instanceof PDO)) { echo '<p>Database not available.</p>'; return; }
 
-fb_ensure_schema($pdo);
+fb_assert_schema($pdo);
 
 [$uid] = adiwira_require_permission($pdo, 'plugin.form-builder.bin.manage', false);
 adiwira_require_permission($pdo, 'plugin.form-builder.forms.manage-any', false);

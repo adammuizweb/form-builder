@@ -144,7 +144,7 @@ function fb_render_field_form(array $f): string {
       <?php elseif (in_array($type, ['file', 'image'], true)): ?>
       <div class="fba-row2">
         <div class="fba-field"><label>Max size (MB)</label><input type="number" name="v_maxmb" value="<?= (int)round(($valid['max_bytes'] ?? 5242880) / 1048576) ?>"></div>
-        <div class="fba-field"><label>Allowed extensions</label><input type="text" name="v_exts" value="<?= htmlspecialchars(implode(', ', (array)($valid['exts'] ?? ($type === 'image' ? ['jpg','jpeg','png','webp'] : ['jpg','jpeg','png','pdf','doc','docx']))), ENT_QUOTES) ?>"></div>
+        <div class="fba-field"><label>Allowed extensions</label><input type="text" name="v_exts" value="<?= htmlspecialchars(implode(', ', (array)($valid['exts'] ?? ($type === 'image' ? ['jpg','jpeg','png','webp'] : ['jpg','jpeg','png','webp','pdf']))), ENT_QUOTES) ?>"></div>
       </div>
       <?php endif; ?>
       <div class="fba-checks" style="margin:.4rem 0 .9rem">
