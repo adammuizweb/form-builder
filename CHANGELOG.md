@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.1 - 2026-09-14
+
+- Correct the Store metadata URL used for future update discovery.
+
 ## 1.7.0 - 2026-09-14
 
 - Add a searchable, bundled ISO 3166-1 country field that stores uppercase alpha-2 codes.

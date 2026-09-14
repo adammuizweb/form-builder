@@ -1,6 +1,6 @@
 {
     "name": "form-builder",
-    "version": "1.7.0",
+    "version": "1.7.1",
     "title": "Form Builder",
     "icon": "icon.png",
     "description": "Production form builder with multilingual definitions, country-aware international phone fields, private validated uploads, idempotent submissions, review workflows, Core Mail, CSV export, and shortcode/theme-section embedding.",
@@ -86,7 +86,7 @@
         }
     ],
     "store": {
-        "url": "https://jyavani.com/plugin",
+        "url": "https://jyavani.com/plugin-store",
         "slug": "form-builder"
     },
     "license": "MIT",
