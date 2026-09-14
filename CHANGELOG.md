@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.2 - 2026-09-14
+
+- Keep country option labels focused on country names while retaining searchable calling-code metadata for linked phone fields.
+- Improve the submissions workspace hierarchy, filters, tables, bulk controls, and responsive layout.
+- Replace overflow-menu text symbols with Core-provided Lucide icons.
+
 ## 1.7.1 - 2026-09-14
 
 - Correct the Store metadata URL used for future update discovery.

@@ -81,7 +81,7 @@ function fb_render_field_html(array $f, string $slug, string $instance, bool $un
           <select id="<?= fb_h($id) ?>" name="<?= fb_h($key) ?>" data-fb-country <?= $req ? 'required' : '' ?>>
             <option value=""><?= fb_h($f['placeholder'] ?: fb_message($publicSettings, 'country_placeholder')) ?></option>
             <?php foreach (fb_country_catalog() as $countryCode => $country): ?>
-            <option value="<?= fb_h($countryCode) ?>" data-dial="<?= fb_h($country['dial']) ?>" data-prefix="<?= fb_h($country['prefix']) ?>"><?= fb_h($country['name'] . ($country['dial'] !== '' ? ' (+' . $country['dial'] . ')' : '')) ?></option>
+            <option value="<?= fb_h($countryCode) ?>" data-dial="<?= fb_h($country['dial']) ?>"><?= fb_h($country['name']) ?></option>
             <?php endforeach; ?>
           </select>
         </div>
@@ -90,7 +90,7 @@ function fb_render_field_html(array $f, string $slug, string $instance, bool $un
         $countryField = (string)($fsA['country_field'] ?? ''); ?>
         <label class="fb-label" for="<?= fb_h($id) ?>"><?= fb_h($label) ?> <?= $req ? '<span class="req">*</span>' : '' ?></label>
         <div class="fb-intl-phone" data-fb-phone data-country-field="<?= fb_h($countryField) ?>">
-          <span class="fb-dial" data-fb-dial>+</span>
+          <span class="fb-dial is-empty" data-fb-dial>&mdash;</span>
           <input type="tel" id="<?= fb_h($id) ?>" name="<?= fb_h($key) ?>" placeholder="<?= fb_h($f['placeholder'] ?? '') ?>" autocomplete="tel" <?= $req ? 'required' : '' ?><?= !empty($valid['maxlength']) ? ' maxlength="' . (int)$valid['maxlength'] . '"' : '' ?>>
         </div>
         <?php if (!empty($f['help_text'])): ?><div class="fb-help"><?= fb_h($f['help_text']) ?></div><?php endif; ?>
@@ -370,7 +370,7 @@ function fb_render_form(PDO $pdo, array $form): string {
       var query = search.value.trim().toLowerCase();
       Array.prototype.forEach.call(select.options, function (option, index) {
         if (index === 0) return;
-        option.hidden = query !== '' && (option.textContent + ' ' + option.value).toLowerCase().indexOf(query) === -1;
+        option.hidden = query !== '' && (option.textContent + ' ' + option.value + ' +' + (option.getAttribute('data-dial') || '')).toLowerCase().indexOf(query) === -1;
       });
     });
   });
@@ -379,7 +379,10 @@ function fb_render_form(PDO $pdo, array $form): string {
     var option = country && country.options ? country.options[country.selectedIndex] : null;
     var dial = option ? option.getAttribute('data-dial') || '' : '';
     var prefix = phone.querySelector('[data-fb-dial]');
-    if (prefix) prefix.textContent = dial ? '+' + dial : '+';
+    if (prefix) {
+      prefix.textContent = dial ? '+' + dial : '—';
+      prefix.classList.toggle('is-empty', !dial);
+    }
   }
   root.querySelectorAll('[data-fb-phone]').forEach(function (phone) {
     var country = form.elements[phone.getAttribute('data-country-field')];

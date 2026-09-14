@@ -33,7 +33,8 @@ function fb_admin_css(): void {
 .fba-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.2rem; }
 .fba-head h1 { font-size: 1.35rem; font-weight: 700; margin: 0; }
 .fba-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
-.fba-btn { display: inline-block; border: 1px solid var(--adam-border); background: var(--adam-card); color: var(--adam-text); border-radius: 9px; padding: .42rem .85rem; font-size: .8rem; font-weight: 600; cursor: pointer; text-decoration: none; transition: all .18s; font-family: inherit; }
+.fba-btn { display: inline-flex; align-items: center; justify-content: center; gap: .42rem; border: 1px solid var(--adam-border); background: var(--adam-card); color: var(--adam-text); border-radius: 9px; padding: .42rem .85rem; font-size: .8rem; font-weight: 600; cursor: pointer; text-decoration: none; transition: all .18s; font-family: inherit; }
+.fba-btn svg { width: 15px; height: 15px; flex: 0 0 15px; }
 .fba-btn:hover { border-color: var(--adam-accent); color: var(--adam-accent); }
 .fba-btn.primary { background: var(--adam-accent); border-color: var(--adam-accent); color: #fff; }
 .fba-btn.primary:hover { filter: brightness(1.08); color: #fff; }
@@ -201,14 +202,45 @@ function fb_admin_css(): void {
 .fba-bulkbar select { border: 1px solid var(--adam-border); background: var(--adam-bg); color: var(--adam-text); border-radius: 8px; padding: .38rem .5rem; font-size: .82rem; }
 .fba-checkcol { width: 34px; text-align: center; }
 .fba-more { display: inline-block; position: relative; }
-.fba-more > summary { list-style: none; cursor: pointer; }
+.fba-more > summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 30px; padding: 0; }
 .fba-more > summary::-webkit-details-marker { display: none; }
 .fba-more[open] > summary { border-color: var(--adam-accent); }
-.fba-more-menu { position: absolute; right: 0; top: calc(100% + .25rem); background: var(--adam-card); border: 1px solid var(--adam-border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0 0 0 / .14); z-index: 60; min-width: 160px; padding: .3rem; display: flex; flex-direction: column; }
+.fba-more-menu { position: absolute; right: 0; top: calc(100% + .25rem); background: var(--adam-card, #fff); border: 1px solid var(--adam-border, #dbe2e8); border-radius: 12px; box-shadow: 0 16px 40px rgba(15 23 42 / .18); z-index: 60; min-width: 190px; padding: .4rem; display: flex; flex-direction: column; gap: .12rem; }
 .fba-more-menu.fba-portal { position: fixed; right: auto; z-index: 9999; }
-.fba-more-menu a, .fba-more-menu button { display: block; width: 100%; text-align: left; border: none; background: transparent; color: var(--adam-text); font: inherit; font-size: .82rem; padding: .42rem .6rem; border-radius: 7px; cursor: pointer; text-decoration: none; }
+.fba-more-menu a, .fba-more-menu button { display: flex; align-items: center; gap: .65rem; width: 100%; text-align: left; border: none; background: transparent; color: var(--adam-text, #172033); font: inherit; font-size: .82rem; font-weight: 550; padding: .55rem .65rem; border-radius: 8px; cursor: pointer; text-decoration: none; }
+.fba-more-menu svg, .fba-menu-trigger-icon { width: 16px; height: 16px; flex: 0 0 16px; }
 .fba-more-menu a:hover, .fba-more-menu button:hover { background: var(--adam-bg); }
 .fba-more-menu .danger { color: var(--adam-danger); }
+.fba-submission-summary { display: grid; grid-template-columns: repeat(2, minmax(130px, 1fr)); gap: .75rem; align-items: stretch; }
+.fba-submission-summary.has-switch { grid-template-columns: repeat(2, minmax(130px, 180px)) minmax(220px, 1fr); }
+.fba-stat { display: flex; align-items: center; gap: .75rem; min-height: 76px; padding: .85rem 1rem; border: 1px solid var(--adam-border); border-radius: 11px; background: var(--adam-bg); }
+.fba-stat svg { width: 22px; height: 22px; color: var(--adam-accent); }
+.fba-stat strong { display: block; font-size: 1.35rem; line-height: 1; }
+.fba-form-switch { display: flex; align-items: center; justify-content: flex-end; }
+.fba-form-switch select, .fba-filter-form input[type=search], .fba-filter-form input[type=date], .fba-filter-form select, .fba-bulk-actions select { min-height: 36px; border: 1px solid var(--adam-border); background: var(--adam-card); color: var(--adam-text); border-radius: 9px; padding: .42rem .65rem; font: inherit; font-size: .8rem; outline: none; }
+.fba-form-switch select:focus, .fba-filter-form input:focus, .fba-filter-form select:focus, .fba-bulk-actions select:focus { border-color: var(--adam-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--adam-accent) 15%, transparent); }
+.fba-submissions-toolbar { align-items: flex-start; justify-content: space-between; padding: .8rem; border: 1px solid var(--adam-border); border-radius: 12px; background: var(--adam-card); }
+.fba-state-tabs { display: flex; gap: .3rem; padding: .2rem; border-radius: 10px; background: var(--adam-bg); }
+.fba-filter-form { flex: 1; justify-content: flex-end; }
+.fba-filter-form input[type=search] { width: min(210px, 100%); }
+.fba-table tbody tr { transition: background .15s ease; }
+.fba-table tbody tr:hover { background: color-mix(in srgb, var(--adam-accent) 4%, transparent); }
+.fba-table input[type=checkbox], .fba-bulk-actions input[type=checkbox] { accent-color: var(--adam-accent); }
+.fba-row-actions { display: flex; gap: .35rem; align-items: center; }
+.fba-bulk-actions { margin-top: .9rem; margin-bottom: 0; padding: .75rem; border: 1px solid var(--adam-border); border-radius: 11px; background: var(--adam-card); }
+@media (max-width: 900px) {
+  .fba-submission-summary, .fba-submission-summary.has-switch { grid-template-columns: 1fr 1fr; }
+  .fba-form-switch { grid-column: 1 / -1; justify-content: stretch; }
+  .fba-form-switch select { width: 100%; }
+  .fba-filter-form { justify-content: flex-start; }
+}
+@media (max-width: 560px) {
+  .fba-submission-summary, .fba-submission-summary.has-switch { grid-template-columns: 1fr; }
+  .fba-form-switch { grid-column: auto; }
+  .fba-state-tabs { width: 100%; overflow-x: auto; }
+  .fba-filter-form > * { flex: 1 1 140px; }
+  .fba-filter-form .fba-btn { flex: 0 0 auto; }
+}
 .fba-pager { display: flex; gap: .3rem; align-items: center; margin-top: 1rem; flex-wrap: wrap; }
 .fba-pager a, .fba-pager span { border: 1px solid var(--adam-border); border-radius: 7px; padding: .25rem .55rem; font-size: .8rem; text-decoration: none; color: var(--adam-text); }
 .fba-pager a:hover { border-color: var(--adam-accent); }

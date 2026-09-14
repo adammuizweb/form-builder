@@ -254,14 +254,14 @@ $listUrl = static function (array $extra = []) use ($q, $pageNum): string {
             <td style="white-space:nowrap">
               <a class="fba-btn sm primary" href="<?= fb_url(['view' => 'builder', 'id' => $fid]) ?>">Builder</a>
               <details class="fba-more">
-                <summary class="fba-btn sm" title="Aksi lainnya">⋯</summary>
+                <summary class="fba-btn sm" title="Aksi lainnya" aria-label="Aksi lainnya"><?= svg_ico('menu', 'fba-menu-trigger-icon') ?></summary>
                 <div class="fba-more-menu">
-                  <a href="<?= fb_url(['view' => 'submissions', 'id' => $fid]) ?>">📋 Submissions</a>
-                   <a href="<?= fb_url(['view' => 'settings', 'id' => $fid]) ?>">⚙ Settings</a>
-                   <?php if ($canDefinitions): ?><a href="<?= fb_url(['action' => 'export_definition', 'id' => $fid]) ?>">Export definition</a><?php endif; ?>
-                  <button type="submit" form="fba-dup-<?= $fid ?>">⧉ Duplikat</button>
-                  <button type="submit" form="fba-arch-<?= $fid ?>" class="danger">🗄 Arsipkan</button>
-                  <button type="submit" form="fba-del-<?= $fid ?>" class="danger">🗑 Hapus</button>
+                  <a href="<?= fb_url(['view' => 'submissions', 'id' => $fid]) ?>"><?= svg_ico('clipboard-list') ?><span>Submissions</span></a>
+                   <a href="<?= fb_url(['view' => 'settings', 'id' => $fid]) ?>"><?= svg_ico('settings') ?><span>Settings</span></a>
+                   <?php if ($canDefinitions): ?><a href="<?= fb_url(['action' => 'export_definition', 'id' => $fid]) ?>"><?= svg_ico('download') ?><span>Export definition</span></a><?php endif; ?>
+                  <button type="submit" form="fba-dup-<?= $fid ?>"><?= svg_ico('copy') ?><span>Duplikat</span></button>
+                  <button type="submit" form="fba-arch-<?= $fid ?>" class="danger"><?= svg_ico('box') ?><span>Arsipkan</span></button>
+                  <button type="submit" form="fba-del-<?= $fid ?>" class="danger"><?= svg_ico('trash-2') ?><span>Hapus</span></button>
                 </div>
               </details>
             </td>
@@ -359,8 +359,14 @@ $listUrl = static function (array $extra = []) use ($q, $pageNum): string {
     if (!menu || !sum) return;
     function place() {
       var r = sum.getBoundingClientRect();
-      menu.style.top = (r.bottom + 4) + 'px';
-      menu.style.left = Math.max(8, r.right - menu.offsetWidth) + 'px';
+      var gap = 4;
+      var menuHeight = menu.offsetHeight;
+      var below = r.bottom + gap;
+      var top = below + menuHeight <= window.innerHeight - 8 ? below : Math.max(8, r.top - menuHeight - gap);
+      menu.style.top = top + 'px';
+      menu.style.left = Math.min(Math.max(8, r.right - menu.offsetWidth), Math.max(8, window.innerWidth - menu.offsetWidth - 8)) + 'px';
+      menu.style.maxHeight = Math.max(120, window.innerHeight - 16) + 'px';
+      menu.style.overflowY = 'auto';
     }
     det.addEventListener('toggle', function () {
       if (det.open) {
@@ -368,11 +374,19 @@ $listUrl = static function (array $extra = []) use ($q, $pageNum): string {
         document.body.appendChild(menu);
         menu.classList.add('fba-portal');
         place();
-        requestAnimationFrame(place);
+        requestAnimationFrame(function () {
+          place();
+          var firstAction = menu.querySelector('a, button');
+          if (firstAction) firstAction.focus({ preventScroll: true });
+        });
       } else {
+        if (menu.contains(document.activeElement)) sum.focus({ preventScroll: true });
         menu.classList.remove('fba-portal');
         det.appendChild(menu);
       }
+    });
+    menu.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { e.preventDefault(); det.open = false; sum.focus({ preventScroll: true }); }
     });
   });
   function closeAllMores() { mores.forEach(function (o) { o.open = false; }); }

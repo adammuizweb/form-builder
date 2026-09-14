@@ -225,21 +225,21 @@ function fb_render_value(array $field, mixed $v, int $sid, array $filesJ, string
   <div class="fba-head">
     <h1>Submissions: <?= htmlspecialchars($form['title'], ENT_QUOTES) ?></h1>
     <div class="fba-actions">
-      <a class="fba-btn" href="<?= fb_url(['view' => 'forms', 'id' => null]) ?>">&larr; Forms</a>
-      <a class="fba-btn" href="<?= fb_url(['view' => 'builder', 'id' => $formId]) ?>">Builder</a>
-      <a class="fba-btn" href="<?= fb_url(['view' => 'settings', 'id' => $formId]) ?>">Settings</a>
-      <a class="fba-btn primary" href="<?= fb_url(['action' => 'export', 'p' => null, 'detail' => null]) ?>">Export CSV</a>
+      <a class="fba-btn" href="<?= fb_url(['view' => 'forms', 'id' => null]) ?>"><?= svg_ico('arrow-left') ?> Forms</a>
+      <a class="fba-btn" href="<?= fb_url(['view' => 'builder', 'id' => $formId]) ?>"><?= svg_ico('pen') ?> Builder</a>
+      <a class="fba-btn" href="<?= fb_url(['view' => 'settings', 'id' => $formId]) ?>"><?= svg_ico('settings') ?> Settings</a>
+      <a class="fba-btn primary" href="<?= fb_url(['action' => 'export', 'p' => null, 'detail' => null]) ?>"><?= svg_ico('download') ?> Export CSV</a>
     </div>
   </div>
 
-  <div class="fba-card" style="display:flex;gap:1.5rem;align-items:center;flex-wrap:wrap">
-    <div><strong><?= $stats['total'] ?></strong> <span class="fba-sub">total</span></div>
-    <div><strong><?= $stats['new'] ?></strong> <span class="fba-sub">new</span></div>
+  <div class="fba-card fba-submission-summary<?= count($accessible) > 1 ? ' has-switch' : '' ?>">
+    <div class="fba-stat"><?= svg_ico('clipboard-list') ?><div><strong><?= $stats['total'] ?></strong><span class="fba-sub">Total submissions</span></div></div>
+    <div class="fba-stat"><?= svg_ico('mail') ?><div><strong><?= $stats['new'] ?></strong><span class="fba-sub">New submissions</span></div></div>
     <?php if (count($accessible) > 1): ?>
-    <form method="get" style="margin-left:auto">
+    <form method="get" class="fba-form-switch">
       <input type="hidden" name="page" value="admin/tools/form-builder">
       <input type="hidden" name="view" value="submissions">
-      <select name="id" onchange="this.form.submit()">
+      <select name="id" aria-label="Choose form" onchange="this.form.submit()">
         <?php foreach ($accessible as $af): ?>
         <option value="<?= (int)$af['id'] ?>" <?= (int)$af['id'] === $formId ? 'selected' : '' ?>><?= htmlspecialchars($af['title'], ENT_QUOTES) ?></option>
         <?php endforeach; ?>
@@ -248,24 +248,24 @@ function fb_render_value(array $field, mixed $v, int $sid, array $filesJ, string
     <?php endif; ?>
   </div>
 
-  <div class="fba-toolbar">
-    <div style="display:flex;gap:.35rem">
+  <div class="fba-toolbar fba-submissions-toolbar">
+    <div class="fba-state-tabs">
       <?php foreach (['all' => 'All', 'new' => 'New', 'read' => 'Read', 'trash' => 'Trash'] as $k => $lbl): ?>
       <a class="fba-btn sm <?= $state === $k ? 'primary' : '' ?>" href="<?= fb_url(['st' => $k, 'p' => 1, 'detail' => null]) ?>"><?= $lbl ?></a>
       <?php endforeach; ?>
     </div>
-    <form method="get">
+    <form method="get" class="fba-filter-form">
       <input type="hidden" name="page" value="admin/tools/form-builder">
       <input type="hidden" name="view" value="submissions">
       <input type="hidden" name="id" value="<?= $formId ?>">
       <input type="hidden" name="st" value="<?= htmlspecialchars($state, ENT_QUOTES) ?>">
-      <input type="search" name="q" value="<?= htmlspecialchars($q, ENT_QUOTES) ?>" placeholder="Search…" style="width:160px">
-      <select name="workflow"><option value="">All workflow statuses</option><?php foreach ($workflowStatuses as $ws): ?><option value="<?= htmlspecialchars($ws, ENT_QUOTES) ?>" <?= $workflow === $ws ? 'selected' : '' ?>><?= htmlspecialchars(ucfirst($ws), ENT_QUOTES) ?></option><?php endforeach; ?></select>
-      <input type="date" name="df" value="<?= htmlspecialchars($df, ENT_QUOTES) ?>" title="From">
-      <input type="date" name="dt" value="<?= htmlspecialchars($dt, ENT_QUOTES) ?>" title="To">
+      <input type="search" name="q" value="<?= htmlspecialchars($q, ENT_QUOTES) ?>" placeholder="Search submissions" aria-label="Search submissions">
+      <select name="workflow" aria-label="Workflow status"><option value="">All workflow statuses</option><?php foreach ($workflowStatuses as $ws): ?><option value="<?= htmlspecialchars($ws, ENT_QUOTES) ?>" <?= $workflow === $ws ? 'selected' : '' ?>><?= htmlspecialchars(ucfirst($ws), ENT_QUOTES) ?></option><?php endforeach; ?></select>
+      <input type="date" name="df" value="<?= htmlspecialchars($df, ENT_QUOTES) ?>" title="From" aria-label="Submitted from">
+      <input type="date" name="dt" value="<?= htmlspecialchars($dt, ENT_QUOTES) ?>" title="To" aria-label="Submitted through">
       <?php foreach ($optionFields as $of):
         $k = (string)$of['field_key']; ?>
-      <select name="ff_<?= htmlspecialchars($k, ENT_QUOTES) ?>">
+      <select name="ff_<?= htmlspecialchars($k, ENT_QUOTES) ?>" aria-label="<?= htmlspecialchars($of['label'], ENT_QUOTES) ?> filter">
         <option value=""><?= htmlspecialchars($of['label'], ENT_QUOTES) ?>: all</option>
         <?php foreach (fb_field_options($of) as $o): ?>
         <option value="<?= htmlspecialchars($o['value'], ENT_QUOTES) ?>" <?= (($_GET['ff_' . $k] ?? '') === $o['value']) ? 'selected' : '' ?>><?= htmlspecialchars($o['label'], ENT_QUOTES) ?></option>
@@ -285,7 +285,7 @@ function fb_render_value(array $field, mixed $v, int $sid, array $filesJ, string
     <div class="fba-table-wrap">
       <table class="fba-table">
         <thead><tr>
-          <th style="width:30px"><input type="checkbox" onclick="document.querySelectorAll('.fba-row-check').forEach(c=>c.checked=this.checked)"></th>
+          <th style="width:30px"><input type="checkbox" aria-label="Select all submissions" onclick="document.querySelectorAll('.fba-row-check').forEach(c=>c.checked=this.checked)"></th>
           <th>Ref</th>
           <?php foreach ($columns as $c): ?><th><?= htmlspecialchars($c['label'], ENT_QUOTES) ?></th><?php endforeach; ?>
           <?php if ($settings['show_total'] === '1'): ?><th><?= htmlspecialchars($settings['total_label'], ENT_QUOTES) ?></th><?php endif; ?>
@@ -298,7 +298,7 @@ function fb_render_value(array $field, mixed $v, int $sid, array $filesJ, string
           $tot = json_decode((string)$r['totals_json'], true) ?: [];
           ?>
           <tr class="<?= (int)$r['is_deleted'] ? '' : ((int)$r['is_read'] ? '' : 'unread') ?>">
-            <td><input type="checkbox" class="fba-row-check" name="ids[]" value="<?= $sid ?>"></td>
+            <td><input type="checkbox" class="fba-row-check" name="ids[]" value="<?= $sid ?>" aria-label="Select submission <?= htmlspecialchars((string)$r['reference_code'], ENT_QUOTES) ?>"></td>
              <td class="fba-mono"><?= htmlspecialchars((string)$r['reference_code'], ENT_QUOTES) ?></td>
             <?php foreach ($columns as $c):
               $v = $data[$c['field_key']] ?? '';
@@ -314,22 +314,22 @@ function fb_render_value(array $field, mixed $v, int $sid, array $filesJ, string
               <?php elseif ((int)$r['is_read']): ?><span class="fba-badge read">Read</span>
               <?php else: ?><span class="fba-badge new">New</span><?php endif; ?>
             </td>
-            <td style="white-space:nowrap">
-              <a class="fba-btn sm" href="<?= fb_url(['detail' => $sid]) ?>">View</a>
+            <td><div class="fba-row-actions">
+              <a class="fba-btn sm" href="<?= fb_url(['detail' => $sid]) ?>"><?= svg_ico('eye') ?> View</a>
               <?php if ((int)$r['is_deleted']): ?>
               <button class="fba-btn sm" name="fb_action" value="restore" onclick="this.form.querySelectorAll('.fba-row-check').forEach(c=>c.checked=false);this.closest('tr').querySelector('.fba-row-check').checked=true">Restore</button>
               <button class="fba-btn sm danger" name="fb_action" value="delete" onclick="return confirm('Delete permanently?')&&(this.form.querySelectorAll('.fba-row-check').forEach(c=>c.checked=false),this.closest('tr').querySelector('.fba-row-check').checked=true,true)">Delete</button>
               <?php else: ?>
               <button class="fba-btn sm danger" name="fb_action" value="trash" onclick="this.form.querySelectorAll('.fba-row-check').forEach(c=>c.checked=false);this.closest('tr').querySelector('.fba-row-check').checked=true">Trash</button>
               <?php endif; ?>
-            </td>
+            </div></td>
           </tr>
         <?php endforeach; ?>
         </tbody>
       </table>
     </div>
-    <div class="fba-toolbar" style="margin-top:.9rem">
-      <select name="fb_action">
+    <div class="fba-toolbar fba-bulk-actions">
+      <select name="fb_action" aria-label="Bulk action">
         <option value="read">Mark read</option>
         <option value="unread">Mark unread</option>
         <option value="trash">Move to trash</option>
@@ -338,7 +338,7 @@ function fb_render_value(array $field, mixed $v, int $sid, array $filesJ, string
         <option value="delete">Delete permanently</option>
         <?php endif; ?>
       </select>
-      <?php if ($canWorkflow): ?><select name="workflow_status"><?php foreach ($workflowStatuses as $ws): ?><option value="<?= htmlspecialchars($ws, ENT_QUOTES) ?>"><?= htmlspecialchars(ucfirst($ws), ENT_QUOTES) ?></option><?php endforeach; ?></select><button class="fba-btn" name="fb_action" value="workflow" type="submit">Set workflow status</button><?php endif; ?>
+      <?php if ($canWorkflow): ?><select name="workflow_status" aria-label="New workflow status"><?php foreach ($workflowStatuses as $ws): ?><option value="<?= htmlspecialchars($ws, ENT_QUOTES) ?>"><?= htmlspecialchars(ucfirst($ws), ENT_QUOTES) ?></option><?php endforeach; ?></select><button class="fba-btn" name="fb_action" value="workflow" type="submit">Set workflow status</button><?php endif; ?>
       <button class="fba-btn" type="submit">Apply to selected</button>
     </div>
   </form>

@@ -58,7 +58,7 @@ $countryField = ['type'=>'country','field_key'=>'country','label'=>'Country','re
 $phoneField = ['type'=>'intl_phone','field_key'=>'phone','label'=>'Phone','required'=>1,'is_hidden'=>0,'placeholder'=>'','help_text'=>'','validation_json'=>fb_json_encode(['maxlength'=>25]),'settings_json'=>fb_json_encode(['country_field'=>'country'])];
 $countryHtml = fb_render_field_html($countryField, 'contract', 'i1', false, fb_default_settings());
 $phoneHtml = fb_render_field_html($phoneField, 'contract', 'i1', false, fb_default_settings());
-$check(str_contains($countryHtml, 'data-fb-country-search') && str_contains($countryHtml, 'value="ID"') && str_contains($phoneHtml, 'data-country-field="country"'), 'country picker is searchable and international phone rendering declares its country dependency');
+$check(str_contains($countryHtml, 'data-fb-country-search') && str_contains($countryHtml, 'value="ID"') && !str_contains($countryHtml, 'Indonesia (+62)') && str_contains($phoneHtml, 'data-country-field="country"'), 'country picker keeps labels country-focused while phone rendering declares its country dependency');
 $GLOBALS['__APP_LOCALE'] = 'fr-CA';
 $localizedSettings = array_merge(fb_default_settings(), $definition['form']['settings']);
 $localizedPhone = fb_localized_field(['field_key'=>'phone','label'=>'Phone'], $localizedSettings);

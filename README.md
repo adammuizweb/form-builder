@@ -1,6 +1,6 @@
 # Form Builder
 
-Form Builder 1.7.1 is a Jyavani Core 2.3.122 plugin for reusable public forms, private uploads, multilingual definitions, and review workflows.
+Form Builder 1.7.2 is a Jyavani Core 2.3.122 plugin for reusable public forms, private uploads, multilingual definitions, and review workflows.
 
 ## Requirements
 
