@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.6.1 - 2026-09-14
+
+- Preserve the rendered EN/ID/DE locale through public submissions with a locale-bound signed start token, keeping validation, provenance, and notification emails localized.
+
 ## 1.6.0 - 2026-09-14
 
 - Require Jyavani Core 2.3.122 and exact method-aware routes.

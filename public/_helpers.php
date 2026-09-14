@@ -32,17 +32,17 @@ function fb_rate_limit_check(PDO $pdo, string $ip, string $action, int $windowSe
     }
 }
 
-function fb_started_token(PDO $pdo, int $formId): string {
+function fb_started_token(PDO $pdo, int $formId, string $locale = 'en'): string {
     $time = time();
-    return $time . '.' . hash_hmac('sha256', $formId . ':' . $time, fb_get_secret($pdo));
+    return $time . '.' . hash_hmac('sha256', $formId . ':' . $time . ':' . $locale, fb_get_secret($pdo));
 }
 
-function fb_started_check(PDO $pdo, int $formId, string $token, int $minimum): bool {
+function fb_started_check(PDO $pdo, int $formId, string $token, int $minimum, string $locale = 'en'): bool {
     $parts = explode('.', $token, 2);
     if (count($parts) !== 2 || !ctype_digit($parts[0])) return false;
     $time = (int)$parts[0];
     return $time <= time() - $minimum && $time >= time() - 7200
-        && hash_equals(hash_hmac('sha256', $formId . ':' . $time, fb_get_secret($pdo)), $parts[1]);
+        && hash_equals(hash_hmac('sha256', $formId . ':' . $time . ':' . $locale, fb_get_secret($pdo)), $parts[1]);
 }
 
 function fb_contained_path(string $base, string $relative, bool $mustExist = true): ?string {

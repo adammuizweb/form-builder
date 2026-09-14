@@ -12,9 +12,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') { http_response_code(405); he
 try { fb_assert_schema($pdo); } catch (Throwable $error) { http_response_code(503); exit(fb_message($settings, 'service_unavailable')); }
 $contentLength = filter_var($_SERVER['CONTENT_LENGTH'] ?? 0, FILTER_VALIDATE_INT) ?: 0;
 if ($contentLength > 64 * 1024 * 1024 || count($_POST) > 350 || count($_FILES) > 100) { http_response_code(413); exit(fb_message($settings, 'request_too_large')); }
-foreach (['fb_return'=>2048,'fb_slug'=>80,'csrf_token'=>2048,'fb_website'=>256,'fb_started'=>100,'fb_idempotency'=>64,'g-recaptcha-response'=>8192] as $reserved => $limit) {
+foreach (['fb_return'=>2048,'fb_slug'=>80,'fb_locale'=>2,'csrf_token'=>2048,'fb_website'=>256,'fb_started'=>100,'fb_idempotency'=>64,'g-recaptcha-response'=>8192] as $reserved => $limit) {
     if (isset($_POST[$reserved]) && (!is_string($_POST[$reserved]) || strlen($_POST[$reserved]) > $limit)) { http_response_code(400); exit(fb_message($settings, 'invalid_request')); }
 }
+$locale = is_string($_POST['fb_locale'] ?? null) ? strtolower($_POST['fb_locale']) : '';
+if (!in_array($locale, ['en', 'id', 'de'], true)) { http_response_code(400); exit(fb_message($settings, 'invalid_request')); }
+if (function_exists('set_locale')) set_locale($locale); else $GLOBALS['__APP_LOCALE'] = $locale;
 
 $return = fb_safe_return_url(is_string($_POST['fb_return'] ?? null) ? $_POST['fb_return'] : '/');
 $formId = filter_var($_POST['fb_form_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) ?: 0;
@@ -36,7 +39,7 @@ foreach ($localizedFields as $field) $localizedByKey[$field['field_key']] = $fie
 $ctx = fb_public_ctx($pdo);
 if (!is_string($_POST['csrf_token'] ?? null) || !fb_csrf_check('', $_POST['csrf_token'])) $fail(fb_message($settings, 'security_invalid'));
 if (!is_string($_POST['fb_website'] ?? null) || trim($_POST['fb_website']) !== '') $fail(fb_message($settings, 'spam'), 400);
-if (!is_string($_POST['fb_started'] ?? null) || !fb_started_check($pdo, (int)$formId, $_POST['fb_started'], (int)$settings['min_fill_seconds'])) $fail(fb_message($settings, 'wait'), 400);
+if (!is_string($_POST['fb_started'] ?? null) || !fb_started_check($pdo, (int)$formId, $_POST['fb_started'], (int)$settings['min_fill_seconds'], $locale)) $fail(fb_message($settings, 'wait'), 400);
 $idempotency = is_string($_POST['fb_idempotency'] ?? null) ? strtolower(trim($_POST['fb_idempotency'])) : '';
 if (preg_match('/\A[a-f0-9]{32,64}\z/', $idempotency) !== 1) $fail(fb_message($settings, 'invalid_submission_key'), 400);
 

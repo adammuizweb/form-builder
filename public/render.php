@@ -120,6 +120,7 @@ function fb_render_form(PDO $pdo, array $form): string {
     $formId = (int)$form['id'];
     $slug = (string)$form['slug'];
     $settings = fb_form_settings($form);
+    $locale = fb_locale();
     [$form, $settings] = fb_localized_form($form, $settings);
     $unsafeCode = ($settings['unsafe_code_enabled'] ?? false) === true;
     static $instances = 0;
@@ -263,9 +264,10 @@ function fb_render_form(PDO $pdo, array $form): string {
   <form method="post" action="/form-submit/" enctype="multipart/form-data" data-fb-form="<?= fb_h($slug) ?>" novalidate>
     <input type="hidden" name="fb_form_id" value="<?= $formId ?>">
     <input type="hidden" name="fb_slug" value="<?= fb_h($slug) ?>">
+    <input type="hidden" name="fb_locale" value="<?= fb_h($locale) ?>">
     <input type="hidden" name="csrf_token" value="<?= fb_h($ctx['csrf']) ?>">
     <input type="hidden" name="fb_return" value="<?= fb_h($self) ?>">
-    <input type="hidden" name="fb_started" value="<?= fb_h(fb_started_token($pdo, $formId)) ?>">
+    <input type="hidden" name="fb_started" value="<?= fb_h(fb_started_token($pdo, $formId, $locale)) ?>">
     <input type="hidden" name="fb_idempotency" value="<?= fb_h(bin2hex(random_bytes(16))) ?>">
     <div style="position:absolute;left:-9999px" aria-hidden="true"><input type="text" name="fb_website" tabindex="-1" autocomplete="off"></div>
 

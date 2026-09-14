@@ -12,8 +12,8 @@ function add_action(string $name, callable $callback, int $priority = 10): void 
 function add_filter(string $name, callable $callback, int $priority = 10): void { $GLOBALS['_hooks']['filters'][$name][$priority][] = $callback; }
 function apply_filters(string $name, mixed $value, mixed ...$args): mixed { foreach ($GLOBALS['_hooks']['filters'][$name] ?? [] as $callbacks) foreach ($callbacks as $callback) $value = $callback($value, ...$args); return $value; }
 function register_frontend_route(string $path, callable|string $handler, array $options = []): bool { $GLOBALS['_routes'][$path] = $options; return true; }
-function settings_get(PDO $pdo, string $key, ?string $default = null): ?string { return $default; }
-function settings_set(PDO $pdo, string $key, ?string $value, int $autoload = 1): bool { return true; }
+function settings_get(PDO $pdo, string $key, ?string $default = null): ?string { return $GLOBALS['_settings'][$key] ?? $default; }
+function settings_set(PDO $pdo, string $key, ?string $value, int $autoload = 1): bool { $GLOBALS['_settings'][$key] = $value; return true; }
 function stateless_csrf_token(): string { return 'core-stateless-token'; }
 function stateless_csrf_check(?string $token, int $ttl = 300): bool { return $token === 'core-stateless-token'; }
 require dirname(__DIR__) . '/plugin.php';
@@ -28,6 +28,8 @@ $check(($GLOBALS['_routes']['form-submit']['match'] ?? null) === 'exact' && ($GL
 $serverBackup = $_SERVER; $_SERVER['REMOTE_ADDR'] = '203.0.113.10'; $_SERVER['HTTP_X_FORWARDED_FOR'] = '198.51.100.9';
 $context = fb_public_ctx(new PDO('sqlite::memory:')); $_SERVER = $serverBackup;
 $check($context === ['csrf'=>'core-stateless-token','ip'=>'203.0.113.10'] && fb_csrf_check('', 'core-stateless-token'), 'public context uses Core stateless CSRF and ignores untrusted forwarding headers');
+$token = fb_started_token(new PDO('sqlite::memory:'), 7, 'id');
+$check(fb_started_check(new PDO('sqlite::memory:'), 7, $token, 0, 'id') && !fb_started_check(new PDO('sqlite::memory:'), 7, $token, 0, 'de'), 'signed start token binds the rendered submission locale');
 $migrations = plugin_migrations_discover($sandbox . '/plugins/form-builder');
 $check(array_keys($migrations) === ['0001-baseline.sql','0002-submission-workflow.php'], 'Core discovers the final append-only migration filenames');
 
