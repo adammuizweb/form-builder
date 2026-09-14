@@ -254,7 +254,7 @@ $listUrl = static function (array $extra = []) use ($q, $pageNum): string {
             <td style="white-space:nowrap">
               <a class="fba-btn sm primary" href="<?= fb_url(['view' => 'builder', 'id' => $fid]) ?>">Builder</a>
               <details class="fba-more">
-                <summary class="fba-btn sm" title="Aksi lainnya" aria-label="Aksi lainnya"><?= svg_ico('menu', 'fba-menu-trigger-icon') ?></summary>
+                <summary class="fba-btn sm" title="Aksi lainnya" aria-label="Aksi lainnya"><svg class="lucide-icon fba-menu-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></svg></summary>
                 <div class="fba-more-menu">
                   <a href="<?= fb_url(['view' => 'submissions', 'id' => $fid]) ?>"><?= svg_ico('clipboard-list') ?><span>Submissions</span></a>
                    <a href="<?= fb_url(['view' => 'settings', 'id' => $fid]) ?>"><?= svg_ico('settings') ?><span>Settings</span></a>

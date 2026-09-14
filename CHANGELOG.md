@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.3 - 2026-09-15
+
+- Use a compact three-dot ellipsis for row overflow actions instead of a hamburger icon.
+
 ## 1.7.2 - 2026-09-14
 
 - Keep country option labels focused on country names while retaining searchable calling-code metadata for linked phone fields.
