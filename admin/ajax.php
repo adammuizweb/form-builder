@@ -105,6 +105,13 @@ try {
             $type = (string)($_POST['type'] ?? '');
             if (!isset($types[$type]) || !empty($types[$type]['container'])) fb_json(['ok' => false, 'error' => 'Invalid type'], 422);
             if (in_array($type, ['richtext', 'raw_html'], true) && !$canUnsafeCode) fb_json(['ok' => false, 'error' => 'Unsafe-code permission required'], 403);
+            $countryKey = null;
+            if ($type === 'intl_phone') {
+                $country = $pdo->prepare("SELECT field_key FROM fb_fields WHERE form_id = ? AND type = 'country' AND is_hidden = 0 AND deleted_at IS NULL ORDER BY sort_order,id LIMIT 1");
+                $country->execute([$formId]);
+                $countryKey = $country->fetchColumn();
+                if (!is_string($countryKey) || $countryKey === '') fb_json(['ok'=>false,'error'=>'Add a visible country field before adding an international phone'], 422);
+            }
             $colId = (int)($_POST['col_id'] ?? 0);
             $col = $node($colId);
             if ($col === null || $col['type'] !== 'col') fb_json(['ok' => false, 'error' => 'Column not found'], 404);
@@ -121,6 +128,7 @@ try {
             $pdo->prepare('INSERT INTO `fb_fields` (form_id, type, label, field_key, parent_id, sort_order) VALUES (?, ?, ?, ?, ?, ?)')
                 ->execute([$formId, $type, $types[$type]['label'], $key, $colId, $maxSort + 10]);
             $newId = (int)$pdo->lastInsertId();
+            if ($type === 'intl_phone') $pdo->prepare('UPDATE fb_fields SET settings_json = ? WHERE id = ?')->execute([fb_json_encode(['country_field'=>$countryKey]),$newId]);
             if ($index < 999) {
                 // reposition
                 $st = $pdo->prepare('SELECT id FROM `fb_fields` WHERE form_id = ? AND parent_id = ? AND id != ? ORDER BY sort_order, id');
@@ -166,6 +174,20 @@ try {
             $id = (int)($_POST['id'] ?? 0);
             $n = $node($id);
             if ($n === null) fb_json(['ok' => false, 'error' => 'Node not found'], 404);
+            $deleteIds = [$id];
+            $collectSubtree = static function (int $rootId) use ($pdo, $formId, &$deleteIds, &$collectSubtree): void {
+                $st = $pdo->prepare('SELECT id FROM fb_fields WHERE form_id = ? AND parent_id = ? AND deleted_at IS NULL');
+                $st->execute([$formId, $rootId]);
+                foreach ($st->fetchAll(PDO::FETCH_COLUMN) ?: [] as $childId) { $deleteIds[] = (int)$childId; $collectSubtree((int)$childId); }
+            };
+            if (in_array($n['type'], ['row', 'col'], true)) $collectSubtree($id);
+            $deleting = array_fill_keys($deleteIds, true);
+            $countryKeys = [];
+            foreach (fb_get_fields($pdo, $formId) as $field) if (isset($deleting[(int)$field['id']]) && $field['type'] === 'country') $countryKeys[] = $field['field_key'];
+            foreach (fb_get_fields($pdo, $formId) as $field) {
+                if (isset($deleting[(int)$field['id']]) || $field['type'] !== 'intl_phone') continue;
+                if (in_array(fb_field_settings($field)['country_field'] ?? '', $countryKeys, true)) fb_json(['ok'=>false,'error'=>'Delete the linked international phone field first'], 422);
+            }
             $trashSubtree = static function (int $rootId) use ($pdo, $formId, &$trashSubtree): void {
                 $st = $pdo->prepare('SELECT id, type FROM `fb_fields` WHERE form_id = ? AND parent_id = ?');
                 $st->execute([$formId, $rootId]);
@@ -185,7 +207,8 @@ try {
             $n = $node($id);
             if ($n === null || !empty($types[$n['type']]['container'])) fb_json(['ok' => false, 'error' => 'Field not found'], 404);
             if (in_array($n['type'], ['richtext', 'raw_html'], true) && !$canUnsafeCode) fb_json(['ok' => false, 'error' => 'Unsafe-code permission required'], 403);
-            fb_json(['ok' => true, 'html' => fb_render_field_form($n)]);
+            $countryFields = array_values(array_filter(fb_get_fields($pdo, $formId, false), static fn(array $field): bool => $field['type'] === 'country'));
+            fb_json(['ok' => true, 'html' => fb_render_field_form($n, $countryFields)]);
         }
 
         case 'save_field': {
@@ -195,6 +218,8 @@ try {
             // Type is immutable after creation.
             $type = (string)$n['type'];
             $label = trim((string)($_POST['label'] ?? ''));
+            $required = !empty($_POST['required']);
+            $hidden = !empty($_POST['is_hidden']);
             $key = fb_normalize_key((string)($_POST['field_key'] ?? '') !== '' ? (string)$_POST['field_key'] : ($label !== '' ? $label : (string)$n['field_key']));
             $base = $key; $i = 2;
             while (true) {
@@ -218,7 +243,7 @@ try {
             if ($type === 'number') {
                 if (trim((string)($_POST['v_min'] ?? '')) !== '') $validation['min'] = trim((string)$_POST['v_min']);
                 if (trim((string)($_POST['v_max'] ?? '')) !== '') $validation['max'] = trim((string)$_POST['v_max']);
-            } elseif (in_array($type, ['text', 'tel', 'textarea'], true)) {
+            } elseif (in_array($type, ['text', 'tel', 'intl_phone', 'textarea'], true)) {
                 if ((int)($_POST['v_maxlength'] ?? 0) > 0) $validation['maxlength'] = (int)$_POST['v_maxlength'];
                 if (trim((string)($_POST['v_pattern'] ?? '')) !== '') $validation['pattern'] = trim((string)$_POST['v_pattern']);
             } elseif (in_array($type, ['file', 'image'], true)) {
@@ -228,7 +253,14 @@ try {
             }
             // Type-specific element settings (merge: preserve existing keys)
             $settings = fb_field_settings($n);
-            if ($type === 'heading') {
+            if ($type === 'intl_phone') {
+                $countryKey = fb_normalize_key((string)($_POST['s_country_field'] ?? ''));
+                $country = $pdo->prepare("SELECT required,is_hidden FROM fb_fields WHERE form_id = ? AND field_key = ? AND type = 'country' AND deleted_at IS NULL LIMIT 1");
+                $country->execute([$formId, $countryKey]);
+                $countryState = $country->fetch(PDO::FETCH_ASSOC);
+                if (!is_array($countryState) || !empty($countryState['is_hidden']) || ($required && empty($countryState['required']))) fb_json(['ok' => false, 'error' => 'Select a visible country field; required phones need a required country'], 422);
+                $settings['country_field'] = $countryKey;
+            } elseif ($type === 'heading') {
                 $lvl = (string)($_POST['s_level'] ?? 'h2');
                 $settings['level'] = in_array($lvl, FB_HEADING_LEVELS, true) ? $lvl : 'h2';
             } elseif ($type === 'richtext' || $type === 'raw_html') {
@@ -246,13 +278,25 @@ try {
             if (in_array($al, ['center', 'right'], true)) $settings['align'] = $al; else unset($settings['align']);
             $va = (string)($_POST['s_valign'] ?? '');
             if (in_array($va, ['middle', 'bottom'], true)) $settings['valign'] = $va; else unset($settings['valign']);
-            $pdo->prepare('UPDATE `fb_fields` SET label = ?, field_key = ?, placeholder = ?, help_text = ?, required = ?, is_hidden = ?, options_json = ?, validation_json = ?, settings_json = ? WHERE id = ? AND form_id = ?')
-                ->execute([$label, $key, trim((string)($_POST['placeholder'] ?? '')) ?: null, trim((string)($_POST['help_text'] ?? '')) ?: null,
-                    !empty($_POST['required']) ? 1 : 0, !empty($_POST['is_hidden']) ? 1 : 0,
-                    $options ? fb_json_encode($options) : null,
-                    $validation ? fb_json_encode($validation) : null,
-                    $settings ? fb_json_encode($settings) : null, $id, $formId]);
-            $touch();
+            $dependants = [];
+            if ($type === 'country') {
+                foreach (fb_get_fields($pdo, $formId) as $field) if ($field['type'] === 'intl_phone' && (fb_field_settings($field)['country_field'] ?? '') === $n['field_key']) $dependants[] = $field;
+                if ($hidden && $dependants !== []) fb_json(['ok'=>false,'error'=>'A linked international phone requires this country field to remain visible'], 422);
+                foreach ($dependants as $dependant) if (!empty($dependant['required']) && !$required) fb_json(['ok'=>false,'error'=>'A required international phone requires this country field'], 422);
+            }
+            $pdo->beginTransaction();
+            try {
+                $pdo->prepare('UPDATE `fb_fields` SET label = ?, field_key = ?, placeholder = ?, help_text = ?, required = ?, is_hidden = ?, options_json = ?, validation_json = ?, settings_json = ? WHERE id = ? AND form_id = ?')
+                    ->execute([$label, $key, trim((string)($_POST['placeholder'] ?? '')) ?: null, trim((string)($_POST['help_text'] ?? '')) ?: null,
+                        $required ? 1 : 0, $hidden ? 1 : 0, $options ? fb_json_encode($options) : null,
+                        $validation ? fb_json_encode($validation) : null, $settings ? fb_json_encode($settings) : null, $id, $formId]);
+                if ($type === 'country' && $key !== $n['field_key']) foreach ($dependants as $dependant) {
+                    $dependentSettings = fb_field_settings($dependant); $dependentSettings['country_field'] = $key;
+                    $pdo->prepare('UPDATE fb_fields SET settings_json = ? WHERE id = ? AND form_id = ?')->execute([fb_json_encode($dependentSettings),(int)$dependant['id'],$formId]);
+                }
+                $touch();
+                $pdo->commit();
+            } catch (Throwable $error) { if ($pdo->inTransaction()) $pdo->rollBack(); throw $error; }
             fb_json(['ok' => true, 'html' => fb_render_canvas($form, fb_get_tree($pdo, $formId))]);
         }
 

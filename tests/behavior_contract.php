@@ -28,8 +28,8 @@ $check(($GLOBALS['_routes']['form-submit']['match'] ?? null) === 'exact' && ($GL
 $serverBackup = $_SERVER; $_SERVER['REMOTE_ADDR'] = '203.0.113.10'; $_SERVER['HTTP_X_FORWARDED_FOR'] = '198.51.100.9';
 $context = fb_public_ctx(new PDO('sqlite::memory:')); $_SERVER = $serverBackup;
 $check($context === ['csrf'=>'core-stateless-token','ip'=>'203.0.113.10'] && fb_csrf_check('', 'core-stateless-token'), 'public context uses Core stateless CSRF and ignores untrusted forwarding headers');
-$token = fb_started_token(new PDO('sqlite::memory:'), 7, 'id');
-$check(fb_started_check(new PDO('sqlite::memory:'), 7, $token, 0, 'id') && !fb_started_check(new PDO('sqlite::memory:'), 7, $token, 0, 'de'), 'signed start token binds the rendered submission locale');
+$token = fb_started_token(new PDO('sqlite::memory:'), 7, 'fr-ca');
+$check(fb_started_check(new PDO('sqlite::memory:'), 7, $token, 0, 'fr-ca') && !fb_started_check(new PDO('sqlite::memory:'), 7, $token, 0, 'ja'), 'signed start token binds any valid rendered locale');
 $migrations = plugin_migrations_discover($sandbox . '/plugins/form-builder');
 $check(array_keys($migrations) === ['0001-baseline.sql','0002-submission-workflow.php'], 'Core discovers the final append-only migration filenames');
 
@@ -45,40 +45,51 @@ $relocatedParent = $sandbox . '/relocated'; mkdir($relocatedParent, 0700);
 add_filter('fb_files_base_dir', static fn(string $base): string => $relocatedParent . '/form-builder', 50);
 $check(fb_files_base_dir([]) === realpath($relocatedParent) . '/form-builder', 'trusted storage filter preserves a normalized dedicated relocation');
 
-$definitionPath = dirname(__DIR__) . '/examples/international-signup.form.json';
+$definitionPath = __DIR__ . '/fixtures/generic.form.json';
 $definition = fb_definition_decode((string)file_get_contents($definitionPath));
-$fields = $definition['form']['fields']; $inputKeys = [];
-foreach ($fields as $field) if (!in_array($field['type'], ['row','col','heading'], true)) $inputKeys[] = $field['key'];
-$expected = ['full_name','nationality','birth_date','email','phone','home_university','major_field','current_level','preferred_internship_field','internship_start','internship_end','motivation','visa_assistance_needed','travel_insurance','emergency_contact','passport','cv_resume','student_id','consent_accuracy','consent_privacy'];
-$check($definition['form']['slug'] === 'international-signup' && $definition['form']['status'] === 'draft' && $inputKeys === $expected, 'International definition has exact legacy field parity plus required consents');
+$fields = $definition['form']['fields'];
 $byKey = array_column($fields, null, 'key');
-$imagePdf = ['jpg','jpeg','png','webp','pdf'];
-$check($byKey['passport']['validation']['exts'] === $imagePdf && $byKey['student_id']['validation']['exts'] === $imagePdf && $byKey['cv_resume']['validation']['exts'] === ['pdf'], 'passport, student ID, and CV document roles have exact extension policies');
-$check($byKey['consent_accuracy']['required'] === true && $byKey['consent_privacy']['required'] === true && array_keys($definition['form']['settings']['translations']) === ['en','id','de'], 'accuracy/privacy consent and all locales are explicit');
+$check(count(fb_country_catalog()) === 249 && fb_country('ID')['dial'] === '62' && fb_country('ZZ') === null, 'bundled catalog contains the ISO 3166-1 alpha-2 countries and calling metadata');
+$check($byKey['phone']['settings']['country_field'] === 'country' && array_keys($definition['form']['settings']['translations']) === ['fr','fr-ca','ja'], 'generic definitions link international phones and accept configurable locales');
 $checkbox = ['type'=>'checkbox','field_key'=>'consent','label'=>'Consent','required'=>1,'is_hidden'=>0,'options_json'=>fb_json_encode([['value'=>'yes','label'=>'I agree','price'=>0]]),'validation_json'=>null,'settings_json'=>null];
 $checkboxHtml = fb_render_field_html($checkbox, 'contract', 'i1', false, fb_default_settings());
 $check(str_contains($checkboxHtml, 'name="consent[]"') && str_contains($checkboxHtml, 'required'), 'single-option required checkboxes render without undefined state');
-foreach (['en','id','de'] as $locale) {
-    $translation = $definition['form']['settings']['translations'][$locale];
-    $GLOBALS['__APP_LOCALE'] = $locale;
-    $publicMessages = fb_public_message_defaults($locale);
-    $check(count($translation['fields']) === count($fields) - 6 && count($translation['email']) === 4 && count($publicMessages) === count(fb_public_message_defaults('en')) && !in_array('', $publicMessages, true) && fb_message($definition['form']['settings'], 'required', ['field'=>'X']) !== '', $locale . ' has complete field, UI validation, and email text');
-}
+$countryField = ['type'=>'country','field_key'=>'country','label'=>'Country','required'=>1,'is_hidden'=>0,'placeholder'=>'','help_text'=>'','validation_json'=>null,'settings_json'=>null];
+$phoneField = ['type'=>'intl_phone','field_key'=>'phone','label'=>'Phone','required'=>1,'is_hidden'=>0,'placeholder'=>'','help_text'=>'','validation_json'=>fb_json_encode(['maxlength'=>25]),'settings_json'=>fb_json_encode(['country_field'=>'country'])];
+$countryHtml = fb_render_field_html($countryField, 'contract', 'i1', false, fb_default_settings());
+$phoneHtml = fb_render_field_html($phoneField, 'contract', 'i1', false, fb_default_settings());
+$check(str_contains($countryHtml, 'data-fb-country-search') && str_contains($countryHtml, 'value="ID"') && str_contains($phoneHtml, 'data-country-field="country"'), 'country picker is searchable and international phone rendering declares its country dependency');
+$GLOBALS['__APP_LOCALE'] = 'fr-CA';
+$localizedSettings = array_merge(fb_default_settings(), $definition['form']['settings']);
+$localizedPhone = fb_localized_field(['field_key'=>'phone','label'=>'Phone'], $localizedSettings);
+$check(fb_locale() === 'fr-ca' && fb_localized_form(['title'=>'Contact'], $localizedSettings)[0]['title'] === 'Formulaire de contact' && $localizedPhone['label'] === 'Telephone', 'exact locale overlays inherit partial base-language translations');
 
-$invalid = $definition; $invalid['form']['fields'][13]['options'][0]['price'] = 'free';
-$check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects malformed option prices');
+[$normalizedContact, $contactErrors] = fb_validate_submission([$countryField,$phoneField], ['country'=>'id','phone'=>'0812 3456 7890'], [], fb_default_settings());
+$check($contactErrors === [] && $normalizedContact === ['country'=>'ID','phone'=>'+6281234567890'], 'country and local phone values normalize to ISO alpha-2 and E.164');
+$check(fb_normalize_international_phone('02 9374 4000', 'AU') === '+61293744000' && fb_normalize_international_phone('+6721234567', 'AQ') === '+6721234567', 'normalization supports landlines and explicit E.164 numbers for countries without a unique calling code');
+[, $contactErrors] = fb_validate_submission([$countryField,$phoneField], ['country'=>'ID','phone'=>'+49 30 123456'], [], fb_default_settings());
+$check($contactErrors !== [], 'international phone validation rejects a calling code that conflicts with the linked country');
+
 $invalid = $definition; $invalid['form']['fields'][3]['validation']['unknown_rule'] = true;
 $check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects unknown nested keys');
-$invalid = $definition; $invalid['form']['fields'][3]['parent'] = 'row_identity';
+$selectDefinition = $definition;
+$selectDefinition['form']['fields'][] = ['key'=>'choice','parent'=>'col_main','type'=>'select','label'=>'Choice','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>40,'hidden'=>false,'options'=>[['value'=>'one','label'=>'One','price'=>0]],'validation'=>[],'settings'=>[]];
+$invalid = $selectDefinition; $invalid['form']['fields'][5]['options'][0]['price'] = 'free';
+$check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects malformed option prices');
+$invalid = $definition; $invalid['form']['fields'][3]['parent'] = 'row_main';
 $check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects non-container parent relationships');
-$invalid = $definition; $invalid['form']['fields'][15]['validation']['before_field'] = 'full_name';
+$invalid = $definition; $invalid['form']['fields'][] = ['key'=>'date','parent'=>'col_main','type'=>'date','label'=>'Date','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>40,'hidden'=>false,'options'=>[],'validation'=>['before_field'=>'email'],'settings'=>[]];
 $check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects invalid date references');
+$invalid = $definition; $invalid['form']['fields'][3]['settings']['country_field'] = 'email';
+$check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects invalid country field references');
 $invalid = $definition; $invalid['form']['settings']['confirmation_email_field'] = 'phone';
 $check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects non-email mail references');
-$invalid = $definition; $invalid['form']['settings']['translations']['de']['fields']['current_level']['options']['unknown'] = 'Unbekannt';
+$invalid = $selectDefinition; $invalid['form']['settings']['translations']['fr']['fields']['choice']['options']['unknown'] = 'Inconnu';
 $check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects unknown translated options');
-$invalid = $definition; $invalid['form']['fields'][25]['validation']['exts'][] = 'exe';
+$invalid = $definition; $invalid['form']['fields'][] = ['key'=>'attachment','parent'=>'col_main','type'=>'file','label'=>'Attachment','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>40,'hidden'=>false,'options'=>[],'validation'=>['max_bytes'=>1024,'exts'=>['exe']],'settings'=>[]];
 $check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects unsafe upload extensions');
+$invalid = $definition; $invalid['form']['settings']['translations']['not_a_locale'] = [];
+$check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects malformed locale identifiers');
 $check($rejects(static fn() => fb_definition_decode(str_repeat('x', FB_DEFINITION_MAX_BYTES + 1))), 'definition input is bounded');
 
 $dateField = static fn(string $key, string $label, array $validation = []): array => ['type'=>'date','field_key'=>$key,'label'=>$label,'required'=>1,'is_hidden'=>0,'validation_json'=>fb_json_encode($validation)];
@@ -88,14 +99,15 @@ $check($errors === [] && $valid['start'] === '2027-01-01', 'strict valid date ra
 [, $errors] = fb_validate_submission([$dateField('start','Start',['before_field'=>'end']),$dateField('end','End',['after_field'=>'start'])], ['start'=>'2027-02-30','end'=>'2027-01-01'], [], $settings);
 $check(count($errors) >= 2, 'invalid calendar and cross-field date ranges fail');
 $check(fb_csv_cell(' =cmd') === "' =cmd" && fb_csv_cell("\t@cmd") === "'\t@cmd" && fb_csv_cell('ordinary') === 'ordinary', 'CSV formulas including leading whitespace are neutralized');
+$check(fb_format_currency(1250, 'EUR') === 'EUR 1,250' && fb_format_currency(1250, 'bad') === 'USD 1,250', 'priced options use a validated configurable currency code');
 
 $dbFields = [];
 foreach ($fields as $field) $dbFields[] = ['field_key'=>$field['key'],'type'=>$field['type'],'label'=>$field['label'],'is_hidden'=>0,'options_json'=>fb_json_encode($field['options'] ?? []),'validation_json'=>fb_json_encode($field['validation'] ?? []),'settings_json'=>fb_json_encode($field['settings'] ?? [])];
-$form = ['id'=>1,'slug'=>'international-signup','deleted_at'=>null,'settings_json'=>fb_json_encode(array_merge(fb_default_settings(), $definition['form']['settings']))];
-$record = ['schema'=>1,'reference_code'=>'LEGACY-001','workflow_status'=>'reviewing','created_at'=>'2025-01-02 03:04:05','updated_at'=>'2025-01-03 04:05:06','notes'=>[['at'=>'2025-01-03 04:05:06','actor'=>null,'text'=>'Reviewed during migration.']],'history'=>[['at'=>'2025-01-02 03:04:05','actor'=>null,'from'=>null,'to'=>'submitted','source'=>'legacy']],'source'=>['system'=>'legacy-app','record'=>101],'data'=>['full_name'=>'Example Applicant','current_level'=>'master'],'files'=>[],'totals'=>[],'ip'=>null,'is_read'=>true,'is_deleted'=>false];
+$form = ['id'=>1,'slug'=>'contact','deleted_at'=>null,'settings_json'=>fb_json_encode(array_merge(fb_default_settings(), $definition['form']['settings']))];
+$record = ['schema'=>1,'reference_code'=>'LEGACY-001','workflow_status'=>'reviewing','created_at'=>'2025-01-02 03:04:05','updated_at'=>'2025-01-03 04:05:06','notes'=>[['at'=>'2025-01-03 04:05:06','actor'=>null,'text'=>'Reviewed during migration.']],'history'=>[['at'=>'2025-01-02 03:04:05','actor'=>null,'from'=>null,'to'=>'submitted','source'=>'legacy']],'source'=>['system'=>'legacy-app','record'=>101],'data'=>['country'=>'ID','phone'=>'+6281234567890','email'=>'person@example.test'],'files'=>[],'totals'=>[],'ip'=>null,'is_read'=>true,'is_deleted'=>false];
 $normalized = fb_normalize_legacy_submission($record, $form, $dbFields, false);
 $check($normalized['reference_code'] === 'LEGACY-001' && $normalized['created_at'] === $record['created_at'] && $normalized['notes'] === $record['notes'] && $normalized['source'] === $record['source'], 'generic legacy import contract preserves reference, timestamps, notes, and provenance');
-$divergent = $record; $divergent['data']['full_name'] = 'Changed';
+$divergent = $record; $divergent['data']['email'] = 'changed@example.test';
 $check(hash('sha256', fb_json_encode(fb_import_canonicalize($normalized))) !== hash('sha256', fb_json_encode(fb_import_canonicalize(fb_normalize_legacy_submission($divergent, $form, $dbFields, false)))), 'generic import payload hashing detects divergent repeats');
 
 $remove = static function (string $path) use (&$remove): void { if (is_dir($path) && !is_link($path)) { foreach (new FilesystemIterator($path) as $entry) $remove($entry->getPathname()); rmdir($path); } else unlink($path); };

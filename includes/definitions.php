@@ -8,24 +8,24 @@ const FB_JSON_FLAGS = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THR
 function fb_json_encode(mixed $value): string { return json_encode($value, FB_JSON_FLAGS); }
 
 function fb_public_message_defaults(string $locale): array {
-    $messages = [
-        'en' => [
+    $defaults = [
             'default_submit'=>'Submit','default_success'=>'Thank you! Your submission has been received.','select_placeholder'=>'-- Select --','dropzone_prompt'=>'Drop file here or click to browse','max_size'=>'Max {size} MB','choose_image'=>'Please choose an image file','file_too_large'=>'File too large ({size})','ready_to_upload'=>'{size} - ready to upload','submitting'=>'Submitting...','generic_error'=>'Submission failed. Please check your input.','success_heading'=>'Application received','reference_label'=>'Reference','service_unavailable'=>'Service unavailable','method_not_allowed'=>'Method not allowed','request_too_large'=>'Request too large','invalid_request'=>'Invalid request','form_unavailable'=>'This form is not accepting submissions.','invalid_form'=>'Invalid form reference.','security_invalid'=>'Security token invalid. Please reload and try again.','spam'=>'Spam detected.','wait'=>'Please wait before submitting.','invalid_submission_key'=>'Invalid submission key.','captcha_failed'=>'reCAPTCHA verification failed.','rate_limited'=>'Too many submissions. Please try again later.','save_failed'=>'Submission could not be saved. Please try again.','required'=>'{field} is required','invalid_option'=>'{field} has an invalid option','invalid_input'=>'{field} has invalid input','invalid_email'=>'{field} must be a valid email','invalid_phone'=>'{field} must be a valid phone number','invalid_number'=>'{field} must be a number','number_min'=>'{field} must be at least {min}','number_max'=>'{field} must be at most {max}','invalid_date'=>'{field} must be a valid YYYY-MM-DD date','invalid_format'=>'{field} has an invalid format','too_long'=>'{field} is too long (max {max} characters)','date_after'=>'{field} must be after {other}','date_before'=>'{field} must be before {other}','upload_failed'=>'{field} upload failed','upload_invalid'=>'{field} upload is invalid','file_too_large_server'=>'{field} exceeds the {size} MB limit','extension_not_allowed'=>'{field}: file type .{extension} is not allowed','mime_mismatch'=>'{field} content does not match its extension','extension_size'=>'{field} exceeds the limit for .{extension}','invalid_image'=>'{field} is not a valid image','file_store_failed'=>'{field} could not be stored','upload_storage_unavailable'=>'Upload storage is unavailable','upload_finalize_failed'=>'An upload could not be finalized'
-        ],
-        'id' => [
-            'default_submit'=>'Kirim','default_success'=>'Terima kasih! Pengiriman Anda telah diterima.','select_placeholder'=>'-- Pilih --','dropzone_prompt'=>'Letakkan berkas di sini atau klik untuk memilih','max_size'=>'Maks {size} MB','choose_image'=>'Pilih berkas gambar','file_too_large'=>'Berkas terlalu besar ({size})','ready_to_upload'=>'{size} - siap diunggah','submitting'=>'Mengirim...','generic_error'=>'Pengiriman gagal. Periksa kembali isian Anda.','success_heading'=>'Pendaftaran diterima','reference_label'=>'Referensi','service_unavailable'=>'Layanan tidak tersedia','method_not_allowed'=>'Metode tidak diizinkan','request_too_large'=>'Permintaan terlalu besar','invalid_request'=>'Permintaan tidak valid','form_unavailable'=>'Formulir ini tidak menerima pengiriman.','invalid_form'=>'Referensi formulir tidak valid.','security_invalid'=>'Token keamanan tidak valid. Muat ulang lalu coba lagi.','spam'=>'Spam terdeteksi.','wait'=>'Harap tunggu sebelum mengirim.','invalid_submission_key'=>'Kunci pengiriman tidak valid.','captcha_failed'=>'Verifikasi reCAPTCHA gagal.','rate_limited'=>'Terlalu banyak pengiriman. Coba lagi nanti.','save_failed'=>'Pengiriman tidak dapat disimpan. Silakan coba lagi.','required'=>'{field} wajib diisi','invalid_option'=>'{field} memiliki pilihan yang tidak valid','invalid_input'=>'Isian {field} tidak valid','invalid_email'=>'{field} harus berupa email yang valid','invalid_phone'=>'{field} harus berupa nomor telepon yang valid','invalid_number'=>'{field} harus berupa angka','number_min'=>'{field} minimal {min}','number_max'=>'{field} maksimal {max}','invalid_date'=>'{field} harus berupa tanggal YYYY-MM-DD yang valid','invalid_format'=>'Format {field} tidak valid','too_long'=>'{field} terlalu panjang (maks {max} karakter)','date_after'=>'{field} harus setelah {other}','date_before'=>'{field} harus sebelum {other}','upload_failed'=>'Unggahan {field} gagal','upload_invalid'=>'Unggahan {field} tidak valid','file_too_large_server'=>'{field} melebihi batas {size} MB','extension_not_allowed'=>'{field}: jenis berkas .{extension} tidak diizinkan','mime_mismatch'=>'Isi {field} tidak sesuai dengan ekstensinya','extension_size'=>'{field} melebihi batas untuk .{extension}','invalid_image'=>'{field} bukan gambar yang valid','file_store_failed'=>'{field} tidak dapat disimpan','upload_storage_unavailable'=>'Penyimpanan unggahan tidak tersedia','upload_finalize_failed'=>'Unggahan tidak dapat diselesaikan'
-        ],
-        'de' => [
-            'default_submit'=>'Absenden','default_success'=>'Vielen Dank! Ihre Einreichung ist eingegangen.','select_placeholder'=>'-- Auswählen --','dropzone_prompt'=>'Datei hier ablegen oder zum Auswählen klicken','max_size'=>'Max. {size} MB','choose_image'=>'Bitte wählen Sie eine Bilddatei','file_too_large'=>'Datei zu groß ({size})','ready_to_upload'=>'{size} - bereit zum Hochladen','submitting'=>'Wird gesendet...','generic_error'=>'Übermittlung fehlgeschlagen. Bitte prüfen Sie Ihre Eingaben.','success_heading'=>'Bewerbung eingegangen','reference_label'=>'Referenz','service_unavailable'=>'Dienst nicht verfügbar','method_not_allowed'=>'Methode nicht erlaubt','request_too_large'=>'Anfrage zu groß','invalid_request'=>'Ungültige Anfrage','form_unavailable'=>'Dieses Formular nimmt keine Einreichungen an.','invalid_form'=>'Ungültige Formularreferenz.','security_invalid'=>'Ungültiges Sicherheitstoken. Bitte laden Sie die Seite neu.','spam'=>'Spam erkannt.','wait'=>'Bitte warten Sie vor dem Absenden.','invalid_submission_key'=>'Ungültiger Einreichungsschlüssel.','captcha_failed'=>'reCAPTCHA-Prüfung fehlgeschlagen.','rate_limited'=>'Zu viele Einreichungen. Bitte versuchen Sie es später erneut.','save_failed'=>'Die Einreichung konnte nicht gespeichert werden.','required'=>'{field} ist erforderlich','invalid_option'=>'{field} enthält eine ungültige Auswahl','invalid_input'=>'{field} enthält eine ungültige Eingabe','invalid_email'=>'{field} muss eine gültige E-Mail-Adresse sein','invalid_phone'=>'{field} muss eine gültige Telefonnummer sein','invalid_number'=>'{field} muss eine Zahl sein','number_min'=>'{field} muss mindestens {min} sein','number_max'=>'{field} darf höchstens {max} sein','invalid_date'=>'{field} muss ein gültiges Datum im Format YYYY-MM-DD sein','invalid_format'=>'{field} hat ein ungültiges Format','too_long'=>'{field} ist zu lang (max. {max} Zeichen)','date_after'=>'{field} muss nach {other} liegen','date_before'=>'{field} muss vor {other} liegen','upload_failed'=>'Upload von {field} fehlgeschlagen','upload_invalid'=>'Upload von {field} ist ungültig','file_too_large_server'=>'{field} überschreitet die Grenze von {size} MB','extension_not_allowed'=>'{field}: Dateityp .{extension} ist nicht erlaubt','mime_mismatch'=>'Der Inhalt von {field} stimmt nicht mit der Erweiterung überein','extension_size'=>'{field} überschreitet die Grenze für .{extension}','invalid_image'=>'{field} ist kein gültiges Bild','file_store_failed'=>'{field} konnte nicht gespeichert werden','upload_storage_unavailable'=>'Upload-Speicher ist nicht verfügbar','upload_finalize_failed'=>'Ein Upload konnte nicht abgeschlossen werden'
-        ],
+        ];
+    $defaults += [
+        'country_search' => 'Search countries',
+        'country_placeholder' => '-- Select a country --',
+        'invalid_country' => '{field} must be a valid country',
     ];
-    return $messages[$locale] ?? $messages['en'];
+    if (!function_exists('apply_filters')) return $defaults;
+    $localized = apply_filters('fb_public_message_defaults', $defaults, $locale);
+    return is_array($localized) ? array_merge($defaults, $localized) : $defaults;
 }
 
 function fb_message(array $settings, string $key, array $values = []): string {
     $locale = fb_locale();
+    $translation = fb_translation_overlay($settings, $locale);
     $defaults = fb_public_message_defaults($locale);
-    $message = $settings['translations'][$locale]['messages'][$key] ?? $defaults[$key] ?? fb_public_message_defaults('en')[$key] ?? $key;
+    $message = $translation['messages'][$key] ?? $defaults[$key] ?? fb_public_message_defaults('en')[$key] ?? $key;
     if (!is_string($message)) $message = $key;
     foreach ($values as $name => $value) $message = str_replace('{' . $name . '}', mb_substr((string)$value, 0, 1000), $message);
     return $message;
@@ -33,13 +33,13 @@ function fb_message(array $settings, string $key, array $values = []): string {
 
 function fb_email_text(array $settings, string $key, array $values): string {
     $locale = fb_locale();
-    $localizedDefaults = [
-        'en'=>['admin_subject'=>'[{form_title}] New submission {reference}','admin_body'=>"A submission was received for {form_title}.\nReference: {reference}\n\n{fields}",'applicant_subject'=>'Submission received: {reference}','applicant_body'=>"Your submission was received.\nReference: {reference}\n"],
-        'id'=>['admin_subject'=>'[{form_title}] Pengiriman baru {reference}','admin_body'=>"Pengiriman untuk {form_title} telah diterima.\nReferensi: {reference}\n\n{fields}",'applicant_subject'=>'Pengiriman diterima: {reference}','applicant_body'=>"Pengiriman Anda telah diterima.\nReferensi: {reference}\n"],
-        'de'=>['admin_subject'=>'[{form_title}] Neue Einreichung {reference}','admin_body'=>"Eine Einreichung für {form_title} ist eingegangen.\nReferenz: {reference}\n\n{fields}",'applicant_subject'=>'Einreichung eingegangen: {reference}','applicant_body'=>"Ihre Einreichung ist eingegangen.\nReferenz: {reference}\n"],
-    ];
-    $defaults = $localizedDefaults[$locale] ?? $localizedDefaults['en'];
-    $template = $settings['translations'][$locale]['email'][$key] ?? $defaults[$key] ?? '';
+    $translation = fb_translation_overlay($settings, $locale);
+    $defaults = ['admin_subject'=>'[{form_title}] New submission {reference}','admin_body'=>"A submission was received for {form_title}.\nReference: {reference}\n\n{fields}",'applicant_subject'=>'Submission received: {reference}','applicant_body'=>"Your submission was received.\nReference: {reference}\n"];
+    if (function_exists('apply_filters')) {
+        $localized = apply_filters('fb_email_text_defaults', $defaults, $locale);
+        if (is_array($localized)) $defaults = array_merge($defaults, $localized);
+    }
+    $template = $translation['email'][$key] ?? $defaults[$key] ?? '';
     if (!is_string($template)) return '';
     foreach ($values as $name => $value) $template = str_replace('{' . $name . '}', (string)$value, $template);
     return $template;
@@ -138,9 +138,9 @@ function fb_definition_decode(string|array $definition): array {
             }
         }
         if (isset($validation['maxlength']) && (!is_int($validation['maxlength']) || $validation['maxlength'] < 1 || $validation['maxlength'] > 65536)) throw new InvalidArgumentException('Invalid maxlength.');
-        if (isset($validation['maxlength']) && !in_array($type, ['text','email','tel','textarea'], true)) throw new InvalidArgumentException('Maxlength used on an unsupported field.');
+        if (isset($validation['maxlength']) && !in_array($type, ['text','email','tel','intl_phone','textarea'], true)) throw new InvalidArgumentException('Maxlength used on an unsupported field.');
         if (isset($validation['pattern'])) fb_definition_text($validation['pattern'], 500, 'Invalid pattern.', false);
-        if (isset($validation['pattern']) && !in_array($type, ['text','email','tel','textarea'], true)) throw new InvalidArgumentException('Pattern used on an unsupported field.');
+        if (isset($validation['pattern']) && !in_array($type, ['text','email','tel','intl_phone','textarea'], true)) throw new InvalidArgumentException('Pattern used on an unsupported field.');
         foreach (['after_field','before_field'] as $dateRule) if (isset($validation[$dateRule]) && (!is_string($validation[$dateRule]) || $type !== 'date' || $validation[$dateRule] === $key || !isset($byKey[$validation[$dateRule]]) || $byKey[$validation[$dateRule]]['type'] !== 'date')) throw new InvalidArgumentException('Invalid date reference.');
         $isFile = !empty($types[$type]['file']);
         foreach (['max_bytes','exts','max_bytes_by_ext'] as $fileRule) if (isset($validation[$fileRule]) && !$isFile) throw new InvalidArgumentException('File validation used on a non-file field.');
@@ -154,20 +154,24 @@ function fb_definition_decode(string|array $definition): array {
             foreach ($validation['max_bytes_by_ext'] as $extension => $bytes) if (!in_array($extension, $validation['exts'] ?? [], true) || !is_int($bytes) || $bytes < 1 || $bytes > ($validation['max_bytes'] ?? 25 * 1024 * 1024)) throw new InvalidArgumentException('Invalid per-extension limit.');
         }
         $fieldSettings = $field['settings'] ?? [];
-        if (!is_array($fieldSettings) || array_is_list($fieldSettings) && $fieldSettings !== [] || array_diff(array_keys($fieldSettings), ['align','valign','level','html','url','alt','caption','width']) !== []) throw new InvalidArgumentException('Invalid field settings.');
+        if (!is_array($fieldSettings) || array_is_list($fieldSettings) && $fieldSettings !== [] || array_diff(array_keys($fieldSettings), ['align','valign','level','html','url','alt','caption','width','country_field']) !== []) throw new InvalidArgumentException('Invalid field settings.');
         foreach ($fieldSettings as $settingKey => $settingValue) if (!is_string($settingValue) || mb_strlen($settingValue) > ($settingKey === 'html' ? 100000 : 2000)) throw new InvalidArgumentException('Invalid field setting.');
         if (isset($fieldSettings['align']) && !in_array($fieldSettings['align'], ['center','right'], true)) throw new InvalidArgumentException('Invalid alignment.');
         if (isset($fieldSettings['valign']) && !in_array($fieldSettings['valign'], ['middle','bottom'], true)) throw new InvalidArgumentException('Invalid vertical alignment.');
         if (isset($fieldSettings['level']) && ($type !== 'heading' || !in_array($fieldSettings['level'], FB_HEADING_LEVELS, true))) throw new InvalidArgumentException('Invalid heading level.');
         if (isset($fieldSettings['html']) && !in_array($type, ['richtext','raw_html'], true)) throw new InvalidArgumentException('Invalid HTML setting.');
         foreach (['url','alt','caption','width'] as $imageSetting) if (isset($fieldSettings[$imageSetting]) && $type !== 'image_block') throw new InvalidArgumentException('Invalid image setting.');
+        if ($type === 'intl_phone') {
+            $countryField = $fieldSettings['country_field'] ?? null;
+            if (!is_string($countryField) || $countryField === $key || !isset($byKey[$countryField]) || $byKey[$countryField]['type'] !== 'country' || !empty($byKey[$countryField]['hidden']) || (!empty($field['required']) && empty($byKey[$countryField]['required']))) throw new InvalidArgumentException('Invalid country field reference.');
+        } elseif (isset($fieldSettings['country_field'])) throw new InvalidArgumentException('Invalid country field setting.');
         if (isset($fieldSettings['width']) && !in_array($fieldSettings['width'], ['25','50','75'], true)) throw new InvalidArgumentException('Invalid image width.');
         if (isset($fieldSettings['url']) && $fieldSettings['url'] !== '' && $fieldSettings['url'][0] !== '/' && preg_match('#\Ahttps?://#i', $fieldSettings['url']) !== 1) throw new InvalidArgumentException('Invalid image URL.');
     }
 
     $settings = $form['settings'] ?? [];
     if (!is_array($settings) || array_diff(array_keys($settings), array_keys(fb_default_settings())) !== []) throw new InvalidArgumentException('Invalid form settings.');
-    foreach (['submit_label','success_message','recaptcha','notify_email','show_total','total_label','accent','confirmation_email_field','reply_to_email_field'] as $key) if (isset($settings[$key])) fb_definition_text($settings[$key], 4000, 'Invalid form setting.');
+    foreach (['submit_label','success_message','recaptcha','notify_email','show_total','total_label','accent','currency_code','confirmation_email_field','reply_to_email_field'] as $key) if (isset($settings[$key])) fb_definition_text($settings[$key], 4000, 'Invalid form setting.');
     foreach (['rate_max','rate_window','min_fill_seconds'] as $key) if (isset($settings[$key]) && !is_int($settings[$key])) throw new InvalidArgumentException('Invalid numeric setting.');
     if (isset($settings['rate_max']) && ($settings['rate_max'] < 1 || $settings['rate_max'] > 10000)) throw new InvalidArgumentException('Invalid rate maximum.');
     if (isset($settings['rate_window']) && ($settings['rate_window'] < 60 || $settings['rate_window'] > 604800)) throw new InvalidArgumentException('Invalid rate window.');
@@ -175,6 +179,7 @@ function fb_definition_decode(string|array $definition): array {
     foreach (['recaptcha','show_total'] as $toggle) if (isset($settings[$toggle]) && !in_array($settings[$toggle], ['0','1'], true)) throw new InvalidArgumentException('Invalid toggle setting.');
     if (($settings['notify_email'] ?? '') !== '' && filter_var($settings['notify_email'], FILTER_VALIDATE_EMAIL) === false) throw new InvalidArgumentException('Invalid notification email.');
     if (isset($settings['accent']) && !isset(fb_accent_presets()[$settings['accent']])) throw new InvalidArgumentException('Invalid accent setting.');
+    if (isset($settings['currency_code']) && preg_match('/\A[A-Z]{3}\z/', $settings['currency_code']) !== 1) throw new InvalidArgumentException('Invalid currency code.');
     if (isset($settings['unsafe_code_enabled']) && !is_bool($settings['unsafe_code_enabled'])) throw new InvalidArgumentException('Invalid unsafe-code setting.');
     $statuses = $settings['workflow_statuses'] ?? fb_default_settings()['workflow_statuses'];
     if (!is_array($statuses) || !array_is_list($statuses) || count($statuses) < 1 || count($statuses) > 20 || array_values(array_unique($statuses)) !== $statuses || !in_array('submitted', $statuses, true)) throw new InvalidArgumentException('Invalid workflow statuses.');
@@ -185,7 +190,8 @@ function fb_definition_decode(string|array $definition): array {
     foreach ($columns as $column) if (!is_string($column) || !isset($byKey[$column]) || empty($types[$byKey[$column]['type']]['input'])) throw new InvalidArgumentException('Invalid submission column.');
 
     $translations = $settings['translations'] ?? [];
-    if (!is_array($translations) || array_diff(array_keys($translations), ['en','id','de']) !== []) throw new InvalidArgumentException('Invalid locales.');
+    if (!is_array($translations) || count($translations) > 50) throw new InvalidArgumentException('Invalid locales.');
+    foreach (array_keys($translations) as $locale) if (!is_string($locale) || fb_normalize_locale($locale) !== $locale) throw new InvalidArgumentException('Invalid locale.');
     $messageKeys = array_keys(fb_public_message_defaults('en'));
     $emailKeys = ['admin_subject','admin_body','applicant_subject','applicant_body'];
     foreach ($translations as $locale => $translation) {
@@ -253,13 +259,26 @@ function fb_upsert_form_definition(PDO $pdo, string|array $input, ?int $actorId 
     } catch (Throwable $error) { if ($pdo->inTransaction()) $pdo->rollBack(); throw $error; }
 }
 
+function fb_normalize_locale(string $locale): ?string {
+    $locale = strtolower(str_replace('_', '-', trim($locale)));
+    return preg_match('/\A[a-z]{2,3}(?:-[a-z0-9]{2,8}){0,3}\z/', $locale) === 1 ? $locale : null;
+}
+
 function fb_locale(): string {
     $locale = function_exists('get_locale') ? (string)get_locale() : (string)($GLOBALS['__APP_LOCALE'] ?? $GLOBALS['locale'] ?? 'en');
-    $locale = strtolower(substr($locale, 0, 2)); return in_array($locale, ['en','id','de'], true) ? $locale : 'en';
+    return fb_normalize_locale($locale) ?? 'en';
+}
+
+function fb_translation_overlay(array $settings, string $locale): array {
+    $translations = is_array($settings['translations'] ?? null) ? $settings['translations'] : [];
+    $base = explode('-', $locale, 2)[0];
+    $baseTranslation = is_array($translations[$base] ?? null) ? $translations[$base] : [];
+    $exactTranslation = is_array($translations[$locale] ?? null) ? $translations[$locale] : [];
+    return array_replace_recursive($baseTranslation, $exactTranslation);
 }
 
 function fb_localized_form(array $form, array $settings): array {
-    $translation = $settings['translations'][fb_locale()]['form'] ?? [];
+    $translation = fb_translation_overlay($settings, fb_locale())['form'] ?? [];
     if (is_array($translation)) { foreach (['title','description'] as $key) if (is_string($translation[$key] ?? null)) $form[$key] = $translation[$key]; foreach (['submit_label','success_message'] as $key) if (is_string($translation[$key] ?? null)) $settings[$key] = $translation[$key]; }
     if (!is_string($translation['submit_label'] ?? null) && $settings['submit_label'] === fb_default_settings()['submit_label']) $settings['submit_label'] = fb_message($settings, 'default_submit');
     if (!is_string($translation['success_message'] ?? null) && $settings['success_message'] === fb_default_settings()['success_message']) $settings['success_message'] = fb_message($settings, 'default_success');
@@ -267,7 +286,7 @@ function fb_localized_form(array $form, array $settings): array {
 }
 
 function fb_localized_field(array $field, array $settings): array {
-    $translation = $settings['translations'][fb_locale()]['fields'][$field['field_key']] ?? [];
+    $translation = fb_translation_overlay($settings, fb_locale())['fields'][$field['field_key']] ?? [];
     if (!is_array($translation)) return $field;
     foreach (['label','placeholder','help_text'] as $key) if (is_string($translation[$key] ?? null)) $field[$key] = $translation[$key];
     if (is_array($translation['options'] ?? null)) { $options = fb_field_options($field); foreach ($options as &$option) if (is_string($translation['options'][$option['value']] ?? null)) $option['label'] = $translation['options'][$option['value']]; unset($option); $field['options_json'] = fb_json_encode($options); }

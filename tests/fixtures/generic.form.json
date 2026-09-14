@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "definition_id": "b9e451ccebc15718d1d2f310d1c9ca986938f403a981b09368cd6fa30772a3f4",
+  "form": {
+    "slug": "contact",
+    "title": "Contact form",
+    "description": "A generic multilingual form contract.",
+    "status": "draft",
+    "settings": {
+      "confirmation_email_field": "email",
+      "translations": {
+        "fr": {
+          "form": {},
+          "fields": {"country": {"label": "Pays"}, "phone": {"label": "Telephone"}},
+          "messages": {"invalid_country": "{field} doit etre un pays valide"},
+          "email": {}
+        },
+        "fr-ca": {
+          "form": {"title": "Formulaire de contact", "submit_label": "Envoyer"},
+          "fields": {},
+          "messages": {},
+          "email": {}
+        },
+        "ja": {
+          "form": {"title": "Contact"},
+          "fields": {},
+          "messages": {},
+          "email": {}
+        }
+      }
+    },
+    "css": "",
+    "js": "",
+    "fields": [
+      {"key":"row_main","parent":null,"type":"row","label":"","placeholder":"","help":"","required":false,"width":12,"order":10,"hidden":false,"options":[],"validation":{},"settings":{}},
+      {"key":"col_main","parent":"row_main","type":"col","label":"","placeholder":"","help":"","required":false,"width":12,"order":10,"hidden":false,"options":[],"validation":{},"settings":{}},
+      {"key":"country","parent":"col_main","type":"country","label":"Country","placeholder":"","help":"","required":true,"width":12,"order":10,"hidden":false,"options":[],"validation":{},"settings":{}},
+      {"key":"phone","parent":"col_main","type":"intl_phone","label":"Phone","placeholder":"","help":"","required":true,"width":12,"order":20,"hidden":false,"options":[],"validation":{"maxlength":25},"settings":{"country_field":"country"}},
+      {"key":"email","parent":"col_main","type":"email","label":"Email","placeholder":"","help":"","required":true,"width":12,"order":30,"hidden":false,"options":[],"validation":{},"settings":{}}
+    ]
+  }
+}

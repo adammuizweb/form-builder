@@ -1,6 +1,6 @@
 # Form Builder
 
-Form Builder 1.6.1 is a Jyavani Core 2.3.122 plugin for reusable public forms, private uploads, multilingual definitions, and review workflows.
+Form Builder 1.7.0 is a Jyavani Core 2.3.122 plugin for reusable public forms, private uploads, multilingual definitions, and review workflows.
 
 ## Requirements
 
@@ -14,9 +14,13 @@ Core runs `migrations/` during install, update, or enable. Runtime requests only
 
 Embed an active form with `[form slug="contact"]`. Theme Section integrations may render `form-builder` with a `slug` attribute, and Theme Zones may use the Form Builder widget. Repeated embeds receive unique DOM IDs.
 
-Definitions use schema version `1` and deterministically upsert by slug. The admin import/export controls omit submissions, files, secrets, ACL, and unsafe code by default. `examples/international-signup.form.json` is the complete draft en/id/de international internship application. PHP integrations can call `fb_export_form_definition()` and `fb_upsert_form_definition()` directly after checking their own authorization.
+Definitions use schema version `1` and deterministically upsert by slug. The admin import/export controls omit submissions, files, secrets, ACL, and unsafe code by default. PHP integrations can call `fb_export_form_definition()` and `fb_upsert_form_definition()` directly after checking their own authorization.
 
-Public labels, help, options, UI messages, validation messages, success text, and administrator/applicant mail templates can be overridden per locale in `settings.translations.{en,id,de}`. Unknown translation keys and malformed or oversized values are rejected during definition validation.
+Public labels, help, options, UI messages, validation messages, success text, and administrator/applicant mail templates can be overridden under any valid locale key in `settings.translations`. Locale identifiers use normalized lowercase BCP 47 syntax, such as `fr`, `pt-br`, or `zh-hant`; an exact locale falls back to its base language and then to the built-in English text. Unknown translation keys and malformed or oversized values are rejected during definition validation.
+
+The `country` field renders a searchable bundled ISO 3166-1 picker and stores the uppercase alpha-2 code. The `intl_phone` field requires a `settings.country_field` reference to a `country` field, displays its calling code, and stores a server-normalized E.164 value. Country names and calling metadata are bundled for runtime independence; provenance and licenses are documented in `THIRD_PARTY_NOTICES.md`.
+
+Priced options and totals use the form's configurable uppercase ISO 4217 `currency_code`; new forms default to `USD`.
 
 ## Legacy Submission Import
 

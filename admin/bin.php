@@ -54,6 +54,18 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             $flash = 'Item tidak ditemukan di Bin.'; $flashOk = false;
         } else {
             $formId = (int)$f['form_id'];
+            if ($f['type'] === 'intl_phone') {
+                $countryKey = (string)(fb_field_settings($f)['country_field'] ?? '');
+                $country = $pdo->prepare("SELECT required,is_hidden FROM fb_fields WHERE form_id = ? AND field_key = ? AND type = 'country' AND deleted_at IS NULL LIMIT 1");
+                $country->execute([$formId, $countryKey]);
+                $countryState = $country->fetch(PDO::FETCH_ASSOC);
+                if (!is_array($countryState) || !empty($countryState['is_hidden']) || (!empty($f['required']) && empty($countryState['required']))) {
+                    $flash = 'Pulihkan dan konfigurasi country field yang terhubung terlebih dahulu.'; $flashOk = false;
+                    $_SESSION['fb_bin_flash'] = [$flash, $flashOk];
+                    fb_js_redirect('?page=admin/bin/form-builder/index');
+                    return;
+                }
+            }
             $parentId = (int)$f['parent_id'];
             $col = $parentId > 0 ? $fbGetNode($parentId) : null;
             if ($col === null || $col['type'] !== 'col' || (int)$col['form_id'] !== $formId) {

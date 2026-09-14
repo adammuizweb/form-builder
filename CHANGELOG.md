@@ -1,8 +1,16 @@
 # Changelog
 
+## 1.7.0 - 2026-09-14
+
+- Add a searchable, bundled ISO 3166-1 country field that stores uppercase alpha-2 codes.
+- Add a country-linked international phone field with server-side E.164 normalization.
+- Accept configurable normalized locale identifiers instead of a fixed locale allowlist.
+- Replace fixed price formatting with a configurable ISO 4217 currency code.
+- Keep project-owned form definitions outside the reusable plugin package.
+
 ## 1.6.1 - 2026-09-14
 
-- Preserve the rendered EN/ID/DE locale through public submissions with a locale-bound signed start token, keeping validation, provenance, and notification emails localized.
+- Preserve the rendered locale through public submissions with a locale-bound signed start token, keeping validation, provenance, and notification emails localized.
 
 ## 1.6.0 - 2026-09-14
 
@@ -12,8 +20,7 @@
 - Harden anonymous submissions, private uploads/downloads, rate limits, CSV exports, CSRF, and post-commit observers.
 - Use the Core Mail API for administrator and applicant notifications.
 - Add configurable workflow transitions, filters, bulk actions, and append-only reviewer notes.
-- Add bounded atomic JSON definition export/upsert with en/id/de locale overlays.
-- Add the complete `international-signup` application contract, localized public validation/UI and email templates.
+- Add bounded atomic JSON definition export/upsert with locale overlays.
 - Add an independent idempotent legacy-submission import API and source ledger.
 - Resolve private storage from the exact Core plugin root and retain constrained storage relocation support.
 - Add Theme Section and Theme Zone embedding, unique repeated-form IDs, and unsafe-code capability gates.

@@ -19,6 +19,8 @@ const FB_SECRET_KEY = 'form_builder_secret';
 const FB_RECAPTCHA_SITEKEY_KEY = 'form_builder_recaptcha_sitekey';
 const FB_RECAPTCHA_SECRET_KEY = 'form_builder_recaptcha_secret';
 
+require_once __DIR__ . '/includes/countries.php';
+
 function fb_get_secret(PDO $pdo): string {
     $secret = settings_get($pdo, FB_SECRET_KEY, '');
     if (is_string($secret) && strlen($secret) >= 32) {
@@ -52,6 +54,8 @@ function fb_field_types(): array {
         'text'      => ['label' => 'Text',        'input' => true, 'group' => 'input'],
         'email'     => ['label' => 'Email',       'input' => true, 'group' => 'input'],
         'tel'       => ['label' => 'Phone',       'input' => true, 'group' => 'input'],
+        'country'   => ['label' => 'Country',     'input' => true, 'group' => 'input'],
+        'intl_phone'=> ['label' => 'International Phone', 'input' => true, 'group' => 'input'],
         'number'    => ['label' => 'Number',      'input' => true, 'group' => 'input'],
         'textarea'  => ['label' => 'Textarea',    'input' => true, 'group' => 'input'],
         'date'      => ['label' => 'Date',        'input' => true, 'group' => 'input'],
@@ -200,6 +204,7 @@ function fb_default_settings(): array {
         'translations' => [],
         'show_total'      => '0',
         'total_label'     => 'Total',
+        'currency_code'   => 'USD',
         'columns'         => [],
         'accent'          => 'green',
         'unsafe_code_enabled' => false,
@@ -310,8 +315,9 @@ function fb_hard_delete_form(PDO $pdo, array $form): void {
 }
 
 // ---------------- Pricing ----------------
-function fb_format_rupiah(int $n): string {
-    return 'Rp ' . number_format($n, 0, ',', '.');
+function fb_format_currency(int $amount, string $currency): string {
+    $currency = preg_match('/\A[A-Z]{3}\z/', $currency) === 1 ? $currency : 'USD';
+    return $currency . ' ' . number_format($amount, 0, '.', ',');
 }
 
 // Sum of prices for all selected option values (select/radio single, checkbox multi).
@@ -334,6 +340,29 @@ function fb_compute_total(array $fields, array $data): int {
 }
 
 // ---------------- Validation engine ----------------
+function fb_normalize_international_phone(string $value, string $countryCode): ?string {
+    $country = fb_country($countryCode);
+    $dial = (string)($country['dial'] ?? '');
+    if ($country === null || preg_match('/\A[0-9+()\-.\s]+\z/', $value) !== 1) return null;
+
+    $compact = preg_replace('/[()\-.\s]/', '', trim($value)) ?? '';
+    if (str_starts_with($compact, '00')) $compact = '+' . substr($compact, 2);
+    if (str_starts_with($compact, '+')) {
+        $digits = substr($compact, 1);
+        if (!ctype_digit($digits) || ($dial !== '' && !str_starts_with($digits, $dial))) return null;
+    } else {
+        if ($dial === '' || !ctype_digit($compact)) return null;
+        $prefix = (string)($country['prefix'] ?? '');
+        if ($prefix !== '' && str_starts_with($compact, $prefix)) {
+            $stripPrefix = $dial !== '1' || $prefix !== '1' || strlen($compact) === 11;
+            if ($stripPrefix) $compact = substr($compact, strlen($prefix));
+        }
+        $digits = $dial . $compact;
+    }
+    if (preg_match('/\A[1-9][0-9]{6,14}\z/', $digits) !== 1) return null;
+    return '+' . $digits;
+}
+
 // Returns [data(array key=>value), fileErrors]. Files validated; moving happens in submit.php.
 function fb_validate_submission(array $fields, array $post, array $files, array $settings = []): array {
     $types = fb_field_types();
@@ -373,6 +402,7 @@ function fb_validate_submission(array $fields, array $post, array $files, array 
         if (!is_string($raw) || strlen((string)$raw) > 65536) { $errors[] = fb_message($settings, 'invalid_input', ['field'=>$label]); continue; }
         if ($required && $value === '') { $errors[] = fb_message($settings, 'required', ['field'=>$label]); continue; }
         if ($value === '') { $data[$key] = ''; continue; }
+        $enteredValue = $value;
 
         switch ($type) {
             case 'email':
@@ -380,6 +410,18 @@ function fb_validate_submission(array $fields, array $post, array $files, array 
                 break;
             case 'tel':
                 if (!preg_match('/^[0-9+()\-.\s]{6,25}$/', $value)) $errors[] = fb_message($settings, 'invalid_phone', ['field'=>$label]);
+                break;
+            case 'country':
+                $value = strtoupper($value);
+                if (fb_country($value) === null) $errors[] = fb_message($settings, 'invalid_country', ['field'=>$label]);
+                break;
+            case 'intl_phone':
+                $fieldSettings = fb_field_settings($f);
+                $countryKey = (string)($fieldSettings['country_field'] ?? '');
+                $countryValue = is_string($post[$countryKey] ?? null) ? strtoupper(trim($post[$countryKey])) : '';
+                $normalizedPhone = fb_normalize_international_phone($value, $countryValue);
+                if ($normalizedPhone === null) $errors[] = fb_message($settings, 'invalid_phone', ['field'=>$label]);
+                else $value = $normalizedPhone;
                 break;
             case 'number':
                 if (!is_numeric($value)) { $errors[] = fb_message($settings, 'invalid_number', ['field'=>$label]); break; }
@@ -398,10 +440,11 @@ function fb_validate_submission(array $fields, array $post, array $files, array 
                 break;
         }
         $pattern = is_string($valid['pattern'] ?? null) && strlen($valid['pattern']) <= 500 ? $valid['pattern'] : '';
-        if ($pattern !== '' && @preg_match('/(*LIMIT_MATCH=100000)(*LIMIT_RECURSION=1000)' . str_replace('/', '\/', $pattern) . '/', $value) !== 1) {
+        $validationValue = $type === 'intl_phone' ? $enteredValue : $value;
+        if ($pattern !== '' && @preg_match('/(*LIMIT_MATCH=100000)(*LIMIT_RECURSION=1000)' . str_replace('/', '\/', $pattern) . '/', $validationValue) !== 1) {
             $errors[] = fb_message($settings, 'invalid_format', ['field'=>$label]);
         }
-        if (!empty($valid['maxlength']) && mb_strlen($value) > (int)$valid['maxlength']) {
+        if (!empty($valid['maxlength']) && mb_strlen($validationValue) > (int)$valid['maxlength']) {
             $errors[] = fb_message($settings, 'too_long', ['field'=>$label,'max'=>(int)$valid['maxlength']]);
         }
         $data[$key] = $value;

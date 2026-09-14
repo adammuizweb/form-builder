@@ -53,6 +53,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $settings['min_fill_seconds'] = max(0, min(30, (int)($_POST['min_fill_seconds'] ?? 2)));
         $settings['show_total'] = !empty($_POST['show_total']) ? '1' : '0';
         $settings['total_label'] = trim((string)($_POST['total_label'] ?? 'Total')) ?: 'Total';
+        $currencyCode = strtoupper(trim((string)($_POST['currency_code'] ?? 'USD')));
+        $settings['currency_code'] = preg_match('/\A[A-Z]{3}\z/', $currencyCode) === 1 ? $currencyCode : 'USD';
         $settings['columns'] = array_values(array_filter(array_map('strval', (array)($_POST['columns'] ?? []))));
         $pdo->prepare('UPDATE `fb_forms` SET settings_json = ? WHERE id = ?')
             ->execute([fb_json_encode($settings), $formId]);
@@ -162,8 +164,9 @@ $allUsers = $pdo->query("SELECT id, name, email, role FROM `users` WHERE is_dele
         <label class="fba-check"><input type="checkbox" name="show_total" value="1" <?= $settings['show_total'] === '1' ? 'checked' : '' ?>> Show total (sums priced options)</label>
         <div class="fba-hint" style="margin-top:.3rem">Legacy: total otomatis di akhir form. <strong>Diabaikan</strong> jika ada element <strong>Total</strong> di canvas builder (cara yang disarankan — posisi &amp; alignment bisa diatur).</div>
       </div>
-      <div class="fba-row2">
+      <div class="fba-row3">
         <div class="fba-field"><label>Total label</label><input type="text" name="total_label" value="<?= htmlspecialchars($settings['total_label'], ENT_QUOTES) ?>"></div>
+        <div class="fba-field"><label>Currency code</label><input type="text" name="currency_code" value="<?= htmlspecialchars($settings['currency_code'], ENT_QUOTES) ?>" minlength="3" maxlength="3" pattern="[A-Za-z]{3}"><div class="fba-hint">ISO 4217 code, for example USD or EUR.</div></div>
         <div class="fba-field"><label>Submission list columns</label>
           <div class="fba-checks">
             <?php foreach ($inputFields as $f): ?>

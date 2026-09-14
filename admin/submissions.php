@@ -216,6 +216,8 @@ function fb_render_value(array $field, mixed $v, int $sid, array $filesJ, string
     }
     if (is_array($v)) return htmlspecialchars(implode(', ', array_map('strval', $v)), ENT_QUOTES);
     if ($type === 'email' && $v !== '') return '<a href="mailto:' . htmlspecialchars((string)$v, ENT_QUOTES) . '">' . htmlspecialchars((string)$v, ENT_QUOTES) . '</a>';
+    if ($type === 'intl_phone' && $v !== '') return '<a href="tel:' . htmlspecialchars((string)$v, ENT_QUOTES) . '">' . htmlspecialchars((string)$v, ENT_QUOTES) . '</a>';
+    if ($type === 'country' && is_string($v) && ($country = fb_country($v)) !== null) return htmlspecialchars($country['name'] . ' (' . strtoupper($v) . ')', ENT_QUOTES);
     return nl2br(htmlspecialchars((string)$v, ENT_QUOTES));
 }
 ?>
@@ -304,7 +306,7 @@ function fb_render_value(array $field, mixed $v, int $sid, array $filesJ, string
               ?>
             <td><?= htmlspecialchars(mb_strimwidth($txt, 0, 60, '…'), ENT_QUOTES) ?></td>
             <?php endforeach; ?>
-            <?php if ($settings['show_total'] === '1'): ?><td class="fba-mono"><?= fb_format_rupiah((int)($tot['total'] ?? 0)) ?></td><?php endif; ?>
+            <?php if ($settings['show_total'] === '1'): ?><td class="fba-mono"><?= fb_format_currency((int)($tot['total'] ?? 0), (string)$settings['currency_code']) ?></td><?php endif; ?>
              <td style="white-space:nowrap" class="fba-sub"><?= htmlspecialchars(date('d M Y H:i', strtotime((string)$r['created_at'])), ENT_QUOTES) ?></td>
              <td><span class="fba-badge read"><?= htmlspecialchars(ucfirst((string)$r['workflow_status']), ENT_QUOTES) ?></span></td>
             <td>
@@ -376,7 +378,7 @@ function fb_render_value(array $field, mixed $v, int $sid, array $filesJ, string
       <?php endforeach; ?>
       <?php if ($settings['show_total'] === '1'): ?>
       <div class="fba-field"><label><?= htmlspecialchars($settings['total_label'], ENT_QUOTES) ?></label>
-        <div><strong class="fba-mono"><?= fb_format_rupiah((int)($tot['total'] ?? 0)) ?></strong></div></div>
+        <div><strong class="fba-mono"><?= fb_format_currency((int)($tot['total'] ?? 0), (string)$settings['currency_code']) ?></strong></div></div>
       <?php endif; ?>
       <div class="fba-row2">
         <div class="fba-field"><label>IP</label><div class="fba-mono"><?= htmlspecialchars((string)$detail['ip'], ENT_QUOTES) ?></div></div>

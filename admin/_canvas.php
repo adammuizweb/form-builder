@@ -60,7 +60,7 @@ function fb_render_canvas(array $form, array $tree): string {
 
 // Field settings form fragment (loaded into the side panel via AJAX).
 // Type is immutable after creation (shown as read-only badge).
-function fb_render_field_form(array $f): string {
+function fb_render_field_form(array $f, array $countryFields = []): string {
     $types = fb_field_types();
     $fid = (int)$f['id'];
     $type = (string)$f['type'];
@@ -126,9 +126,20 @@ function fb_render_field_form(array $f): string {
         <div class="fba-field"><label>Placeholder</label><input type="text" name="placeholder" value="<?= htmlspecialchars((string)$f['placeholder'], ENT_QUOTES) ?>"></div>
       </div>
       <div class="fba-field"><label>Help text</label><input type="text" name="help_text" value="<?= htmlspecialchars((string)$f['help_text'], ENT_QUOTES) ?>"></div>
+      <?php if ($type === 'intl_phone'): ?>
+      <div class="fba-field"><label>Country field</label>
+        <select name="s_country_field" required>
+          <option value="">Select a country field</option>
+          <?php foreach ($countryFields as $countryField): ?>
+          <option value="<?= htmlspecialchars((string)$countryField['field_key'], ENT_QUOTES) ?>" <?= (($fs['country_field'] ?? '') === $countryField['field_key']) ? 'selected' : '' ?>><?= htmlspecialchars((string)($countryField['label'] ?: $countryField['field_key']), ENT_QUOTES) ?></option>
+          <?php endforeach; ?>
+        </select>
+        <?php if ($countryFields === []): ?><div class="fba-hint">Add a Country field before configuring this phone field.</div><?php endif; ?>
+      </div>
+      <?php endif; ?>
       <?php if (!empty($meta['options'])): ?>
       <div class="fba-field"><label>Options — one per line: <span class="fba-mono">value|Label|price</span></label>
-        <textarea name="options" rows="5" placeholder="s1|S1 UNISSULA|500000"><?= htmlspecialchars(implode("\n", $optLines), ENT_QUOTES) ?></textarea>
+        <textarea name="options" rows="5" placeholder="standard|Standard|100"><?= htmlspecialchars(implode("\n", $optLines), ENT_QUOTES) ?></textarea>
       </div>
       <?php endif; ?>
       <?php if ($type === 'number'): ?>
@@ -136,7 +147,7 @@ function fb_render_field_form(array $f): string {
         <div class="fba-field"><label>Min</label><input type="number" step="any" name="v_min" value="<?= htmlspecialchars((string)($valid['min'] ?? ''), ENT_QUOTES) ?>"></div>
         <div class="fba-field"><label>Max</label><input type="number" step="any" name="v_max" value="<?= htmlspecialchars((string)($valid['max'] ?? ''), ENT_QUOTES) ?>"></div>
       </div>
-      <?php elseif (in_array($type, ['text', 'tel', 'textarea'], true)): ?>
+      <?php elseif (in_array($type, ['text', 'tel', 'intl_phone', 'textarea'], true)): ?>
       <div class="fba-row2">
         <div class="fba-field"><label>Max length</label><input type="number" name="v_maxlength" value="<?= (int)($valid['maxlength'] ?? 0) ?: '' ?>"></div>
         <div class="fba-field"><label>Pattern (regex)</label><input type="text" name="v_pattern" value="<?= htmlspecialchars((string)($valid['pattern'] ?? ''), ENT_QUOTES) ?>"></div>

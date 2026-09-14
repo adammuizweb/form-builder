@@ -4,15 +4,15 @@ declare(strict_types=1);
 $root = realpath(dirname(__DIR__));
 if ($root === false) throw new RuntimeException('Package root unavailable.');
 $manifest = json_decode((string)file_get_contents($root . '/plugin.json'), true, 32, JSON_THROW_ON_ERROR);
-if (($manifest['name'] ?? '') !== 'form-builder' || ($manifest['version'] ?? '') !== '1.6.1') throw new RuntimeException('Unexpected release manifest.');
+if (($manifest['name'] ?? '') !== 'form-builder' || ($manifest['version'] ?? '') !== '1.7.0') throw new RuntimeException('Unexpected release manifest.');
 if (!class_exists('ZipArchive')) throw new RuntimeException('PHP zip extension is required to build the package.');
-$output = $argv[1] ?? (dirname($root) . '/form-builder-1.6.1.zip');
+$output = $argv[1] ?? (dirname($root) . '/form-builder-1.7.0.zip');
 $temporary = $output . '.tmp-' . bin2hex(random_bytes(4));
 $files = [];
 $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS));
 foreach ($iterator as $file) {
     $path = $file->getPathname(); $relative = substr($path, strlen($root) + 1);
-    if ($file->isLink() || str_starts_with($relative, '.git/') || $relative === '.gitignore' || str_starts_with($relative, 'tools/')) continue;
+    if ($file->isLink() || str_starts_with($relative, '.git/') || $relative === '.gitignore' || str_starts_with($relative, 'tools/') || str_starts_with($relative, 'tests/')) continue;
     if (!$file->isFile()) throw new RuntimeException('Unsupported package entry: ' . $relative);
     $files[$relative] = $path;
 }

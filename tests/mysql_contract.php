@@ -56,12 +56,12 @@ try {
     $migration($pdo);
     $check((int)$pdo->query("SELECT COUNT(*) FROM fb_fields WHERE form_id={$formId} AND type IN ('row','col')")->fetchColumn() === 6, 'upgrade data conversion is idempotent on rerun');
     $check((int)$pdo->query("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('fb_import_ledger','fb_submission_imports')")->fetchColumn() === 2, 'definition and submission import ledgers are separate');
-    $definitionJson = (string)file_get_contents(dirname(__DIR__) . '/examples/international-signup.form.json');
+    $definitionJson = (string)file_get_contents(__DIR__ . '/fixtures/generic.form.json');
     $definitionFirst = fb_upsert_form_definition($pdo, $definitionJson, null, false);
     $definitionRepeat = fb_upsert_form_definition($pdo, $definitionJson, null, false);
     $definitionFieldCount = (int)$pdo->query('SELECT COUNT(*) FROM fb_fields WHERE form_id = ' . (int)$definitionFirst['form_id'])->fetchColumn();
     $definitionStatus = $pdo->query('SELECT status FROM fb_forms WHERE id = ' . (int)$definitionFirst['form_id'])->fetchColumn();
-    $check($definitionFirst['form_id'] === $definitionRepeat['form_id'] && $definitionFieldCount === 29 && $definitionStatus === 'draft', 'International definition installs deterministically by slug and remains draft');
+    $check($definitionFirst['form_id'] === $definitionRepeat['form_id'] && $definitionFieldCount === 5 && $definitionStatus === 'draft', 'generic definition installs deterministically by slug and remains draft');
 
     $form = fb_get_form($pdo, $formId); $fields = fb_flat_fields(fb_get_fields($pdo, $formId));
     $record = ['schema'=>1,'reference_code'=>'LEGACY-MYSQL-1','workflow_status'=>'reviewing','created_at'=>'2025-01-02 03:04:05','updated_at'=>'2025-01-03 04:05:06','notes'=>[['at'=>'2025-01-03 04:05:06','actor'=>null,'text'=>'Imported note']],'history'=>[['at'=>'2025-01-02 03:04:05','actor'=>null,'from'=>null,'to'=>'submitted','source'=>'legacy']],'source'=>['system'=>'contract'],'data'=>['a'=>'one','b'=>'two'],'files'=>[],'totals'=>[],'ip'=>null,'is_read'=>false,'is_deleted'=>false];
