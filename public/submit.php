@@ -52,16 +52,24 @@ if ($settings['recaptcha'] === '1') {
 [$data, $errors] = fb_validate_submission($localizedFields, $_POST, $_FILES, $settings);
 if ($errors) $fail(implode(' | ', array_slice($errors, 0, 3)));
 
-try { $baseDir = fb_files_base_dir($form); }
-catch (Throwable $error) { error_log('[form-builder] storage resolution failed: ' . $error->getMessage()); $fail(fb_message($settings, 'upload_storage_unavailable'), 503); }
-$privateRoot = dirname($baseDir);
-if (!is_dir($privateRoot) || is_link($privateRoot)) $fail(fb_message($settings, 'upload_storage_unavailable'), 503);
-if (!is_dir($baseDir) && !mkdir($baseDir, 0700)) $fail(fb_message($settings, 'upload_storage_unavailable'), 503);
-$realBase = realpath($baseDir);
-if ($realBase === false || $realBase !== $baseDir || is_link($baseDir)) $fail(fb_message($settings, 'upload_storage_unavailable'), 503);
-$stageId = bin2hex(random_bytes(16));
-try { $stageDir = fb_ensure_storage_directory($realBase, ['.staging', $stageId]); }
-catch (Throwable $error) { error_log('[form-builder] staging directory failed: ' . $error->getMessage()); $fail(fb_message($settings, 'upload_storage_unavailable'), 503); }
+$uploadFields = [];
+$types = fb_field_types();
+foreach ($fields as $field) {
+    if (empty($types[$field['type']]['file']) || !empty($field['is_hidden'])) continue;
+    $file = $_FILES[(string)$field['field_key']] ?? null;
+    if (is_array($file) && (int)($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) $uploadFields[] = $field;
+}
+$realBase = null;
+$stageDir = null;
+if ($uploadFields !== []) {
+    try {
+        $realBase = fb_prepare_files_base_dir($form);
+        $stageDir = fb_ensure_storage_directory($realBase, ['.staging', bin2hex(random_bytes(16))]);
+    } catch (Throwable $error) {
+        error_log('[form-builder] upload storage preparation failed: ' . $error->getMessage());
+        $fail(fb_message($settings, 'upload_storage_unavailable'), 503);
+    }
+}
 $staged = [];
 $cleanup = static function (array $paths, ?string $dir = null): void {
     foreach ($paths as $path) if (is_string($path) && is_file($path)) @unlink($path);
@@ -69,18 +77,15 @@ $cleanup = static function (array $paths, ?string $dir = null): void {
 };
 
 try {
-    $types = fb_field_types();
-    foreach ($fields as $field) {
-        if (empty($types[$field['type']]['file']) || !empty($field['is_hidden'])) continue;
+    foreach ($uploadFields as $field) {
         $key = (string)$field['field_key'];
-        $file = $_FILES[$key] ?? null;
-        if (!is_array($file) || (int)($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) continue;
+        $file = $_FILES[$key];
         $original = basename((string)$file['name']);
         $extension = strtolower(pathinfo($original, PATHINFO_EXTENSION));
         $name = bin2hex(random_bytes(16)) . '.' . $extension;
         $path = $stageDir . '/' . $name;
         if (!move_uploaded_file((string)$file['tmp_name'], $path)) throw new RuntimeException(fb_message($settings, 'file_store_failed', ['field'=>$localizedByKey[$key]['label'] ?? $field['label']]));
-        if (!chmod($path, 0600)) throw new RuntimeException(fb_message($settings, 'file_store_failed', ['field'=>$localizedByKey[$key]['label'] ?? $field['label']]));
+        if (!chmod($path, 0640)) throw new RuntimeException(fb_message($settings, 'file_store_failed', ['field'=>$localizedByKey[$key]['label'] ?? $field['label']]));
         $finfo = new finfo(FILEINFO_MIME_TYPE);
         $staged[$key] = ['path' => $path, 'name' => $name, 'original' => mb_substr($original, 0, 255),
             'mime' => (string)$finfo->file($path), 'size' => (int)filesize($path), 'sha256' => hash_file('sha256', $path)];
@@ -100,17 +105,20 @@ try {
         fb_redirect($return, ['fb_status'=>'ok','fb_form'=>(string)$form['slug'],'fb_ref'=>$existingRef]);
     }
 
-    $finalSegments = [(string)$formId, date('Y'), date('m')];
-    $finalRelDir = implode('/', $finalSegments);
-    $finalDir = fb_ensure_storage_directory($realBase, $finalSegments);
     $files = []; $finalPaths = [];
-    foreach ($staged as $key => $file) {
-        $destination = $finalDir . '/' . $file['name'];
-        if (!rename($file['path'], $destination)) throw new RuntimeException(fb_message($settings, 'upload_finalize_failed'));
-        $finalPaths[] = $destination;
-        $files[$key] = ['stored'=>$finalRelDir . '/' . $file['name'],'original'=>$file['original'],'mime'=>$file['mime'],'size'=>$file['size'],'sha256'=>$file['sha256']];
+    if ($staged !== []) {
+        if (!is_string($realBase)) throw new RuntimeException(fb_message($settings, 'upload_storage_unavailable'));
+        $finalSegments = [(string)$formId, date('Y'), date('m')];
+        $finalRelDir = implode('/', $finalSegments);
+        $finalDir = fb_ensure_storage_directory($realBase, $finalSegments);
+        foreach ($staged as $key => $file) {
+            $destination = $finalDir . '/' . $file['name'];
+            if (!rename($file['path'], $destination)) throw new RuntimeException(fb_message($settings, 'upload_finalize_failed'));
+            $finalPaths[] = $destination;
+            $files[$key] = ['stored'=>$finalRelDir . '/' . $file['name'],'original'=>$file['original'],'mime'=>$file['mime'],'size'=>$file['size'],'sha256'=>$file['sha256']];
+        }
     }
-    @rmdir($stageDir);
+    if (is_string($stageDir)) @rmdir($stageDir);
     $reference = 'FB-' . strtoupper(bin2hex(random_bytes(6)));
     $history = [['at'=>gmdate('c'),'from'=>null,'to'=>'submitted','actor'=>null,'source'=>'public']];
     $source = ['channel'=>'web','locale'=>fb_locale(),'path'=>mb_substr((string)($_SERVER['REQUEST_URI'] ?? ''),0,500),'user_agent'=>mb_substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''),0,500)];

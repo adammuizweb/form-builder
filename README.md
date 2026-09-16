@@ -6,7 +6,7 @@ Form Builder 1.7.3 is a Jyavani Core 2.3.122 plugin for reusable public forms, p
 
 - Jyavani Core 2.3.122 or newer
 - PHP 8.1 or newer with `pdo_mysql`, `fileinfo`, `dom`, `json`, and `mbstring`
-- A writable Core-owned `private_files` directory
+- A project root where the PHP runtime can safely create or write the Core-owned `private_files` directory
 
 Core runs `migrations/` during install, update, or enable. Runtime requests only assert the migrated schema and never perform DDL.
 
@@ -34,6 +34,6 @@ Public submissions use Core stateless CSRF, honeypot and signed fill-time checks
 
 Run `php tests/security_contract.php`, `php tests/behavior_contract.php`, and PHP lint over all PHP files. `php tests/mysql_contract.php --core-env` runs the guarded integration suite in a unique disposable `fb_contract_*` database and always drops it; without an explicit opt-in it skips. Build a deterministic flat ZIP with `php tools/build-package.php [output.zip]`; `plugin.json` is written at the archive root and only the build environment needs PHP's `zip` extension.
 
-Storage defaults exactly to `dirname(PLUGIN_PATH)/private_files/form-builder`. The `fb_files_base_dir` filter may relocate it only to an absolute, normalized, existing-parent path whose dedicated leaf remains `form-builder`.
+Storage defaults exactly to `dirname(PLUGIN_PATH)/private_files/form-builder`. On the first validated upload, Form Builder safely creates the missing default `private_files` and dedicated `form-builder` directories with private permissions. Existing storage must be writable by the PHP runtime. The `fb_files_base_dir` filter may relocate storage only to an absolute, normalized, existing-parent path whose dedicated leaf remains `form-builder`; custom parents are deployment-provisioned and are never created implicitly.
 
 Complete uninstall is controlled by Core's keep-data choice. A complete uninstall removes plugin tables, settings, migration history (Core-owned), and the exact contained private upload tree; unsafe filesystem state aborts cleanup.

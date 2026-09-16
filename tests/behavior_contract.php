@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 $sandbox = sys_get_temp_dir() . '/fb-contract-' . getmypid();
 mkdir($sandbox . '/plugins/form-builder/migrations', 0700, true);
-mkdir($sandbox . '/private_files', 0700, true);
 foreach (glob(dirname(__DIR__) . '/migrations/*') ?: [] as $migration) copy($migration, $sandbox . '/plugins/form-builder/migrations/' . basename($migration));
 define('DASHBOARD_CONTEXT', true);
 define('PLUGIN_PATH', $sandbox . '/plugins');
@@ -23,7 +22,12 @@ $failures = [];
 $check = static function (bool $ok, string $message) use (&$failures): void { echo ($ok ? 'PASS ' : 'FAIL ') . $message . "\n"; if (!$ok) $failures[] = $message; };
 $rejects = static function (callable $callback): bool { try { $callback(); return false; } catch (InvalidArgumentException|JsonException) { return true; } };
 
-$check(fb_project_root() === realpath($sandbox) && fb_files_base_dir([]) === realpath($sandbox) . '/private_files/form-builder', 'storage resolves to PROJECT_ROOT/private_files/form-builder');
+$preparedBase = fb_prepare_files_base_dir([]);
+$check(fb_project_root() === realpath($sandbox)
+    && $preparedBase === realpath($sandbox) . '/private_files/form-builder'
+    && fb_files_base_dir([]) === $preparedBase
+    && is_writable($preparedBase),
+    'storage safely provisions a writable PROJECT_ROOT/private_files/form-builder namespace');
 $check(($GLOBALS['_routes']['form-submit']['match'] ?? null) === 'exact' && ($GLOBALS['_routes']['form-submit']['methods'] ?? null) === ['POST'] && ($GLOBALS['_routes']['fb-builder']['methods'] ?? null) === ['POST'], 'runtime route registration is exact and method-aware');
 $serverBackup = $_SERVER; $_SERVER['REMOTE_ADDR'] = '203.0.113.10'; $_SERVER['HTTP_X_FORWARDED_FOR'] = '198.51.100.9';
 $context = fb_public_ctx(new PDO('sqlite::memory:')); $_SERVER = $serverBackup;
@@ -33,17 +37,17 @@ $check(fb_started_check(new PDO('sqlite::memory:'), 7, $token, 0, 'fr-ca') && !f
 $migrations = plugin_migrations_discover($sandbox . '/plugins/form-builder');
 $check(array_keys($migrations) === ['0001-baseline.sql','0002-submission-workflow.php'], 'Core discovers the final append-only migration filenames');
 
-$pathBase = fb_files_base_dir([]); mkdir($pathBase, 0700); mkdir($pathBase . '/1', 0700); file_put_contents($pathBase . '/1/test.pdf', '%PDF-contract');
+$pathBase = fb_files_base_dir([]); mkdir($pathBase . '/1', 0750); file_put_contents($pathBase . '/1/test.pdf', '%PDF-contract');
 $check(fb_contained_path($pathBase, '1/test.pdf', true) === $pathBase . '/1/test.pdf' && fb_contained_path($pathBase, '../private_files/secret', false) === null && fb_contained_path($pathBase, '/etc/passwd', true) === null, 'private path containment accepts only contained regular paths');
 $safeDirectory = fb_ensure_storage_directory($pathBase, ['2', '2026', '09']);
-$check($safeDirectory === $pathBase . '/2/2026/09' && is_dir($safeDirectory), 'private upload directories are created one contained component at a time');
+$check($safeDirectory === $pathBase . '/2/2026/09' && is_dir($safeDirectory) && is_writable($safeDirectory), 'private upload directories are created writable and one contained component at a time');
 $symlinkTarget = $sandbox . '/symlink-target'; mkdir($symlinkTarget, 0700); symlink($symlinkTarget, $pathBase . '/3');
 try { fb_ensure_storage_directory($pathBase, ['3', '2026']); $symlinkRejected = false; } catch (RuntimeException) { $symlinkRejected = true; }
 $check($symlinkRejected, 'private upload directory creation rejects symlinked components');
 $check(fb_rate_limit_check(new PDO('sqlite::memory:'), '203.0.113.10', 'test', 60, 1)['allowed'] === false, 'rate limiting fails closed on storage errors');
 $relocatedParent = $sandbox . '/relocated'; mkdir($relocatedParent, 0700);
 add_filter('fb_files_base_dir', static fn(string $base): string => $relocatedParent . '/form-builder', 50);
-$check(fb_files_base_dir([]) === realpath($relocatedParent) . '/form-builder', 'trusted storage filter preserves a normalized dedicated relocation');
+$check(fb_prepare_files_base_dir([]) === realpath($relocatedParent) . '/form-builder', 'trusted storage filter provisions a normalized dedicated relocation');
 
 $definitionPath = __DIR__ . '/fixtures/generic.form.json';
 $definition = fb_definition_decode((string)file_get_contents($definitionPath));

@@ -17,6 +17,10 @@ $check(!str_contains($ajax, "'Server error: ' . \$e->getMessage()") && str_conta
 $submit = (string)file_get_contents($root . '/public/submit.php');
 $check(!preg_match('/(?<!jy_)mail\s*\(/', $submit) && strpos($submit, '$pdo->commit()') < strpos($submit, 'jy_mail_send'), 'Core mail executes only after persistence');
 $check(!str_contains($submit, 'HTTP_X_FORWARDED_FOR') && str_contains($submit, 'do_action_isolated'), 'submission path retains trusted IP and isolated observer contracts');
+$check(str_contains($submit, 'if ($uploadFields !== [])')
+    && str_contains($submit, 'fb_prepare_files_base_dir($form)')
+    && str_contains($submit, 'chmod($path, 0640)'),
+    'public submission provisions scoped private storage only when validated uploads are present');
 $check(!str_contains((string)file_get_contents($root . '/plugin.php'), 'CREATE TABLE') && !str_contains((string)file_get_contents($root . '/plugin.php'), 'ALTER TABLE'), 'runtime entrypoint contains no DDL');
 $adminIndex = (string)file_get_contents($root . '/admin/index.php');
 $menuStart = strpos($adminIndex, '<div class="fba-more-menu">');

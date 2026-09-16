@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Safely provision the private Form Builder upload namespace, reject non-writable storage before staging, and avoid touching upload storage for submissions without files.
+
 ## 1.7.3 - 2026-09-15
 
 - Use a compact three-dot ellipsis for row overflow actions instead of a hamburger icon.

@@ -552,11 +552,39 @@ function fb_normalize_storage_base(string $path): string {
     return $normalized;
 }
 
-function fb_files_base_dir(array $form): string {
+function fb_storage_base_candidate(array $form): string {
     $base = fb_project_root() . '/private_files/form-builder';
     if (function_exists('apply_filters')) $base = apply_filters('fb_files_base_dir', $base, $form);
     if (!is_string($base)) throw new RuntimeException('Invalid Form Builder storage filter result.');
-    return fb_normalize_storage_base(rtrim($base, '/'));
+    return rtrim($base, '/');
+}
+
+function fb_files_base_dir(array $form): string {
+    return fb_normalize_storage_base(fb_storage_base_candidate($form));
+}
+
+function fb_prepare_files_base_dir(array $form): string {
+    $projectRoot = fb_project_root();
+    $candidate = fb_storage_base_candidate($form);
+    $defaultParent = $projectRoot . '/private_files';
+    if ($candidate === $defaultParent . '/form-builder' && !file_exists($defaultParent)) {
+        if (!mkdir($defaultParent, 0750) && !is_dir($defaultParent)) {
+            throw new RuntimeException('Unable to create the private files directory.');
+        }
+    }
+
+    $base = fb_normalize_storage_base($candidate);
+    if (!file_exists($base) && !mkdir($base, 0750) && !is_dir($base)) {
+        throw new RuntimeException('Unable to create the Form Builder storage root.');
+    }
+    clearstatcache(true, $base);
+    $stat = @lstat($base);
+    $resolved = realpath($base);
+    if (!is_array($stat) || (($stat['mode'] ?? 0) & 0170000) !== 0040000 || is_link($base)
+        || $resolved === false || $resolved !== $base || !is_writable($resolved)) {
+        throw new RuntimeException('Form Builder storage root is unavailable or not writable.');
+    }
+    return $resolved;
 }
 
 function fb_ensure_storage_directory(string $base, array $segments): string {
@@ -568,10 +596,10 @@ function fb_ensure_storage_directory(string $base, array $segments): string {
             throw new RuntimeException('Invalid Form Builder storage segment.');
         }
         $path .= DIRECTORY_SEPARATOR . $segment;
-        if (!file_exists($path) && !mkdir($path, 0700)) throw new RuntimeException('Unable to create Form Builder storage directory.');
+        if (!file_exists($path) && !mkdir($path, 0750)) throw new RuntimeException('Unable to create Form Builder storage directory.');
         $resolved = realpath($path);
         if ($resolved === false || $resolved !== $path || !is_dir($resolved) || is_link($path)
-            || !str_starts_with($resolved, $root . DIRECTORY_SEPARATOR)) {
+            || !str_starts_with($resolved, $root . DIRECTORY_SEPARATOR) || !is_writable($resolved)) {
             throw new RuntimeException('Unsafe Form Builder storage directory.');
         }
     }
@@ -651,8 +679,9 @@ add_action('plugin_uninstall', function (string $name): void {
     if ($name !== 'form-builder') return;
     $pdo = $GLOBALS['pdo'] ?? null;
     if (!($pdo instanceof PDO)) throw new RuntimeException('Database unavailable for Form Builder cleanup.');
-    $root = fb_files_base_dir([]);
-    if (file_exists($root)) {
+    $candidate = fb_storage_base_candidate([]);
+    if (file_exists($candidate) || is_link($candidate)) {
+        $root = fb_normalize_storage_base($candidate);
         $expected = fb_normalize_storage_base($root);
         if ($expected !== $root || is_link($root)) {
             throw new RuntimeException('Refusing unsafe Form Builder storage cleanup.');
