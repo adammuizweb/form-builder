@@ -15,6 +15,12 @@ function settings_get(PDO $pdo, string $key, ?string $default = null): ?string {
 function settings_set(PDO $pdo, string $key, ?string $value, int $autoload = 1): bool { $GLOBALS['_settings'][$key] = $value; return true; }
 function stateless_csrf_token(): string { return 'core-stateless-token'; }
 function stateless_csrf_check(?string $token, int $ttl = 300): bool { return $token === 'core-stateless-token'; }
+function current_user_id(): int { return (int)($GLOBALS['_uid'] ?? 0); }
+function user_can(PDO $pdo, int $uid, string $permission): bool { return !empty($GLOBALS['_permissions'][$uid][$permission]); }
+function authorization_actor(PDO $pdo, int $uid): ?array {
+    if (!isset($GLOBALS['_actors'][$uid])) return null;
+    return ['roles' => array_map(static fn(string $slug): array => ['slug' => $slug], $GLOBALS['_actors'][$uid])];
+}
 require dirname(__DIR__) . '/plugin.php';
 require '/var/www/jyavani.lan/cfg/helpers/migration_helper.php';
 
@@ -29,6 +35,25 @@ $check(fb_project_root() === realpath($sandbox)
     && is_writable($preparedBase),
     'storage safely provisions a writable PROJECT_ROOT/private_files/form-builder namespace');
 $check(($GLOBALS['_routes']['form-submit']['match'] ?? null) === 'exact' && ($GLOBALS['_routes']['form-submit']['methods'] ?? null) === ['POST'] && ($GLOBALS['_routes']['fb-builder']['methods'] ?? null) === ['POST'], 'runtime route registration is exact and method-aware');
+$formAccess = ['created_by'=>1,'access_json'=>fb_json_encode(['owner'=>1,'roles'=>['international-editor'],'users'=>[2],'submissions'=>['roles'=>['international-reviewer'],'users'=>[3]]])];
+$GLOBALS['_actors'] = [1=>['admin'],2=>['author'],3=>['author'],4=>['international-reviewer'],5=>['author'],6=>['admin']];
+foreach ([1,2,3,4,5,6] as $accessUid) $GLOBALS['_permissions'][$accessUid]['plugin.form-builder.workspace.access'] = true;
+$GLOBALS['_permissions'][6]['plugin.form-builder.forms.manage-any'] = true;
+$GLOBALS['_permissions'][6]['plugin.form-builder.submissions.manage'] = true;
+$check(fb_can_access_form(new PDO('sqlite::memory:'), $formAccess, 1)
+    && fb_can_access_form(new PDO('sqlite::memory:'), $formAccess, 2)
+    && !fb_can_access_form(new PDO('sqlite::memory:'), $formAccess, 3),
+    'form owner and explicit editors can edit while submission-only viewers cannot');
+$check(fb_can_view_submissions(new PDO('sqlite::memory:'), $formAccess, 1)
+    && fb_can_view_submissions(new PDO('sqlite::memory:'), $formAccess, 3)
+    && fb_can_view_submissions(new PDO('sqlite::memory:'), $formAccess, 4)
+    && !fb_can_view_submissions(new PDO('sqlite::memory:'), $formAccess, 2)
+    && !fb_can_view_submissions(new PDO('sqlite::memory:'), $formAccess, 5),
+    'submission ACL grants only the named users and roles without inheriting editor access');
+$check(fb_can_view_submissions(new PDO('sqlite::memory:'), $formAccess, 6)
+    && fb_can_manage_submissions(new PDO('sqlite::memory:'), $formAccess, 6)
+    && !fb_can_manage_submissions(new PDO('sqlite::memory:'), $formAccess, 3),
+    'global submission managers retain full access while scoped viewers remain read-only');
 $serverBackup = $_SERVER; $_SERVER['REMOTE_ADDR'] = '203.0.113.10'; $_SERVER['HTTP_X_FORWARDED_FOR'] = '198.51.100.9';
 $context = fb_public_ctx(new PDO('sqlite::memory:')); $_SERVER = $serverBackup;
 $check($context === ['csrf'=>'core-stateless-token','ip'=>'203.0.113.10'] && fb_csrf_check('', 'core-stateless-token'), 'public context uses Core stateless CSRF and ignores untrusted forwarding headers');

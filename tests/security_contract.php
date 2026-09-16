@@ -23,6 +23,19 @@ $check(str_contains($submit, 'if ($uploadFields !== [])')
     'public submission provisions scoped private storage only when validated uploads are present');
 $check(!str_contains((string)file_get_contents($root . '/plugin.php'), 'CREATE TABLE') && !str_contains((string)file_get_contents($root . '/plugin.php'), 'ALTER TABLE'), 'runtime entrypoint contains no DDL');
 $adminIndex = (string)file_get_contents($root . '/admin/index.php');
+$plugin = (string)file_get_contents($root . '/plugin.php');
+$settings = (string)file_get_contents($root . '/admin/settings.php');
+$check(str_contains($plugin, 'function fb_can_view_submissions(')
+    && str_contains($plugin, "['submissions']['roles']")
+    && str_contains($settings, 'name="submission_users[]"'),
+    'per-form submission viewers are distinct from form editors');
+$check(str_contains($adminIndex, 'fb_can_view_submissions($pdo, $form, $uid)')
+    && !str_contains($adminIndex, "if (\$view === 'submissions' && !user_can"),
+    'submission routes enforce the scoped form guard instead of a global-only gate');
+$submissions = (string)file_get_contents($root . '/admin/submissions.php');
+$check(str_contains($submissions, 'if (!$canManageSubmissions)')
+    && str_contains($submissions, 'if ($canManageSubmissions):'),
+    'scoped submission viewers cannot invoke or see destructive controls');
 $menuStart = strpos($adminIndex, '<div class="fba-more-menu">');
 $menuEnd = strpos($adminIndex, '</div>', $menuStart);
 $menu = $menuStart !== false && $menuEnd !== false ? substr($adminIndex, $menuStart, $menuEnd - $menuStart) : '';
@@ -32,7 +45,6 @@ $triggerEnd = strpos($adminIndex, '</summary>', $triggerStart);
 $trigger = $triggerStart !== false && $triggerEnd !== false ? substr($adminIndex, $triggerStart, $triggerEnd - $triggerStart) : '';
 $check($trigger !== '' && !str_contains($trigger, "svg_ico('menu'") && substr_count($trigger, '<circle cx=') === 3, 'compact overflow trigger uses a three-dot ellipsis instead of a hamburger');
 $check(str_contains($adminIndex, 'firstAction.focus({ preventScroll: true })') && str_contains($adminIndex, "e.key === 'Escape'"), 'portaled overflow actions preserve keyboard access and focus restoration');
-$submissions = (string)file_get_contents($root . '/admin/submissions.php');
 $check(str_contains($submissions, 'fba-submission-summary') && str_contains($submissions, 'fba-filter-form') && str_contains($submissions, 'fba-bulk-actions'), 'submissions workspace uses dedicated styled UI primitives');
 if ($failures) { fwrite(STDERR, 'Security contract failed: ' . implode('; ', $failures) . "\n"); exit(1); }
 echo "RESULT: ALL PASS\n";

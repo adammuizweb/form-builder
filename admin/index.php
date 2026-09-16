@@ -35,7 +35,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             ->execute([
                 $slug, $title,
                 fb_json_encode(fb_default_settings()),
-                fb_json_encode(['roles' => [], 'users' => [], 'owner' => $uid]),
+                fb_json_encode(['roles' => [], 'users' => [], 'owner' => $uid, 'submissions' => ['roles' => [], 'users' => []]]),
                 $uid,
             ]);
         $newId = (int)$pdo->lastInsertId();
@@ -64,7 +64,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             while (fb_get_form_by_slug($pdo, $slug) !== null) $slug = $base . '-' . $i++;
             $pdo->prepare('INSERT INTO `fb_forms` (slug, title, description, status, settings_json, css, js, access_json, created_by) VALUES (?, ?, ?, "draft", ?, ?, ?, ?, ?)')
                 ->execute([$slug, $target['title'] . ' (Copy)', $target['description'], $target['settings_json'], $target['css'], $target['js'],
-                    fb_json_encode(['roles' => [], 'users' => [], 'owner' => $uid]), $uid]);
+                    fb_json_encode(['roles' => [], 'users' => [], 'owner' => $uid, 'submissions' => ['roles' => [], 'users' => []]]), $uid]);
             $newId = (int)$pdo->lastInsertId();
             $fields = fb_get_fields($pdo, (int)$target['id']);
             usort($fields, static fn($a, $b) => (int)$a['id'] <=> (int)$b['id']); // parents before children
@@ -112,9 +112,8 @@ $view = (string)($_GET['view'] ?? 'forms');
 // Raw-output actions (file stream / CSV export) must run BEFORE any HTML is printed,
 // otherwise headers are already sent and the download is corrupted.
 if ($view === 'submissions' && in_array(($_GET['action'] ?? ''), ['file', 'export'], true)) {
-    if (!user_can($pdo, $uid, 'plugin.form-builder.submissions.manage')) { http_response_code(403); exit('Access denied'); }
     $form = fb_get_form($pdo, (int)($_GET['id'] ?? 0));
-    if ($form === null || ($form['deleted_at'] ?? null) !== null || !fb_can_access_form($pdo, $form, $uid)) {
+    if ($form === null || ($form['deleted_at'] ?? null) !== null || !fb_can_view_submissions($pdo, $form, $uid)) {
         http_response_code(403);
         exit('Access denied');
     }
@@ -140,9 +139,11 @@ if ($flash !== '') {
 }
 
 if ($view === 'builder' || $view === 'settings' || $view === 'submissions') {
-    if ($view === 'submissions' && !user_can($pdo, $uid, 'plugin.form-builder.submissions.manage')) { echo '<div class="fba-empty">Access denied.</div>'; return; }
     $form = fb_get_form($pdo, (int)($_GET['id'] ?? 0));
-    if ($form === null || ($form['deleted_at'] ?? null) !== null || !fb_can_access_form($pdo, $form, $uid)) {
+    $hasViewAccess = $form !== null && ($view === 'submissions'
+        ? fb_can_view_submissions($pdo, $form, $uid)
+        : fb_can_access_form($pdo, $form, $uid));
+    if ($form === null || ($form['deleted_at'] ?? null) !== null || !$hasViewAccess) {
         echo '<div class="fba-empty">Form not found or access denied. <a href="' . fb_url(['view' => 'forms', 'id' => null]) . '">Back to forms</a></div>';
         return;
     }
@@ -238,30 +239,32 @@ $listUrl = static function (array $extra = []) use ($q, $pageNum): string {
         <tbody>
         <?php foreach ($forms as $f):
           $fid = (int)$f['id'];
+          $canEditForm = fb_can_access_form($pdo, $f, $uid);
+          $canViewFormSubmissions = fb_can_view_submissions($pdo, $f, $uid);
           $fieldsCount = (int)$pdo->query("SELECT COUNT(*) FROM `fb_fields` WHERE form_id = {$fid} AND type NOT IN ('row','col') AND deleted_at IS NULL")->fetchColumn();
           $subsCount = (int)$pdo->query("SELECT COUNT(*) FROM `fb_submissions` WHERE form_id = {$fid} AND is_deleted = 0")->fetchColumn();
           $newCount = (int)$pdo->query("SELECT COUNT(*) FROM `fb_submissions` WHERE form_id = {$fid} AND is_deleted = 0 AND is_read = 0")->fetchColumn();
           $statusCls = ['active' => 'active', 'draft' => 'draft', 'archived' => 'arch'][$f['status']] ?? 'draft';
           ?>
           <tr>
-            <td class="fba-checkcol"><input type="checkbox" name="ids[]" value="<?= $fid ?>"></td>
+            <td class="fba-checkcol"><?php if ($canEditForm): ?><input type="checkbox" name="ids[]" value="<?= $fid ?>"><?php endif; ?></td>
             <td><strong><?= htmlspecialchars($f['title'], ENT_QUOTES) ?></strong><span class="fba-sub fba-mono"><?= htmlspecialchars($f['slug'], ENT_QUOTES) ?></span></td>
             <td data-col="shortcode"><span class="fba-code">[form slug=&quot;<?= htmlspecialchars($f['slug'], ENT_QUOTES) ?>&quot;]</span></td>
             <td data-col="fields"><?= $fieldsCount ?></td>
-            <td data-col="subs"><?= $subsCount ?><?= $newCount > 0 ? ' <span class="fba-badge new">' . $newCount . ' new</span>' : '' ?></td>
+            <td data-col="subs"><?= $canViewFormSubmissions ? $subsCount . ($newCount > 0 ? ' <span class="fba-badge new">' . $newCount . ' new</span>' : '') : '&mdash;' ?></td>
             <td data-col="status"><span class="fba-badge <?= $statusCls ?>"><?= htmlspecialchars($f['status'], ENT_QUOTES) ?></span></td>
             <td data-col="updated" style="white-space:nowrap" class="fba-sub"><?= htmlspecialchars(date('d M Y H:i', strtotime((string)$f['updated_at'])), ENT_QUOTES) ?></td>
             <td style="white-space:nowrap">
-              <a class="fba-btn sm primary" href="<?= fb_url(['view' => 'builder', 'id' => $fid]) ?>">Builder</a>
+              <?php if ($canEditForm): ?><a class="fba-btn sm primary" href="<?= fb_url(['view' => 'builder', 'id' => $fid]) ?>">Builder</a><?php elseif ($canViewFormSubmissions): ?><a class="fba-btn sm primary" href="<?= fb_url(['view' => 'submissions', 'id' => $fid]) ?>">Submissions</a><?php endif; ?>
               <details class="fba-more">
                 <summary class="fba-btn sm" title="Aksi lainnya" aria-label="Aksi lainnya"><svg class="lucide-icon fba-menu-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></svg></summary>
                 <div class="fba-more-menu">
-                  <a href="<?= fb_url(['view' => 'submissions', 'id' => $fid]) ?>"><?= svg_ico('clipboard-list') ?><span>Submissions</span></a>
-                   <a href="<?= fb_url(['view' => 'settings', 'id' => $fid]) ?>"><?= svg_ico('settings') ?><span>Settings</span></a>
+                   <?php if ($canViewFormSubmissions): ?><a href="<?= fb_url(['view' => 'submissions', 'id' => $fid]) ?>"><?= svg_ico('clipboard-list') ?><span>Submissions</span></a><?php endif; ?>
+                   <?php if ($canEditForm): ?><a href="<?= fb_url(['view' => 'settings', 'id' => $fid]) ?>"><?= svg_ico('settings') ?><span>Settings</span></a>
                    <?php if ($canDefinitions): ?><a href="<?= fb_url(['action' => 'export_definition', 'id' => $fid]) ?>"><?= svg_ico('download') ?><span>Export definition</span></a><?php endif; ?>
-                  <button type="submit" form="fba-dup-<?= $fid ?>"><?= svg_ico('copy') ?><span>Duplikat</span></button>
-                  <button type="submit" form="fba-arch-<?= $fid ?>" class="danger"><?= svg_ico('box') ?><span>Arsipkan</span></button>
-                  <button type="submit" form="fba-del-<?= $fid ?>" class="danger"><?= svg_ico('trash-2') ?><span>Hapus</span></button>
+                   <button type="submit" form="fba-dup-<?= $fid ?>"><?= svg_ico('copy') ?><span>Duplikat</span></button>
+                   <button type="submit" form="fba-arch-<?= $fid ?>" class="danger"><?= svg_ico('box') ?><span>Arsipkan</span></button>
+                   <button type="submit" form="fba-del-<?= $fid ?>" class="danger"><?= svg_ico('trash-2') ?><span>Hapus</span></button><?php endif; ?>
                 </div>
               </details>
             </td>
@@ -284,7 +287,7 @@ $listUrl = static function (array $extra = []) use ($q, $pageNum): string {
   <?php endif; ?>
 
   <?php /* standalone POST forms for row actions (referenced via form= attr, no nesting) */ ?>
-  <?php foreach ($forms as $f): $fid = (int)$f['id']; ?>
+  <?php foreach ($forms as $f): $fid = (int)$f['id']; if (!fb_can_access_form($pdo, $f, $uid)) continue; ?>
   <form method="post" id="fba-dup-<?= $fid ?>" style="display:none" onsubmit="return confirm('Duplikat form ini?')">
     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>">
     <input type="hidden" name="fb_action" value="duplicate_form">

@@ -227,10 +227,15 @@ function fb_form_settings(array $form): array {
 function fb_form_access(array $form): array {
     $raw = json_decode((string)($form['access_json'] ?? ''), true);
     if (!is_array($raw)) $raw = [];
+    $submissions = is_array($raw['submissions'] ?? null) ? $raw['submissions'] : [];
     return [
         'roles' => array_values(array_filter(array_map('strval', (array)($raw['roles'] ?? [])))),
         'users' => array_values(array_filter(array_map('intval', (array)($raw['users'] ?? [])))),
         'owner' => (int)($raw['owner'] ?? ($form['created_by'] ?? 0)),
+        'submissions' => [
+            'roles' => array_values(array_filter(array_map('strval', (array)($submissions['roles'] ?? [])))),
+            'users' => array_values(array_filter(array_map('intval', (array)($submissions['users'] ?? [])))),
+        ],
     ];
 }
 
@@ -261,13 +266,39 @@ function fb_can_access_form(PDO $pdo, array $form, ?int $uid = null): bool {
     return false;
 }
 
-// All forms the current user may manage (PHP-filtered; form counts are small).
+function fb_can_view_submissions(PDO $pdo, array $form, ?int $uid = null): bool {
+    $uid = $uid ?? (function_exists('current_user_id') ? (int)current_user_id() : 0);
+    if ($uid <= 0 || !function_exists('user_can')
+        || !user_can($pdo, $uid, 'plugin.form-builder.workspace.access')) return false;
+    $acc = fb_form_access($form);
+    if ($acc['owner'] > 0 && $acc['owner'] === $uid) return true;
+    if (user_can($pdo, $uid, 'plugin.form-builder.submissions.manage') && fb_can_access_form($pdo, $form, $uid)) return true;
+    if (array_intersect(fb_user_role_slugs($pdo, $uid), $acc['submissions']['roles']) !== []) return true;
+    return in_array($uid, $acc['submissions']['users'], true);
+}
+
+function fb_can_manage_submissions(PDO $pdo, array $form, ?int $uid = null): bool {
+    $uid = $uid ?? (function_exists('current_user_id') ? (int)current_user_id() : 0);
+    return $uid > 0 && function_exists('user_can')
+        && user_can($pdo, $uid, 'plugin.form-builder.submissions.manage')
+        && fb_can_access_form($pdo, $form, $uid);
+}
+
+// All forms available for one workspace capability (PHP-filtered; form counts are small).
 // Trashed forms (deleted_at) are always excluded — they live in the Bin.
-function fb_accessible_forms(PDO $pdo, string $statusFilter = "status != 'archived'"): array {
+function fb_accessible_forms(PDO $pdo, string $statusFilter = "status != 'archived'", string $capability = 'workspace'): array {
     $rows = $pdo->query("SELECT * FROM `fb_forms` WHERE {$statusFilter} AND deleted_at IS NULL ORDER BY updated_at DESC, id DESC")->fetchAll(PDO::FETCH_ASSOC);
     $rows = is_array($rows) ? $rows : [];
     $uid = function_exists('current_user_id') ? (int)current_user_id() : 0;
-    return array_values(array_filter($rows, static fn($f) => fb_can_access_form($pdo, $f, $uid)));
+    return array_values(array_filter($rows, static function ($form) use ($pdo, $uid, $capability): bool {
+        $canEdit = fb_can_access_form($pdo, $form, $uid);
+        $canViewSubmissions = fb_can_view_submissions($pdo, $form, $uid);
+        return match ($capability) {
+            'edit' => $canEdit,
+            'submissions' => $canViewSubmissions,
+            default => $canEdit || $canViewSubmissions,
+        };
+    }));
 }
 
 // ---------------- Form Bin (soft delete) ----------------

@@ -6,7 +6,9 @@ $formId = (int)$form['id'];
 $settings = fb_form_settings($form);
 $fields = fb_flat_fields(fb_get_fields($pdo, $formId));
 $types = fb_field_types();
-$canWorkflow = user_can($pdo, $uid, 'plugin.form-builder.workflow.manage');
+$canManageSubmissions = fb_can_manage_submissions($pdo, $form, $uid);
+$canWorkflow = $canManageSubmissions && user_can($pdo, $uid, 'plugin.form-builder.workflow.manage');
+$canEditForm = fb_can_access_form($pdo, $form, $uid);
 $workflowStatuses = $settings['workflow_statuses'];
 $optionFields = array_values(array_filter($fields, static fn($f) => in_array($f['type'], ['select', 'radio', 'checkbox'], true) && empty($f['is_hidden'])));
 $inputFields = array_values(array_filter($fields, static fn($f) => !empty($types[$f['type']]['input']) && empty($types[$f['type']]['file']) && empty($f['is_hidden'])));
@@ -122,6 +124,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         return;
     }
     $act = (string)($_POST['fb_action'] ?? '');
+    if (!$canManageSubmissions) {
+        echo '<div class="fba-empty">Access denied.</div>';
+        return;
+    }
     $ids = array_slice(array_values(array_unique(array_filter(array_map('intval', (array)($_POST['ids'] ?? []))))), 0, 200);
     if (!$ids && isset($_POST['id_one'])) $ids = [(int)$_POST['id_one']];
     if ($ids && in_array($act, ['read', 'unread', 'trash', 'restore', 'delete'], true)) {
@@ -198,7 +204,7 @@ $stats = [
     'total' => (int)$pdo->query("SELECT COUNT(*) FROM `fb_submissions` WHERE form_id = {$formId} AND is_deleted = 0")->fetchColumn(),
     'new'   => (int)$pdo->query("SELECT COUNT(*) FROM `fb_submissions` WHERE form_id = {$formId} AND is_deleted = 0 AND is_read = 0")->fetchColumn(),
 ];
-$accessible = fb_accessible_forms($pdo);
+$accessible = fb_accessible_forms($pdo, "status != 'archived'", 'submissions');
 
 function fb_render_value(array $field, mixed $v, int $sid, array $filesJ, string $formIdStr): string {
     $type = (string)$field['type'];
@@ -226,8 +232,8 @@ function fb_render_value(array $field, mixed $v, int $sid, array $filesJ, string
     <h1>Submissions: <?= htmlspecialchars($form['title'], ENT_QUOTES) ?></h1>
     <div class="fba-actions">
       <a class="fba-btn" href="<?= fb_url(['view' => 'forms', 'id' => null]) ?>"><?= svg_ico('arrow-left') ?> Forms</a>
-      <a class="fba-btn" href="<?= fb_url(['view' => 'builder', 'id' => $formId]) ?>"><?= svg_ico('pen') ?> Builder</a>
-      <a class="fba-btn" href="<?= fb_url(['view' => 'settings', 'id' => $formId]) ?>"><?= svg_ico('settings') ?> Settings</a>
+      <?php if ($canEditForm): ?><a class="fba-btn" href="<?= fb_url(['view' => 'builder', 'id' => $formId]) ?>"><?= svg_ico('pen') ?> Builder</a>
+      <a class="fba-btn" href="<?= fb_url(['view' => 'settings', 'id' => $formId]) ?>"><?= svg_ico('settings') ?> Settings</a><?php endif; ?>
       <a class="fba-btn primary" href="<?= fb_url(['action' => 'export', 'p' => null, 'detail' => null]) ?>"><?= svg_ico('download') ?> Export CSV</a>
     </div>
   </div>
@@ -285,7 +291,7 @@ function fb_render_value(array $field, mixed $v, int $sid, array $filesJ, string
     <div class="fba-table-wrap">
       <table class="fba-table">
         <thead><tr>
-          <th style="width:30px"><input type="checkbox" aria-label="Select all submissions" onclick="document.querySelectorAll('.fba-row-check').forEach(c=>c.checked=this.checked)"></th>
+          <?php if ($canManageSubmissions): ?><th style="width:30px"><input type="checkbox" aria-label="Select all submissions" onclick="document.querySelectorAll('.fba-row-check').forEach(c=>c.checked=this.checked)"></th><?php endif; ?>
           <th>Ref</th>
           <?php foreach ($columns as $c): ?><th><?= htmlspecialchars($c['label'], ENT_QUOTES) ?></th><?php endforeach; ?>
           <?php if ($settings['show_total'] === '1'): ?><th><?= htmlspecialchars($settings['total_label'], ENT_QUOTES) ?></th><?php endif; ?>
@@ -298,7 +304,7 @@ function fb_render_value(array $field, mixed $v, int $sid, array $filesJ, string
           $tot = json_decode((string)$r['totals_json'], true) ?: [];
           ?>
           <tr class="<?= (int)$r['is_deleted'] ? '' : ((int)$r['is_read'] ? '' : 'unread') ?>">
-            <td><input type="checkbox" class="fba-row-check" name="ids[]" value="<?= $sid ?>" aria-label="Select submission <?= htmlspecialchars((string)$r['reference_code'], ENT_QUOTES) ?>"></td>
+            <?php if ($canManageSubmissions): ?><td><input type="checkbox" class="fba-row-check" name="ids[]" value="<?= $sid ?>" aria-label="Select submission <?= htmlspecialchars((string)$r['reference_code'], ENT_QUOTES) ?>"></td><?php endif; ?>
              <td class="fba-mono"><?= htmlspecialchars((string)$r['reference_code'], ENT_QUOTES) ?></td>
             <?php foreach ($columns as $c):
               $v = $data[$c['field_key']] ?? '';
@@ -316,10 +322,10 @@ function fb_render_value(array $field, mixed $v, int $sid, array $filesJ, string
             </td>
             <td><div class="fba-row-actions">
               <a class="fba-btn sm" href="<?= fb_url(['detail' => $sid]) ?>"><?= svg_ico('eye') ?> View</a>
-              <?php if ((int)$r['is_deleted']): ?>
+              <?php if ($canManageSubmissions && (int)$r['is_deleted']): ?>
               <button class="fba-btn sm" name="fb_action" value="restore" onclick="this.form.querySelectorAll('.fba-row-check').forEach(c=>c.checked=false);this.closest('tr').querySelector('.fba-row-check').checked=true">Restore</button>
               <button class="fba-btn sm danger" name="fb_action" value="delete" onclick="return confirm('Delete permanently?')&&(this.form.querySelectorAll('.fba-row-check').forEach(c=>c.checked=false),this.closest('tr').querySelector('.fba-row-check').checked=true,true)">Delete</button>
-              <?php else: ?>
+              <?php elseif ($canManageSubmissions): ?>
               <button class="fba-btn sm danger" name="fb_action" value="trash" onclick="this.form.querySelectorAll('.fba-row-check').forEach(c=>c.checked=false);this.closest('tr').querySelector('.fba-row-check').checked=true">Trash</button>
               <?php endif; ?>
             </div></td>
@@ -328,7 +334,7 @@ function fb_render_value(array $field, mixed $v, int $sid, array $filesJ, string
         </tbody>
       </table>
     </div>
-    <div class="fba-toolbar fba-bulk-actions">
+    <?php if ($canManageSubmissions): ?><div class="fba-toolbar fba-bulk-actions">
       <select name="fb_action" aria-label="Bulk action">
         <option value="read">Mark read</option>
         <option value="unread">Mark unread</option>
@@ -340,7 +346,7 @@ function fb_render_value(array $field, mixed $v, int $sid, array $filesJ, string
       </select>
       <?php if ($canWorkflow): ?><select name="workflow_status" aria-label="New workflow status"><?php foreach ($workflowStatuses as $ws): ?><option value="<?= htmlspecialchars($ws, ENT_QUOTES) ?>"><?= htmlspecialchars(ucfirst($ws), ENT_QUOTES) ?></option><?php endforeach; ?></select><button class="fba-btn" name="fb_action" value="workflow" type="submit">Set workflow status</button><?php endif; ?>
       <button class="fba-btn" type="submit">Apply to selected</button>
-    </div>
+    </div><?php endif; ?>
   </form>
 
   <?php if ($totalPages > 1): ?>

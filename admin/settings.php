@@ -83,8 +83,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         }
         $roles = array_values(array_filter(array_map('strval', (array)($_POST['access_roles'] ?? []))));
         $users = array_values(array_filter(array_map('intval', (array)($_POST['access_users'] ?? []))));
+        $submissionRoles = array_values(array_filter(array_map('strval', (array)($_POST['submission_roles'] ?? []))));
+        $submissionUsers = array_values(array_filter(array_map('intval', (array)($_POST['submission_users'] ?? []))));
         $access['roles'] = $roles;
         $access['users'] = $users;
+        $access['submissions'] = ['roles' => $submissionRoles, 'users' => $submissionUsers];
         $pdo->prepare('UPDATE `fb_forms` SET access_json = ? WHERE id = ?')
             ->execute([fb_json_encode($access), $formId]);
         $saved = true;
@@ -216,20 +219,35 @@ $allUsers = $pdo->query("SELECT id, name, email, role FROM `users` WHERE is_dele
     <form method="post">
       <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>">
       <input type="hidden" name="fb_action" value="save_access">
-      <p class="fba-hint" style="margin-bottom:.8rem">Form owners and users with Manage Any Form access can manage this ACL. Grants below are additional to the Form Builder workspace permission.</p>
-      <div class="fba-field"><label>Roles</label>
+      <p class="fba-hint" style="margin-bottom:.8rem">Form owners and users with Manage Any Form access can manage this ACL. All grants below also require Form Builder workspace access.</p>
+      <div class="fba-field"><label>Form editor roles</label>
         <div class="fba-checks">
           <?php foreach ($allRoles as $r): ?>
           <label class="fba-check"><input type="checkbox" name="access_roles[]" value="<?= htmlspecialchars((string)$r, ENT_QUOTES) ?>" <?= in_array((string)$r, $access['roles'], true) ? 'checked' : '' ?>> <?= htmlspecialchars((string)$r, ENT_QUOTES) ?></label>
           <?php endforeach; ?>
         </div>
       </div>
-      <div class="fba-field"><label>Users</label>
+      <div class="fba-field"><label>Form editor users</label>
         <div class="fba-checks" style="max-height:180px;overflow-y:auto;border:1px solid var(--adam-border);border-radius:9px;padding:.6rem .8rem">
           <?php foreach ($allUsers as $u): ?>
           <label class="fba-check"><input type="checkbox" name="access_users[]" value="<?= (int)$u['id'] ?>" <?= in_array((int)$u['id'], $access['users'], true) ? 'checked' : '' ?>> <?= htmlspecialchars($u['name'] !== '' ? $u['name'] : $u['email'], ENT_QUOTES) ?> <span class="fba-sub">(<?= htmlspecialchars((string)$u['role'], ENT_QUOTES) ?>)</span></label>
           <?php endforeach; ?>
         </div>
+      </div>
+      <div class="fba-field"><label>Submission viewer roles</label>
+        <div class="fba-checks">
+          <?php foreach ($allRoles as $r): ?>
+          <label class="fba-check"><input type="checkbox" name="submission_roles[]" value="<?= htmlspecialchars((string)$r, ENT_QUOTES) ?>" <?= in_array((string)$r, $access['submissions']['roles'], true) ? 'checked' : '' ?>> <?= htmlspecialchars((string)$r, ENT_QUOTES) ?></label>
+          <?php endforeach; ?>
+        </div>
+      </div>
+      <div class="fba-field"><label>Submission viewer users</label>
+        <div class="fba-checks" style="max-height:180px;overflow-y:auto;border:1px solid var(--adam-border);border-radius:9px;padding:.6rem .8rem">
+          <?php foreach ($allUsers as $u): ?>
+          <label class="fba-check"><input type="checkbox" name="submission_users[]" value="<?= (int)$u['id'] ?>" <?= in_array((int)$u['id'], $access['submissions']['users'], true) ? 'checked' : '' ?>> <?= htmlspecialchars($u['name'] !== '' ? $u['name'] : $u['email'], ENT_QUOTES) ?> <span class="fba-sub">(<?= htmlspecialchars((string)$u['role'], ENT_QUOTES) ?>)</span></label>
+          <?php endforeach; ?>
+        </div>
+        <div class="fba-hint">Viewers can inspect, download, and export this form's submissions. Destructive actions also require form editor access and the global submission permission; workflow changes additionally require the workflow permission.</div>
       </div>
       <button class="fba-btn primary" type="submit">Save access</button>
     </form>

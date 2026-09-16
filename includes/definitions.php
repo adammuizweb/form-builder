@@ -239,7 +239,7 @@ function fb_upsert_form_definition(PDO $pdo, string|array $input, ?int $actorId 
             $pdo->prepare('UPDATE fb_forms SET title=?,description=?,status=?,settings_json=?,css=?,js=?,updated_at=NOW() WHERE id=?')->execute([trim($form['title']),trim($form['description']) ?: null,$form['status'],fb_json_encode($settings),$css,$js,$formId]);
             $pdo->prepare('DELETE FROM fb_fields WHERE form_id = ?')->execute([$formId]);
         } else {
-            $pdo->prepare('INSERT INTO fb_forms (slug,title,description,status,settings_json,css,js,access_json,created_by) VALUES (?,?,?,?,?,?,?,?,?)')->execute([$form['slug'],trim($form['title']),trim($form['description']) ?: null,$form['status'],fb_json_encode($settings),$css,$js,fb_json_encode(['roles'=>[],'users'=>[],'owner'=>$actorId ?? 0]),$actorId]);
+            $pdo->prepare('INSERT INTO fb_forms (slug,title,description,status,settings_json,css,js,access_json,created_by) VALUES (?,?,?,?,?,?,?,?,?)')->execute([$form['slug'],trim($form['title']),trim($form['description']) ?: null,$form['status'],fb_json_encode($settings),$css,$js,fb_json_encode(['roles'=>[],'users'=>[],'owner'=>$actorId ?? 0,'submissions'=>['roles'=>[],'users'=>[]]]),$actorId]);
             $formId = (int)$pdo->lastInsertId();
         }
         $ids = []; $pending = $form['fields'];
