@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.7 - 2026-09-16
+
+- Remove a redundant PHP closing tag that leaked as visible text above the submissions list.
+
 ## 1.7.6 - 2026-09-16
 
 - Route XLSX and CSV exports through the Core raw-response dispatcher before the dashboard layout emits HTML.

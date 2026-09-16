@@ -359,7 +359,6 @@ if (isset($_GET['detail'])):
   </div>
 </div>
 <?php return; endif; ?>
-?>
 <div class="fba">
   <div class="fba-head">
     <h1>Submissions: <?= htmlspecialchars($form['title'], ENT_QUOTES) ?></h1>

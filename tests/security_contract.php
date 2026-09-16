@@ -8,7 +8,7 @@ $permissions = array_column($manifest['permissions'] ?? [], null, 'key');
 $composer = json_decode((string)file_get_contents($root . '/composer.json'), true, 32, JSON_THROW_ON_ERROR);
 $lock = json_decode((string)file_get_contents($root . '/composer.lock'), true, 64, JSON_THROW_ON_ERROR);
 $lockedPackages = array_column($lock['packages'] ?? [], 'version', 'name');
-$check(($manifest['version'] ?? null) === '1.7.6' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.122' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
+$check(($manifest['version'] ?? null) === '1.7.7' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.122' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
 $check(($composer['require']['php'] ?? null) === '>=8.1' && ($composer['require']['phpoffice/phpspreadsheet'] ?? null) === '~5.8.1'
     && ($composer['config']['platform']['php'] ?? null) === '8.1.0'
     && ($lockedPackages['phpoffice/phpspreadsheet'] ?? null) === '5.8.1'
@@ -56,8 +56,9 @@ $check(str_contains($submissions, 'setCellValueExplicit(') && str_contains($subm
     'Excel exports preserve text safety and apply staff-friendly worksheet formatting');
 $check(str_contains($submissions, 'fba-detail-layout') && !str_contains($submissions, '<div class="fba-overlay" onclick=')
     && !str_contains($submissions, '<main>')
+    && !str_contains($submissions, "<?php return; endif; ?>\n?>")
     && str_contains((string)file_get_contents($root . '/admin/_ui.php'), "'workflow' => \$_GET['workflow']"),
-    'submission detail is a responsive dedicated view that preserves list filter context');
+    'submission detail is a responsive dedicated view that preserves list filter context without leaking a PHP closing tag');
 $menuStart = strpos($adminIndex, '<div class="fba-more-menu">');
 $menuEnd = strpos($adminIndex, '</div>', $menuStart);
 $menu = $menuStart !== false && $menuEnd !== false ? substr($adminIndex, $menuStart, $menuEnd - $menuStart) : '';
