@@ -369,6 +369,7 @@ if (isset($_GET['detail'])):
       <a class="fba-btn" href="<?= fb_url(['view' => 'settings', 'id' => $formId]) ?>"><?= svg_ico('settings') ?> Settings</a><?php endif; ?>
       <form method="post" class="fba-export">
         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>">
+        <input type="hidden" name="action" value="export">
         <input type="hidden" name="fb_action" value="export">
         <input type="hidden" name="q" value="<?= htmlspecialchars($q, ENT_QUOTES) ?>">
         <input type="hidden" name="df" value="<?= htmlspecialchars($df, ENT_QUOTES) ?>">

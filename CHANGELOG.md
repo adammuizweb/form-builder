@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.6 - 2026-09-16
+
+- Route XLSX and CSV exports through the Core raw-response dispatcher before the dashboard layout emits HTML.
+
 ## 1.7.5 - 2026-09-16
 
 - Add formatted XLSX exports with typed cells, readable widths, filters, frozen headers, and a hardened Excel-friendly CSV fallback.

@@ -8,7 +8,7 @@ $permissions = array_column($manifest['permissions'] ?? [], null, 'key');
 $composer = json_decode((string)file_get_contents($root . '/composer.json'), true, 32, JSON_THROW_ON_ERROR);
 $lock = json_decode((string)file_get_contents($root . '/composer.lock'), true, 64, JSON_THROW_ON_ERROR);
 $lockedPackages = array_column($lock['packages'] ?? [], 'version', 'name');
-$check(($manifest['version'] ?? null) === '1.7.5' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.122' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
+$check(($manifest['version'] ?? null) === '1.7.6' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.122' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
 $check(($composer['require']['php'] ?? null) === '>=8.1' && ($composer['require']['phpoffice/phpspreadsheet'] ?? null) === '~5.8.1'
     && ($composer['config']['platform']['php'] ?? null) === '8.1.0'
     && ($lockedPackages['phpoffice/phpspreadsheet'] ?? null) === '5.8.1'
@@ -48,8 +48,9 @@ $check(str_contains($submissions, 'if (!$canManageSubmissions)')
 $check(str_contains($adminIndex, "\$_POST['fb_action'] ?? '') === 'export'")
     && str_contains($submissions, "['xlsx', 'csv']")
     && str_contains($submissions, 'csrf_check((string)($_POST')
+    && str_contains($submissions, 'name="action" value="export"')
     && !str_contains($submissions, "(\$_GET['action'] ?? '') === 'export'"),
-    'submission exports require POST, CSRF, an allowlisted format, and the scoped route guard');
+    'submission exports enter the Core raw-response dispatcher and require POST, CSRF, an allowlisted format, and the scoped route guard');
 $check(str_contains($submissions, 'setCellValueExplicit(') && str_contains($submissions, "freezePane('A2')")
     && str_contains($submissions, 'setAutoFilter(') && str_contains($submissions, "setFormatCode('dd/mm/yyyy hh:mm')"),
     'Excel exports preserve text safety and apply staff-friendly worksheet formatting');
