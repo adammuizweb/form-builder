@@ -740,6 +740,7 @@ add_action('plugin_uninstall', function (string $name): void {
 // ---------------- Shortcode: [form slug="..."] ----------------
 require_once __DIR__ . '/includes/definitions.php';
 require_once __DIR__ . '/includes/submission-import.php';
+require_once __DIR__ . '/includes/submission-export.php';
 require_once __DIR__ . '/public/render.php';
 
 if (function_exists('register_theme_section')) {

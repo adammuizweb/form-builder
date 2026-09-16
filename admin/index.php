@@ -111,7 +111,11 @@ $view = (string)($_GET['view'] ?? 'forms');
 
 // Raw-output actions (file stream / CSV export) must run BEFORE any HTML is printed,
 // otherwise headers are already sent and the download is corrupted.
-if ($view === 'submissions' && in_array(($_GET['action'] ?? ''), ['file', 'export'], true)) {
+$isSubmissionDownload = $view === 'submissions' && (
+    ($_GET['action'] ?? '') === 'file'
+    || (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['fb_action'] ?? '') === 'export')
+);
+if ($isSubmissionDownload) {
     $form = fb_get_form($pdo, (int)($_GET['id'] ?? 0));
     if ($form === null || ($form['deleted_at'] ?? null) !== null || !fb_can_view_submissions($pdo, $form, $uid)) {
         http_response_code(403);

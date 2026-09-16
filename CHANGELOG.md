@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.5 - 2026-09-16
+
+- Add formatted XLSX exports with typed cells, readable widths, filters, frozen headers, and a hardened Excel-friendly CSV fallback.
+- Replace the submission detail overlay with a responsive dedicated detail view that preserves active list filters.
+
 ## 1.7.4 - 2026-09-16
 
 - Safely provision the private Form Builder upload namespace, reject non-writable storage before staging, and avoid touching upload storage for submissions without files.

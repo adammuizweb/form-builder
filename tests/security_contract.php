@@ -5,7 +5,16 @@ $root = dirname(__DIR__); $failures = [];
 $check = static function (bool $ok, string $message) use (&$failures): void { echo ($ok ? 'PASS ' : 'FAIL ') . $message . "\n"; if (!$ok) $failures[] = $message; };
 $manifest = json_decode((string)file_get_contents($root . '/plugin.json'), true, 512, JSON_THROW_ON_ERROR);
 $permissions = array_column($manifest['permissions'] ?? [], null, 'key');
-$check(($manifest['version'] ?? null) === '1.7.4' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.122' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
+$composer = json_decode((string)file_get_contents($root . '/composer.json'), true, 32, JSON_THROW_ON_ERROR);
+$lock = json_decode((string)file_get_contents($root . '/composer.lock'), true, 64, JSON_THROW_ON_ERROR);
+$lockedPackages = array_column($lock['packages'] ?? [], 'version', 'name');
+$check(($manifest['version'] ?? null) === '1.7.5' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.122' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
+$check(($composer['require']['php'] ?? null) === '>=8.1' && ($composer['require']['phpoffice/phpspreadsheet'] ?? null) === '~5.8.1'
+    && ($composer['config']['platform']['php'] ?? null) === '8.1.0'
+    && ($lockedPackages['phpoffice/phpspreadsheet'] ?? null) === '5.8.1'
+    && ($lockedPackages['maennchen/zipstream-php'] ?? null) === '3.1.1'
+    && is_file($root . '/vendor/autoload.php'),
+    'Excel export ships a locked plugin-local PhpSpreadsheet runtime');
 $check(array_diff(['pdo','pdo_mysql','fileinfo','dom','json','mbstring'], $manifest['requires']['extensions'] ?? []) === [] && !in_array('zip', $manifest['requires']['extensions'] ?? [], true), 'runtime extensions are complete without obsolete DOCX zip dependency');
 foreach (['submissions.manage','workflow.manage','definitions.manage','unsafe-code.manage'] as $suffix) $check(isset($permissions['plugin.form-builder.' . $suffix]), 'narrow permission ' . $suffix . ' is declared');
 $check(is_file($root . '/migrations/0001-baseline.sql') && is_file($root . '/migrations/0002-submission-workflow.php') && count(glob($root . '/migrations/*') ?: []) === 2, 'only final append-only migration names ship');
@@ -36,6 +45,18 @@ $submissions = (string)file_get_contents($root . '/admin/submissions.php');
 $check(str_contains($submissions, 'if (!$canManageSubmissions)')
     && str_contains($submissions, 'if ($canManageSubmissions):'),
     'scoped submission viewers cannot invoke or see destructive controls');
+$check(str_contains($adminIndex, "\$_POST['fb_action'] ?? '') === 'export'")
+    && str_contains($submissions, "['xlsx', 'csv']")
+    && str_contains($submissions, 'csrf_check((string)($_POST')
+    && !str_contains($submissions, "(\$_GET['action'] ?? '') === 'export'"),
+    'submission exports require POST, CSRF, an allowlisted format, and the scoped route guard');
+$check(str_contains($submissions, 'setCellValueExplicit(') && str_contains($submissions, "freezePane('A2')")
+    && str_contains($submissions, 'setAutoFilter(') && str_contains($submissions, "setFormatCode('dd/mm/yyyy hh:mm')"),
+    'Excel exports preserve text safety and apply staff-friendly worksheet formatting');
+$check(str_contains($submissions, 'fba-detail-layout') && !str_contains($submissions, '<div class="fba-overlay" onclick=')
+    && !str_contains($submissions, '<main>')
+    && str_contains((string)file_get_contents($root . '/admin/_ui.php'), "'workflow' => \$_GET['workflow']"),
+    'submission detail is a responsive dedicated view that preserves list filter context');
 $menuStart = strpos($adminIndex, '<div class="fba-more-menu">');
 $menuEnd = strpos($adminIndex, '</div>', $menuStart);
 $menu = $menuStart !== false && $menuEnd !== false ? substr($adminIndex, $menuStart, $menuEnd - $menuStart) : '';

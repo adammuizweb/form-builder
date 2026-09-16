@@ -12,7 +12,15 @@ function fb_url(array $over = []): string {
         'p' => $_GET['p'] ?? null,
         'df' => $_GET['df'] ?? null,
         'dt' => $_GET['dt'] ?? null,
+        'st' => $_GET['st'] ?? null,
+        'workflow' => $_GET['workflow'] ?? null,
+        'detail' => $_GET['detail'] ?? null,
     ], $over);
+    foreach ($_GET as $key => $value) {
+        if (is_string($key) && preg_match('/\Aff_[a-z0-9_]{1,80}\z/', $key) === 1 && is_scalar($value) && strlen((string)$value) <= 200 && !array_key_exists($key, $q)) {
+            $q[$key] = (string)$value;
+        }
+    }
     $q = array_filter($q, static fn($v) => $v !== null && $v !== '');
     return '?' . http_build_query($q);
 }
@@ -228,11 +236,28 @@ function fb_admin_css(): void {
 .fba-table input[type=checkbox], .fba-bulk-actions input[type=checkbox] { accent-color: var(--adam-accent); }
 .fba-row-actions { display: flex; gap: .35rem; align-items: center; }
 .fba-bulk-actions { margin-top: .9rem; margin-bottom: 0; padding: .75rem; border: 1px solid var(--adam-border); border-radius: 11px; background: var(--adam-card); }
+.fba-export { display: flex; gap: .45rem; align-items: center; }
+.fba-detail-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(270px, 340px); gap: 1rem; align-items: start; }
+.fba-detail-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; }
+.fba-detail-field { min-width: 0; padding: .8rem .9rem; border: 1px solid var(--adam-border); border-radius: 10px; background: var(--adam-bg); }
+.fba-detail-field.wide { grid-column: 1 / -1; }
+.fba-detail-field label { display: block; margin-bottom: .38rem; color: var(--adam-muted); font-size: .68rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+.fba-detail-value { overflow-wrap: anywhere; line-height: 1.55; }
+.fba-detail-side { position: sticky; top: 1rem; }
+.fba-detail-meta { display: grid; gap: .65rem; }
+.fba-detail-meta > div { display: flex; justify-content: space-between; gap: 1rem; padding-bottom: .65rem; border-bottom: 1px solid var(--adam-border); }
+.fba-detail-meta > div:last-child { padding-bottom: 0; border-bottom: 0; }
+.fba-detail-meta span { color: var(--adam-muted); font-size: .75rem; }
+.fba-notes { display: grid; gap: .6rem; }
+.fba-note { padding: .75rem .85rem; border-left: 3px solid var(--adam-accent); border-radius: 0 9px 9px 0; background: var(--adam-bg); }
+.fba-note time { display: block; margin-bottom: .25rem; color: var(--adam-muted); font-size: .7rem; }
 @media (max-width: 900px) {
   .fba-submission-summary, .fba-submission-summary.has-switch { grid-template-columns: 1fr 1fr; }
   .fba-form-switch { grid-column: 1 / -1; justify-content: stretch; }
   .fba-form-switch select { width: 100%; }
   .fba-filter-form { justify-content: flex-start; }
+  .fba-detail-layout { grid-template-columns: 1fr; }
+  .fba-detail-side { position: static; }
 }
 @media (max-width: 560px) {
   .fba-submission-summary, .fba-submission-summary.has-switch { grid-template-columns: 1fr; }
@@ -240,6 +265,8 @@ function fb_admin_css(): void {
   .fba-state-tabs { width: 100%; overflow-x: auto; }
   .fba-filter-form > * { flex: 1 1 140px; }
   .fba-filter-form .fba-btn { flex: 0 0 auto; }
+  .fba-detail-fields { grid-template-columns: 1fr; }
+  .fba-detail-field.wide { grid-column: auto; }
 }
 .fba-pager { display: flex; gap: .3rem; align-items: center; margin-top: 1rem; flex-wrap: wrap; }
 .fba-pager a, .fba-pager span { border: 1px solid var(--adam-border); border-radius: 7px; padding: .25rem .55rem; font-size: .8rem; text-decoration: none; color: var(--adam-text); }

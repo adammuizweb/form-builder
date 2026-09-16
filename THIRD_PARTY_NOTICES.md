@@ -7,6 +7,15 @@ The bundled country metadata in `includes/countries.php` is derived from the fol
 
 Both licenses permit use, modification, and redistribution with their copyright and permission notices. Their full MIT license text is reproduced below.
 
+The plugin-local Composer runtime also bundles these MIT-licensed packages for XLSX export. Their package metadata and license files are included beneath `vendor/`:
+
+- `phpoffice/phpspreadsheet` 5.8.1
+- `maennchen/zipstream-php` 3.1.1
+- `markbaker/complex` 3.0.2
+- `markbaker/matrix` 3.0.1
+- `composer/pcre` 3.4.0
+- `psr/simple-cache` 3.0.0
+
 ## i18n-iso-countries
 
 Copyright (c) 2016 widdix GmbH

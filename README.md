@@ -1,12 +1,14 @@
 # Form Builder
 
-Form Builder 1.7.4 is a Jyavani Core 2.3.122 plugin for reusable public forms, private uploads, multilingual definitions, and review workflows.
+Form Builder 1.7.5 is a Jyavani Core 2.3.122 plugin for reusable public forms, private uploads, multilingual definitions, and review workflows.
 
 ## Requirements
 
 - Jyavani Core 2.3.122 or newer
 - PHP 8.1 or newer with `pdo_mysql`, `fileinfo`, `dom`, `json`, and `mbstring`
 - A project root where the PHP runtime can safely create or write the Core-owned `private_files` directory
+
+Formatted Excel export uses the bundled, Composer-locked PhpSpreadsheet runtime when its PHP extensions are available (`ctype`, `dom`, `fileinfo`, `filter`, `gd`, `iconv`, `libxml`, `mbstring`, `simplexml`, `xml`, `xmlreader`, `xmlwriter`, `zip`, and `zlib`). The submissions screen retains a streamed CSV fallback when Excel support is unavailable.
 
 Core runs `migrations/` during install, update, or enable. Runtime requests only assert the migrated schema and never perform DDL.
 
@@ -28,7 +30,7 @@ Priced options and totals use the form's configurable uppercase ISO 4217 `curren
 
 The separate `fb_submission_imports` ledger binds the source namespace/key to a canonical payload hash and submission. An identical repeat returns the existing submission with `reconciled=true`; changed payloads, references, forms, attachment bytes, or inconsistent ledger state throw and roll back. Callers must map source fields/statuses, place attachments beneath the configured private `form-builder` storage root, and perform their own authorization before calling the API.
 
-Public submissions use Core stateless CSRF, honeypot and signed fill-time checks, fail-closed database rate limits, idempotency, strict field/file validation, private staged storage, and post-commit mail/observers. Reviewers can independently manage read/trash state, workflow status, append-only notes, exports, and private attachment downloads.
+Public submissions use Core stateless CSRF, honeypot and signed fill-time checks, fail-closed database rate limits, idempotency, strict field/file validation, private staged storage, and post-commit mail/observers. Reviewers can independently manage read/trash state, workflow status, append-only notes, formatted XLSX or CSV exports, and private attachment downloads. Submission details use an addressable responsive page rather than a nested modal.
 
 ## Verification
 

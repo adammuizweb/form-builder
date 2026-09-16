@@ -1,0 +1,17 @@
+{
+    "name": "adammuizweb/form-builder",
+    "description": "Reusable form builder for Jyavani CMS.",
+    "type": "jyavani-plugin",
+    "license": "MIT",
+    "require": {
+        "php": ">=8.1",
+        "phpoffice/phpspreadsheet": "~5.8.1"
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "platform": {
+            "php": "8.1.0"
+        },
+        "sort-packages": true
+    }
+}

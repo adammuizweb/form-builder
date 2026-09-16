@@ -129,6 +129,47 @@ $check($errors === [] && $valid['start'] === '2027-01-01', 'strict valid date ra
 $check(count($errors) >= 2, 'invalid calendar and cross-field date ranges fail');
 $check(fb_csv_cell(' =cmd') === "' =cmd" && fb_csv_cell("\t@cmd") === "'\t@cmd" && fb_csv_cell('ordinary') === 'ordinary', 'CSV formulas including leading whitespace are neutralized');
 $check(fb_format_currency(1250, 'EUR') === 'EUR 1,250' && fb_format_currency(1250, 'bad') === 'USD 1,250', 'priced options use a validated configurable currency code');
+$exportFields = [
+    ['field_key'=>'name','type'=>'text','label'=>'Name','is_hidden'=>0],
+    ['field_key'=>'country','type'=>'country','label'=>'Country','is_hidden'=>0],
+    ['field_key'=>'attachment','type'=>'file','label'=>'Attachment','is_hidden'=>0],
+    ['field_key'=>'private','type'=>'text','label'=>'Private','is_hidden'=>1],
+];
+$exportSettings = fb_default_settings(); $exportSettings['show_total'] = '1';
+$exportColumns = fb_submission_export_columns($exportFields, fb_field_types(), $exportSettings);
+$exportRecord = fb_submission_export_record([
+    'reference_code'=>'FB-1','workflow_status'=>'submitted','created_at'=>'2026-09-16 10:00:00','updated_at'=>'2026-09-16 10:01:00','ip'=>'203.0.113.1',
+    'data_json'=>fb_json_encode(['name'=>'=unsafe','country'=>'ID','private'=>'hidden']),
+    'files_json'=>fb_json_encode(['attachment'=>['original'=>'document.pdf']]),
+    'totals_json'=>fb_json_encode(['total'=>1250]),
+], $exportColumns);
+$check(array_column($exportColumns, 'label') === ['Reference','Workflow','Submitted','Updated','IP Address','Name','Country','Attachment (file)','Total']
+    && $exportRecord['field:country'] === 'Indonesia (ID)' && $exportRecord['field:attachment'] === 'document.pdf'
+    && !isset($exportRecord['field:private']) && $exportRecord['total'] === 1250,
+    'submission export schema produces readable allowlisted spreadsheet columns and values');
+$check(fb_submission_csv_cell(" \t=SUM(1,1)\nnext") === "' \t=SUM(1,1) next" && fb_submission_csv_cell('ordinary') === 'ordinary', 'submission CSV neutralizes formulas and line breaks');
+$csvStream = fopen('php://temp', 'w+b');
+$csvCells = ['plain', 'a\\"b', fb_submission_csv_cell(' =SUM(1,1)')];
+fputcsv($csvStream, $csvCells, ';', '"', ''); rewind($csvStream);
+$csvRoundTrip = fgetcsv($csvStream, null, ';', '"', ''); fclose($csvStream);
+$check($csvRoundTrip === $csvCells, 'Excel-friendly CSV preserves quotes and backslashes with standards-compliant escaping');
+$xlsxSupport = fb_submission_export_support();
+if ($xlsxSupport['available']) require_once $xlsxSupport['autoload'];
+$check($xlsxSupport['available'] && class_exists(\PhpOffice\PhpSpreadsheet\Spreadsheet::class), 'bundled PhpSpreadsheet runtime is available for Excel exports');
+$xlsxPath = sys_get_temp_dir() . '/fb-xlsx-contract-' . getmypid() . '.xlsx';
+$workbook = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+$worksheet = $workbook->getActiveSheet();
+$worksheet->setCellValueExplicit('A1', 'Reference', \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+$worksheet->setCellValueExplicit('A2', '=unsafe', \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+$worksheet->setCellValue('B2', \PhpOffice\PhpSpreadsheet\Shared\Date::PHPToExcel(strtotime('2026-09-16 10:00:00')));
+$worksheet->freezePane('A2');
+$xlsxWriter = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($workbook); $xlsxWriter->save($xlsxPath); $workbook->disconnectWorksheets();
+$loadedWorkbook = \PhpOffice\PhpSpreadsheet\IOFactory::load($xlsxPath); $loadedSheet = $loadedWorkbook->getActiveSheet();
+$check($loadedSheet->getCell('A2')->getValue() === '=unsafe'
+    && $loadedSheet->getCell('A2')->getDataType() === \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING
+    && is_numeric($loadedSheet->getCell('B2')->getValue()),
+    'generated XLSX reopens with formula-like text inert and dates stored numerically');
+$loadedWorkbook->disconnectWorksheets(); unlink($xlsxPath);
 
 $dbFields = [];
 foreach ($fields as $field) $dbFields[] = ['field_key'=>$field['key'],'type'=>$field['type'],'label'=>$field['label'],'is_hidden'=>0,'options_json'=>fb_json_encode($field['options'] ?? []),'validation_json'=>fb_json_encode($field['validation'] ?? []),'settings_json'=>fb_json_encode($field['settings'] ?? [])];

@@ -9,6 +9,7 @@ $types = fb_field_types();
 $canManageSubmissions = fb_can_manage_submissions($pdo, $form, $uid);
 $canWorkflow = $canManageSubmissions && user_can($pdo, $uid, 'plugin.form-builder.workflow.manage');
 $canEditForm = fb_can_access_form($pdo, $form, $uid);
+$xlsxSupport = fb_submission_export_support();
 $workflowStatuses = $settings['workflow_statuses'];
 $optionFields = array_values(array_filter($fields, static fn($f) => in_array($f['type'], ['select', 'radio', 'checkbox'], true) && empty($f['is_hidden'])));
 $inputFields = array_values(array_filter($fields, static fn($f) => !empty($types[$f['type']]['input']) && empty($types[$f['type']]['file']) && empty($f['is_hidden'])));
@@ -44,17 +45,19 @@ if (($_GET['action'] ?? '') === 'file') {
 }
 
 // ---------------- Filters ----------------
-$q = trim((string)($_GET['q'] ?? ''));
-$df = trim((string)($_GET['df'] ?? ''));
-$dt = trim((string)($_GET['dt'] ?? ''));
-$state = (string)($_GET['st'] ?? 'all');
+$isExport = (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['fb_action'] ?? '') === 'export');
+$filterInput = $isExport ? $_POST : $_GET;
+$q = trim((string)($filterInput['q'] ?? ''));
+$df = trim((string)($filterInput['df'] ?? ''));
+$dt = trim((string)($filterInput['dt'] ?? ''));
+$state = (string)($filterInput['st'] ?? 'all');
 if (!in_array($state, ['all', 'new', 'read', 'trash'], true)) $state = 'all';
 $pageNum = max(1, (int)($_GET['p'] ?? 1));
 $perPage = 20;
 
 $where = ['form_id = :fid'];
 $params = [':fid' => $formId];
-$workflow = (string)($_GET['workflow'] ?? '');
+$workflow = (string)($filterInput['workflow'] ?? '');
 if ($workflow !== '' && in_array($workflow, $workflowStatuses, true)) { $where[] = 'workflow_status = :workflow'; $params[':workflow'] = $workflow; }
 if ($state === 'trash') $where[] = 'is_deleted = 1';
 else {
@@ -69,7 +72,7 @@ if (preg_match('/\A\d{4}-\d{2}-\d{2}\z/', $dt)) { $where[] = 'created_at <= :dt'
 // Auto option-field filters: ff_{key}
 foreach ($optionFields as $of) {
     $k = (string)$of['field_key'];
-    $v = trim((string)($_GET['ff_' . $k] ?? ''));
+    $v = trim((string)($filterInput['ff_' . $k] ?? ''));
     if ($v === '') continue;
     if ($of['type'] === 'checkbox') {
         $where[] = "JSON_CONTAINS(data_json, :jv_{$k}, :jp_{$k})";
@@ -83,37 +86,117 @@ foreach ($optionFields as $of) {
 }
 $whereSql = 'WHERE ' . implode(' AND ', $where);
 
-// ---------------- CSV export ----------------
-if (($_GET['action'] ?? '') === 'export') {
+// ---------------- Spreadsheet export ----------------
+if ($isExport) {
+    if (!function_exists('csrf_check') || !csrf_check((string)($_POST['csrf_token'] ?? ''))) {
+        http_response_code(403);
+        exit('Invalid CSRF token');
+    }
+    $format = strtolower(trim((string)($_POST['format'] ?? 'xlsx')));
+    if (!in_array($format, ['xlsx', 'csv'], true)) {
+        http_response_code(422);
+        exit('Invalid export format');
+    }
+    if ($format === 'xlsx') {
+        $support = fb_submission_export_support();
+        if (!$support['available']) {
+            http_response_code(503);
+            exit('Excel export is unavailable. ' . $support['message'] . ' Use CSV export instead.');
+        }
+        require_once $support['autoload'];
+        if (!class_exists(\PhpOffice\PhpSpreadsheet\Spreadsheet::class)) {
+            http_response_code(503);
+            exit('Excel export is unavailable because PhpSpreadsheet could not be loaded.');
+        }
+        $countExport = $pdo->prepare("SELECT COUNT(*) FROM `fb_submissions` {$whereSql}");
+        $countExport->execute($params);
+        if ((int)$countExport->fetchColumn() > 10000) {
+            http_response_code(413);
+            exit('Excel export is limited to 10,000 filtered submissions. Narrow the filters or use CSV.');
+        }
+    }
     $st = $pdo->prepare("SELECT * FROM `fb_submissions` {$whereSql} ORDER BY created_at DESC");
     $st->execute($params);
-    header('Content-Type: text/csv; charset=utf-8');
-    header('Content-Disposition: attachment; filename="' . preg_replace('/[^a-z0-9-]/', '-', (string)$form['slug']) . '-submissions-' . date('Ymd-His') . '.csv"');
-    $out = fopen('php://output', 'w');
-    fwrite($out, "\xEF\xBB\xBF");
-    $esc = '\\';
-    $header = ['Ref', 'Workflow', 'Submitted', 'Updated', 'IP'];
-    foreach ($inputFields as $f) $header[] = $f['label'];
-    $fileFields = array_values(array_filter($fields, static fn($f) => !empty($types[$f['type']]['file'])));
-    foreach ($fileFields as $f) $header[] = $f['label'] . ' (file)';
-    if ($settings['show_total'] === '1') $header[] = $settings['total_label'];
-    fputcsv($out, array_map('fb_csv_cell', $header), ',', '"', $esc);
-    $n = 0;
-    while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
-        $n++;
-        $data = json_decode((string)$r['data_json'], true) ?: [];
-        $filesJ = json_decode((string)$r['files_json'], true) ?: [];
-        $tot = json_decode((string)$r['totals_json'], true) ?: [];
-        $row = [$r['reference_code'], $r['workflow_status'], $r['created_at'], $r['updated_at'], $r['ip']];
-        foreach ($inputFields as $f) {
-            $v = $data[$f['field_key']] ?? '';
-            $row[] = fb_csv_cell($v);
+    $exportColumns = fb_submission_export_columns($fields, $types, $settings);
+    $headers = array_column($exportColumns, 'label');
+    $filenameBase = preg_replace('/[^a-z0-9-]/', '-', strtolower((string)$form['slug'])) . '-submissions-' . date('Ymd-His');
+    while (ob_get_level() > 0) @ob_end_clean();
+    header('Cache-Control: private, no-store, max-age=0');
+    header('Pragma: no-cache');
+    header('X-Content-Type-Options: nosniff');
+
+    if ($format === 'csv') {
+        header('Content-Type: text/csv; charset=UTF-8');
+        header('Content-Disposition: attachment; filename="' . $filenameBase . '.csv"');
+        $out = fopen('php://output', 'wb');
+        if ($out === false) { http_response_code(500); exit('Unable to create export'); }
+        fwrite($out, "\xEF\xBB\xBF");
+        fputcsv($out, array_map('fb_submission_csv_cell', $headers), ';', '"', '');
+        while ($submission = $st->fetch(PDO::FETCH_ASSOC)) {
+            $record = fb_submission_export_record($submission, $exportColumns);
+            $row = array_map(static fn(array $column): mixed => $record[$column['key']] ?? '', $exportColumns);
+            fputcsv($out, array_map('fb_submission_csv_cell', $row), ';', '"', '');
         }
-        foreach ($fileFields as $f) $row[] = fb_csv_cell((string)($filesJ[$f['field_key']]['original'] ?? ''));
-        if ($settings['show_total'] === '1') $row[] = (string)($tot['total'] ?? 0);
-        fputcsv($out, $row, ',', '"', $esc);
+        fclose($out);
+        exit;
     }
-    fclose($out);
+
+    $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+    $spreadsheet->getProperties()->setCreator('Jyavani Form Builder')->setTitle((string)$form['title'] . ' Submissions')->setSubject('Filtered form submissions');
+    $sheet = $spreadsheet->getActiveSheet();
+    $sheet->setTitle('Submissions');
+    foreach ($headers as $index => $header) {
+        $columnName = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($index + 1);
+        $sheet->setCellValueExplicit($columnName . '1', (string)$header, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+    }
+    $rowNumber = 2;
+    while ($submission = $st->fetch(PDO::FETCH_ASSOC)) {
+        $record = fb_submission_export_record($submission, $exportColumns);
+        foreach ($exportColumns as $index => $definition) {
+            $columnName = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($index + 1);
+            $value = $record[$definition['key']] ?? '';
+            if ($definition['type'] === 'datetime' && ($timestamp = strtotime((string)$value)) !== false) {
+                $sheet->setCellValue($columnName . $rowNumber, \PhpOffice\PhpSpreadsheet\Shared\Date::PHPToExcel($timestamp));
+            } elseif ($definition['type'] === 'number') {
+                $sheet->setCellValue($columnName . $rowNumber, (float)$value);
+            } else {
+                $sheet->setCellValueExplicit($columnName . $rowNumber, (string)$value, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+            }
+        }
+        $rowNumber++;
+    }
+    $lastRow = max(1, $rowNumber - 1);
+    $lastColumn = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(count($exportColumns));
+    $sheet->getStyle('A1:' . $lastColumn . '1')->applyFromArray([
+        'font'=>['bold'=>true, 'color'=>['argb'=>'FFFFFFFF']],
+        'fill'=>['fillType'=>\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor'=>['argb'=>'FF1F6B45']],
+        'alignment'=>['horizontal'=>\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER, 'vertical'=>\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER],
+    ]);
+    $sheet->getRowDimension(1)->setRowHeight(25);
+    $sheet->freezePane('A2');
+    $sheet->setAutoFilter('A1:' . $lastColumn . $lastRow);
+    $sheet->getSheetView()->setZoomScale(90);
+    foreach ($exportColumns as $index => $definition) {
+        $columnName = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($index + 1);
+        $sheet->getColumnDimension($columnName)->setWidth((float)$definition['width']);
+        if ($lastRow < 2) continue;
+        $range = $columnName . '2:' . $columnName . $lastRow;
+        if ($definition['type'] === 'text') $sheet->getStyle($range)->getAlignment()->setWrapText(true);
+        if ($definition['type'] === 'datetime') $sheet->getStyle($range)->getNumberFormat()->setFormatCode('dd/mm/yyyy hh:mm');
+        if ($definition['type'] === 'number') $sheet->getStyle($range)->getNumberFormat()->setFormatCode('#,##0');
+    }
+    if ($lastRow >= 2) {
+        $dataRange = 'A2:' . $lastColumn . $lastRow;
+        $sheet->getStyle($dataRange)->getAlignment()->setVertical(\PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_TOP);
+        $sheet->getStyle($dataRange)->getBorders()->getBottom()->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_HAIR)->getColor()->setARGB('FFD7E5DD');
+    }
+    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    header('Content-Disposition: attachment; filename="' . $filenameBase . '.xlsx"');
+    header('Content-Transfer-Encoding: binary');
+    $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+    $writer->setPreCalculateFormulas(false);
+    $writer->save('php://output');
+    $spreadsheet->disconnectWorksheets();
     exit;
 }
 
@@ -226,6 +309,56 @@ function fb_render_value(array $field, mixed $v, int $sid, array $filesJ, string
     if ($type === 'country' && is_string($v) && ($country = fb_country($v)) !== null) return htmlspecialchars($country['name'] . ' (' . strtoupper($v) . ')', ENT_QUOTES);
     return nl2br(htmlspecialchars((string)$v, ENT_QUOTES));
 }
+
+if (isset($_GET['detail'])):
+    if ($detail === null): ?>
+      <div class="fba"><div class="fba-empty">Submission not found. <a href="<?= fb_url(['detail'=>null]) ?>">Back to submissions</a></div></div>
+    <?php return; endif;
+    $sid = (int)$detail['id'];
+    $data = json_decode((string)$detail['data_json'], true) ?: [];
+    $filesJ = json_decode((string)$detail['files_json'], true) ?: [];
+    $tot = json_decode((string)$detail['totals_json'], true) ?: [];
+    $reviewNotes = json_decode((string)$detail['notes_json'], true);
+    ?>
+<div class="fba">
+  <div class="fba-head">
+    <div><span class="fba-sub">Submission detail</span><h1><?= htmlspecialchars((string)$detail['reference_code'], ENT_QUOTES) ?></h1></div>
+    <div class="fba-actions"><a class="fba-btn" href="<?= fb_url(['detail'=>null]) ?>"><?= svg_ico('arrow-left') ?> Back to submissions</a></div>
+  </div>
+  <div class="fba-detail-layout">
+    <div>
+      <div class="fba-card">
+        <div class="fba-sec">Submitted data</div>
+        <div class="fba-detail-fields">
+          <?php foreach ($fields as $field):
+            if (!empty($types[$field['type']]['display']) || !empty($field['is_hidden'])) continue;
+            $wide = in_array((string)$field['type'], ['textarea','checkbox','file','image'], true); ?>
+          <div class="fba-detail-field<?= $wide ? ' wide' : '' ?>">
+            <label><?= htmlspecialchars((string)($field['label'] ?: $field['field_key']), ENT_QUOTES) ?></label>
+            <div class="fba-detail-value"><?= fb_render_value($field, $data[$field['field_key']] ?? '', $sid, $filesJ, (string)$formId) ?></div>
+          </div>
+          <?php endforeach; ?>
+          <?php if ($settings['show_total'] === '1'): ?><div class="fba-detail-field"><label><?= htmlspecialchars($settings['total_label'], ENT_QUOTES) ?></label><div class="fba-detail-value"><strong class="fba-mono"><?= fb_format_currency((int)($tot['total'] ?? 0), (string)$settings['currency_code']) ?></strong></div></div><?php endif; ?>
+        </div>
+      </div>
+      <?php if (is_array($reviewNotes) && $reviewNotes): ?><div class="fba-card"><div class="fba-sec">Reviewer notes</div><div class="fba-notes"><?php foreach ($reviewNotes as $reviewNote): ?><div class="fba-note"><time><?= htmlspecialchars((string)($reviewNote['at'] ?? ''), ENT_QUOTES) ?></time><div><?= nl2br(htmlspecialchars((string)($reviewNote['text'] ?? ''), ENT_QUOTES)) ?></div></div><?php endforeach; ?></div></div><?php endif; ?>
+    </div>
+    <aside class="fba-detail-side">
+      <div class="fba-card">
+        <div class="fba-sec">Summary</div>
+        <div class="fba-detail-meta">
+          <div><span>Workflow</span><strong><?= htmlspecialchars(ucfirst((string)$detail['workflow_status']), ENT_QUOTES) ?></strong></div>
+          <div><span>State</span><strong><?= (int)$detail['is_deleted'] ? 'Trash' : ((int)$detail['is_read'] ? 'Read' : 'New') ?></strong></div>
+          <div><span>Submitted</span><strong><?= htmlspecialchars(date('d M Y H:i', strtotime((string)$detail['created_at'])), ENT_QUOTES) ?></strong></div>
+          <div><span>Updated</span><strong><?= htmlspecialchars(date('d M Y H:i', strtotime((string)$detail['updated_at'])), ENT_QUOTES) ?></strong></div>
+          <div><span>IP address</span><strong class="fba-mono"><?= htmlspecialchars((string)$detail['ip'], ENT_QUOTES) ?></strong></div>
+        </div>
+      </div>
+      <?php if ($canWorkflow): ?><div class="fba-card"><div class="fba-sec">Review</div><form method="post"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>"><input type="hidden" name="id_one" value="<?= $sid ?>"><input type="hidden" name="fb_action" value="note"><div class="fba-field"><label>Append reviewer note</label><textarea name="reviewer_note" maxlength="4000" required></textarea></div><button class="fba-btn primary" type="submit">Add note</button></form><div class="fba-sec">Workflow</div><form method="post"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>"><input type="hidden" name="id_one" value="<?= $sid ?>"><input type="hidden" name="fb_action" value="workflow"><div class="fba-field"><label>Change status</label><select name="workflow_status"><?php foreach ($workflowStatuses as $status): ?><option value="<?= htmlspecialchars($status, ENT_QUOTES) ?>" <?= $detail['workflow_status'] === $status ? 'selected' : '' ?>><?= htmlspecialchars(ucfirst($status), ENT_QUOTES) ?></option><?php endforeach; ?></select></div><button class="fba-btn primary" type="submit">Update status</button></form></div><?php endif; ?>
+    </aside>
+  </div>
+</div>
+<?php return; endif; ?>
 ?>
 <div class="fba">
   <div class="fba-head">
@@ -234,7 +367,19 @@ function fb_render_value(array $field, mixed $v, int $sid, array $filesJ, string
       <a class="fba-btn" href="<?= fb_url(['view' => 'forms', 'id' => null]) ?>"><?= svg_ico('arrow-left') ?> Forms</a>
       <?php if ($canEditForm): ?><a class="fba-btn" href="<?= fb_url(['view' => 'builder', 'id' => $formId]) ?>"><?= svg_ico('pen') ?> Builder</a>
       <a class="fba-btn" href="<?= fb_url(['view' => 'settings', 'id' => $formId]) ?>"><?= svg_ico('settings') ?> Settings</a><?php endif; ?>
-      <a class="fba-btn primary" href="<?= fb_url(['action' => 'export', 'p' => null, 'detail' => null]) ?>"><?= svg_ico('download') ?> Export CSV</a>
+      <form method="post" class="fba-export">
+        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>">
+        <input type="hidden" name="fb_action" value="export">
+        <input type="hidden" name="q" value="<?= htmlspecialchars($q, ENT_QUOTES) ?>">
+        <input type="hidden" name="df" value="<?= htmlspecialchars($df, ENT_QUOTES) ?>">
+        <input type="hidden" name="dt" value="<?= htmlspecialchars($dt, ENT_QUOTES) ?>">
+        <input type="hidden" name="st" value="<?= htmlspecialchars($state, ENT_QUOTES) ?>">
+        <input type="hidden" name="workflow" value="<?= htmlspecialchars($workflow, ENT_QUOTES) ?>">
+        <?php foreach ($optionFields as $optionField): $optionKey = (string)$optionField['field_key']; ?><input type="hidden" name="ff_<?= htmlspecialchars($optionKey, ENT_QUOTES) ?>" value="<?= htmlspecialchars((string)($filterInput['ff_' . $optionKey] ?? ''), ENT_QUOTES) ?>"><?php endforeach; ?>
+        <?php if ($xlsxSupport['available']): ?><button class="fba-btn primary" name="format" value="xlsx" type="submit"><?= svg_ico('download') ?> Export Excel</button><?php endif; ?>
+        <button class="fba-btn" name="format" value="csv" type="submit">CSV</button>
+        <?php if (!$xlsxSupport['available']): ?><span class="fba-hint" title="<?= htmlspecialchars($xlsxSupport['message'], ENT_QUOTES) ?>">Excel unavailable</span><?php endif; ?>
+      </form>
     </div>
   </div>
 
@@ -279,7 +424,7 @@ function fb_render_value(array $field, mixed $v, int $sid, array $filesJ, string
       </select>
       <?php endforeach; ?>
       <button class="fba-btn sm primary" type="submit">Filter</button>
-      <a class="fba-btn sm" href="<?= fb_url(['q' => null, 'df' => null, 'dt' => null, 'p' => 1, 'detail' => null] + array_fill_keys(array_map(static fn($f) => 'ff_' . $f['field_key'], $optionFields), null)) ?>">Reset</a>
+      <a class="fba-btn sm" href="<?= fb_url(['q' => null, 'df' => null, 'dt' => null, 'st' => 'all', 'workflow' => null, 'p' => 1, 'detail' => null] + array_fill_keys(array_map(static fn($f) => 'ff_' . $f['field_key'], $optionFields), null)) ?>">Reset</a>
     </form>
   </div>
 
@@ -361,39 +506,3 @@ function fb_render_value(array $field, mixed $v, int $sid, array $filesJ, string
   <?php endif; ?>
   <?php endif; ?>
 </div>
-
-<?php if ($detail):
-  $sid = (int)$detail['id'];
-  $data = json_decode((string)$detail['data_json'], true) ?: [];
-  $filesJ = json_decode((string)$detail['files_json'], true) ?: [];
-  $tot = json_decode((string)$detail['totals_json'], true) ?: [];
-  ?>
-<div class="fba-overlay" onclick="if(event.target===this)location.href='<?= fb_url(['detail' => null]) ?>'">
-  <div class="fba-modal">
-    <div class="fba-modal-head">
-       <h2><?= htmlspecialchars((string)$detail['reference_code'], ENT_QUOTES) ?></h2>
-      <a href="<?= fb_url(['detail' => null]) ?>">&times;</a>
-    </div>
-    <div class="fba-modal-body">
-      <?php foreach ($fields as $f):
-        if (!empty($types[$f['type']]['display']) || !empty($f['is_hidden'])) continue; ?>
-      <div class="fba-field">
-        <label><?= htmlspecialchars($f['label'], ENT_QUOTES) ?></label>
-        <div><?= fb_render_value($f, $data[$f['field_key']] ?? '', $sid, $filesJ, (string)$formId) ?></div>
-      </div>
-      <?php endforeach; ?>
-      <?php if ($settings['show_total'] === '1'): ?>
-      <div class="fba-field"><label><?= htmlspecialchars($settings['total_label'], ENT_QUOTES) ?></label>
-        <div><strong class="fba-mono"><?= fb_format_currency((int)($tot['total'] ?? 0), (string)$settings['currency_code']) ?></strong></div></div>
-      <?php endif; ?>
-      <div class="fba-row2">
-        <div class="fba-field"><label>IP</label><div class="fba-mono"><?= htmlspecialchars((string)$detail['ip'], ENT_QUOTES) ?></div></div>
-        <div class="fba-field"><label>Submitted</label><div><?= htmlspecialchars(date('d M Y, H:i:s', strtotime((string)$detail['created_at'])), ENT_QUOTES) ?></div></div>
-      </div>
-      <div class="fba-field"><label>Workflow</label><div><?= htmlspecialchars(ucfirst((string)$detail['workflow_status']), ENT_QUOTES) ?> (updated <?= htmlspecialchars((string)$detail['updated_at'], ENT_QUOTES) ?>)</div></div>
-      <?php $reviewNotes = json_decode((string)$detail['notes_json'], true); if (is_array($reviewNotes) && $reviewNotes): ?><div class="fba-field"><label>Reviewer notes</label><?php foreach ($reviewNotes as $reviewNote): ?><div><strong><?= htmlspecialchars((string)($reviewNote['at'] ?? ''), ENT_QUOTES) ?></strong> <?= nl2br(htmlspecialchars((string)($reviewNote['text'] ?? ''), ENT_QUOTES)) ?></div><?php endforeach; ?></div><?php endif; ?>
-      <?php if ($canWorkflow): ?><form method="post"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>"><input type="hidden" name="id_one" value="<?= $sid ?>"><input type="hidden" name="fb_action" value="note"><div class="fba-field"><label>Append reviewer note</label><textarea name="reviewer_note" maxlength="4000" required></textarea></div><button class="fba-btn primary" type="submit">Add note</button></form><form method="post"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>"><input type="hidden" name="id_one" value="<?= $sid ?>"><input type="hidden" name="fb_action" value="workflow"><div class="fba-field"><label>Change workflow status</label><select name="workflow_status"><?php foreach ($workflowStatuses as $ws): ?><option value="<?= htmlspecialchars($ws, ENT_QUOTES) ?>" <?= $detail['workflow_status'] === $ws ? 'selected' : '' ?>><?= htmlspecialchars(ucfirst($ws), ENT_QUOTES) ?></option><?php endforeach; ?></select></div><button class="fba-btn primary" type="submit">Update status</button></form><?php endif; ?>
-    </div>
-  </div>
-</div>
-<?php endif; ?>
