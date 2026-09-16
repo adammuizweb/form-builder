@@ -1,6 +1,6 @@
 {
     "name": "form-builder",
-    "version": "1.7.3",
+    "version": "1.7.4",
     "title": "Form Builder",
     "icon": "icon.png",
     "description": "Production form builder with multilingual definitions, country-aware international phone fields, private validated uploads, idempotent submissions, review workflows, Core Mail, CSV export, and shortcode/theme-section embedding.",

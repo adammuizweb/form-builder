@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## 1.7.4 - 2026-09-16
 
 - Safely provision the private Form Builder upload namespace, reject non-writable storage before staging, and avoid touching upload storage for submissions without files.
+- Add read-only per-form submission viewer ACLs without granting global submission management or inheriting form editor access.
 
 ## 1.7.3 - 2026-09-15
 
