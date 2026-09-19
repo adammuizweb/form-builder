@@ -26,7 +26,7 @@ $fail = static function (string $message, int $status = 303) use ($return, &$for
     if ($status !== 303) { http_response_code($status); header('Content-Type: text/plain; charset=utf-8'); exit($message); }
     fb_redirect($return, ['fb_status' => 'err', 'fb_form' => (string)($form['slug'] ?? ''), 'fb_msg' => $message]);
 };
-if ($form === null || ($form['status'] ?? '') !== 'active') $fail(fb_message($settings, 'form_unavailable'));
+if ($form === null || !empty($form['deleted_at']) || ($form['status'] ?? '') !== 'active') $fail(fb_message($settings, 'form_unavailable'));
 if (!is_string($_POST['fb_slug'] ?? null) || trim($_POST['fb_slug']) !== (string)$form['slug']) $fail(fb_message($settings, 'invalid_form'));
 
 $settings = fb_form_settings($form);

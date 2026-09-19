@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.8 - 2026-09-19
+
+- Show private embed diagnostics to authorized editors when a form is draft, archived, trashed, or missing.
+- Prevent trashed forms from rendering or accepting submissions even when their previous status was active.
+
 ## 1.7.7 - 2026-09-16
 
 - Remove a redundant PHP closing tag that leaked as visible text above the submissions list.

@@ -8,7 +8,7 @@ $permissions = array_column($manifest['permissions'] ?? [], null, 'key');
 $composer = json_decode((string)file_get_contents($root . '/composer.json'), true, 32, JSON_THROW_ON_ERROR);
 $lock = json_decode((string)file_get_contents($root . '/composer.lock'), true, 64, JSON_THROW_ON_ERROR);
 $lockedPackages = array_column($lock['packages'] ?? [], 'version', 'name');
-$check(($manifest['version'] ?? null) === '1.7.7' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.122' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
+$check(($manifest['version'] ?? null) === '1.7.8' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.122' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
 $check(($composer['require']['php'] ?? null) === '>=8.1' && ($composer['require']['phpoffice/phpspreadsheet'] ?? null) === '~5.8.1'
     && ($composer['config']['platform']['php'] ?? null) === '8.1.0'
     && ($lockedPackages['phpoffice/phpspreadsheet'] ?? null) === '5.8.1'
@@ -34,6 +34,18 @@ $check(!str_contains((string)file_get_contents($root . '/plugin.php'), 'CREATE T
 $adminIndex = (string)file_get_contents($root . '/admin/index.php');
 $plugin = (string)file_get_contents($root . '/plugin.php');
 $settings = (string)file_get_contents($root . '/admin/settings.php');
+$check(str_contains($plugin, 'function fb_render_embed(')
+    && str_contains($plugin, "'draft' => 'Form Draft'")
+    && str_contains($plugin, "'archived' => 'Form Archived'")
+    && str_contains($plugin, "'trashed' => 'Form Trashed'")
+    && str_contains($plugin, "default => 'Form Not Found'")
+    && str_contains($plugin, "user_can(\$pdo, \$uid, 'plugin.form-builder.workspace.access')")
+    && str_contains($plugin, "user_can(\$pdo, \$uid, 'plugin.form-builder.forms.manage-any')")
+    && substr_count($plugin, 'return fb_render_embed(') === 3,
+    'inactive embed diagnostics are editor-only and shared by shortcodes, Theme Sections, and Theme Zones');
+$check(str_contains($plugin, "empty(\$form['deleted_at']) && (\$form['status'] ?? '') === 'active'")
+    && str_contains($submit, "!empty(\$form['deleted_at']) || (\$form['status'] ?? '') !== 'active'"),
+    'trashed forms cannot render publicly or accept submissions even if their prior status was active');
 $check(str_contains($plugin, 'function fb_can_view_submissions(')
     && str_contains($plugin, "['submissions']['roles']")
     && str_contains($settings, 'name="submission_users[]"'),

@@ -54,6 +54,26 @@ $check(fb_can_view_submissions(new PDO('sqlite::memory:'), $formAccess, 6)
     && fb_can_manage_submissions(new PDO('sqlite::memory:'), $formAccess, 6)
     && !fb_can_manage_submissions(new PDO('sqlite::memory:'), $formAccess, 3),
     'global submission managers retain full access while scoped viewers remain read-only');
+$embedPdo = new PDO('sqlite::memory:');
+$embedPdo->exec('CREATE TABLE fb_forms (id INTEGER PRIMARY KEY, title TEXT, slug TEXT, status TEXT, deleted_at TEXT, created_by INTEGER, access_json TEXT)');
+$insertEmbed = $embedPdo->prepare('INSERT INTO fb_forms (id,title,slug,status,deleted_at,created_by,access_json) VALUES (?,?,?,?,?,?,?)');
+$insertEmbed->execute([1, '<Draft Form>', 'draft-form', 'draft', null, 1, fb_json_encode(['owner'=>1])]);
+$insertEmbed->execute([2, 'Archived Form', 'archived-form', 'archived', null, 1, fb_json_encode(['owner'=>1])]);
+$insertEmbed->execute([3, 'Trashed Form', 'trashed-form', 'active', '2026-09-19 10:00:00', 1, fb_json_encode(['owner'=>1])]);
+$GLOBALS['_uid'] = 1;
+$draftEmbed = fb_render_embed($embedPdo, 'draft-form');
+$archivedEmbed = fb_render_embed($embedPdo, 'archived-form');
+$trashedEmbed = fb_render_embed($embedPdo, 'trashed-form');
+$GLOBALS['_uid'] = 0;
+$publicEmbed = fb_render_embed($embedPdo, 'draft-form');
+$GLOBALS['_uid'] = 6;
+$missingEmbed = fb_render_embed($embedPdo, 'missing-form');
+$check(str_contains($draftEmbed, '<strong>Form Draft</strong>') && str_contains($draftEmbed, '&lt;Draft Form&gt;')
+    && str_contains($archivedEmbed, '<strong>Form Archived</strong>')
+    && str_contains($trashedEmbed, '<strong>Form Trashed</strong>')
+    && $publicEmbed === '<!-- form unavailable -->'
+    && str_contains($missingEmbed, '<strong>Form Not Found</strong>'),
+    'authorized editors see escaped inactive, trashed, or missing embed diagnostics while visitors receive no inactive form');
 $serverBackup = $_SERVER; $_SERVER['REMOTE_ADDR'] = '203.0.113.10'; $_SERVER['HTTP_X_FORWARDED_FOR'] = '198.51.100.9';
 $context = fb_public_ctx(new PDO('sqlite::memory:')); $_SERVER = $serverBackup;
 $check($context === ['csrf'=>'core-stateless-token','ip'=>'203.0.113.10'] && fb_csrf_check('', 'core-stateless-token'), 'public context uses Core stateless CSRF and ignores untrusted forwarding headers');

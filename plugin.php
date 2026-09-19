@@ -284,6 +284,39 @@ function fb_can_manage_submissions(PDO $pdo, array $form, ?int $uid = null): boo
         && fb_can_access_form($pdo, $form, $uid);
 }
 
+function fb_render_embed(PDO $pdo, string $slug): string {
+    $form = fb_get_form_by_slug($pdo, $slug);
+    if ($form !== null && empty($form['deleted_at']) && ($form['status'] ?? '') === 'active') return fb_render_form($pdo, $form);
+
+    $uid = function_exists('current_user_id') ? (int)current_user_id() : 0;
+    $canInspect = $uid > 0 && function_exists('user_can')
+        && user_can($pdo, $uid, 'plugin.form-builder.workspace.access')
+        && ($form !== null
+            ? fb_can_access_form($pdo, $form, $uid)
+            : user_can($pdo, $uid, 'plugin.form-builder.forms.manage-any'));
+    if (!$canInspect) return '<!-- form unavailable -->';
+
+    $status = $form !== null && !empty($form['deleted_at']) ? 'trashed' : (string)($form['status'] ?? 'missing');
+    $label = match ($status) {
+        'draft' => 'Form Draft',
+        'archived' => 'Form Archived',
+        'trashed' => 'Form Trashed',
+        default => 'Form Not Found',
+    };
+    $message = match ($status) {
+        'draft' => 'Activate this form to display it to visitors.',
+        'archived' => 'Restore or duplicate this form before embedding it.',
+        'trashed' => 'Restore this form from the Bin before embedding it.',
+        default => 'Check that the shortcode slug exactly matches an existing form.',
+    };
+    $title = $form !== null ? trim((string)($form['title'] ?? '')) : '';
+    $detail = $title !== '' ? ' "' . $title . '"' : '';
+
+    return '<div class="fb-embed-status fb-embed-status--' . htmlspecialchars($status, ENT_QUOTES, 'UTF-8')
+        . '" role="note"><strong>' . $label . '</strong><span>'
+        . htmlspecialchars($detail . ' ' . $message, ENT_QUOTES, 'UTF-8') . '</span></div>';
+}
+
 // All forms available for one workspace capability (PHP-filtered; form counts are small).
 // Trashed forms (deleted_at) are always excluded — they live in the Bin.
 function fb_accessible_forms(PDO $pdo, string $statusFilter = "status != 'archived'", string $capability = 'workspace'): array {
@@ -751,8 +784,7 @@ if (function_exists('register_theme_section')) {
         'fallback' => static function (array $attrs, array $context, ?PDO $database): string {
             $slug = is_string($attrs['slug'] ?? null) ? $attrs['slug'] : '';
             if (!$database instanceof PDO || preg_match('/\A[a-z0-9][a-z0-9_-]{0,79}\z/', $slug) !== 1) return '';
-            $form = fb_get_form_by_slug($database, $slug);
-            return $form !== null && $form['status'] === 'active' ? fb_render_form($database, $form) : '';
+            return fb_render_embed($database, $slug);
         },
     ]);
 }
@@ -765,8 +797,7 @@ add_filter('theme_zone_render_widget', static function (string $html, string $ty
     if ($type !== 'tz_form_builder') return $html;
     $slug = is_string($config['slug'] ?? null) ? $config['slug'] : '';
     if (preg_match('/\A[a-z0-9][a-z0-9_-]{0,79}\z/', $slug) !== 1) return '';
-    $form = fb_get_form_by_slug($pdo, $slug);
-    return $form !== null && $form['status'] === 'active' ? fb_render_form($pdo, $form) : '';
+    return fb_render_embed($pdo, $slug);
 }, 20);
 
 add_filter('post_content', function (string $html, array $post = []): string {
@@ -777,10 +808,6 @@ add_filter('post_content', function (string $html, array $post = []): string {
         $pdo = $GLOBALS['pdo'] ?? null;
         if (!($pdo instanceof PDO) || !function_exists('fb_render_form')) return '';
         fb_assert_schema($pdo);
-        $form = fb_get_form_by_slug($pdo, $m[1]);
-        if ($form === null || ($form['status'] ?? '') !== 'active') {
-            return '<!-- form "' . htmlspecialchars($m[1], ENT_QUOTES) . '" not available -->';
-        }
-        return fb_render_form($pdo, $form);
+        return fb_render_embed($pdo, $m[1]);
     }, $html) ?? $html;
 });
