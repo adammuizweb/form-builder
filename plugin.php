@@ -120,6 +120,28 @@ function fb_normalize_key(string $s): string {
     return $s !== '' ? $s : 'field';
 }
 
+function fb_normalize_slug(string $s): string {
+    $s = strtolower(trim($s));
+    $s = preg_replace('/[^a-z0-9_-]+/', '_', $s) ?? '';
+    $s = trim($s, '_-');
+    $s = rtrim(substr($s, 0, 80), '_-');
+    return $s !== '' ? $s : 'form';
+}
+
+function fb_unique_form_slug(PDO $pdo, string $candidate, int $excludeId = 0): string {
+    $base = fb_normalize_slug($candidate);
+    $slug = $base;
+    $i = 2;
+    $check = $pdo->prepare('SELECT COUNT(*) FROM `fb_forms` WHERE slug = ? AND id != ?');
+    while (true) {
+        $check->execute([$slug, $excludeId]);
+        if ((int)$check->fetchColumn() === 0) return $slug;
+        $suffix = '-' . $i++;
+        $stem = rtrim(substr($base, 0, 80 - strlen($suffix)), '_-');
+        $slug = ($stem !== '' ? $stem : 'form') . $suffix;
+    }
+}
+
 // ---------------- Form accessors ----------------
 function fb_get_form(PDO $pdo, int $id): ?array {
     $st = $pdo->prepare('SELECT * FROM `fb_forms` WHERE id = ? LIMIT 1');

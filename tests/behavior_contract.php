@@ -28,6 +28,19 @@ $failures = [];
 $check = static function (bool $ok, string $message) use (&$failures): void { echo ($ok ? 'PASS ' : 'FAIL ') . $message . "\n"; if (!$ok) $failures[] = $message; };
 $rejects = static function (callable $callback): bool { try { $callback(); return false; } catch (InvalidArgumentException|JsonException) { return true; } };
 
+$check(fb_normalize_slug(' New Form-2 ') === 'new_form-2'
+    && fb_normalize_slug('new_form_2') === 'new_form_2'
+    && fb_normalize_key('New Form-2') === 'new_form_2',
+    'form slugs preserve hyphens independently from field-key normalization');
+$slugPdo = new PDO('sqlite::memory:');
+$slugPdo->exec('CREATE TABLE fb_forms (id INTEGER PRIMARY KEY, slug TEXT UNIQUE)');
+$slugPdo->exec("INSERT INTO fb_forms (id,slug) VALUES (2,'new_form-2'),(3,'occupied')");
+$longSlug = str_repeat('a', 80);
+$slugPdo->prepare('INSERT INTO fb_forms (id,slug) VALUES (?,?)')->execute([4, $longSlug]);
+$check(fb_unique_form_slug($slugPdo, 'new_form-2', 2) === 'new_form-2'
+    && fb_unique_form_slug($slugPdo, 'occupied') === 'occupied-2'
+    && fb_unique_form_slug($slugPdo, $longSlug) === str_repeat('a', 78) . '-2',
+    'draft-to-active saves retain the current slug and genuine conflicts stay unique within 80 characters');
 $preparedBase = fb_prepare_files_base_dir([]);
 $check(fb_project_root() === realpath($sandbox)
     && $preparedBase === realpath($sandbox) . '/private_files/form-builder'

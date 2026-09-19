@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.9 - 2026-09-19
+
+- Preserve valid hyphens and underscores in form slugs when changing form settings or status.
+- Keep generated collision suffixes within the supported 80-character slug limit.
+
 ## 1.7.8 - 2026-09-19
 
 - Show private embed diagnostics to authorized editors when a form is draft, archived, trashed, or missing.

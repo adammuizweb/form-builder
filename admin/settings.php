@@ -21,14 +21,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
     if ($act === 'save_general') {
         $title = trim((string)($_POST['title'] ?? '')) ?: 'Untitled Form';
-        $slug = fb_normalize_key((string)($_POST['slug'] ?? '') !== '' ? (string)$_POST['slug'] : $title);
-        $base = $slug; $i = 2;
-        while (true) {
-            $st = $pdo->prepare('SELECT COUNT(*) FROM `fb_forms` WHERE slug = ? AND id != ?');
-            $st->execute([$slug, $formId]);
-            if ((int)$st->fetchColumn() === 0) break;
-            $slug = $base . '-' . $i++;
-        }
+        $slug = fb_unique_form_slug($pdo, (string)($_POST['slug'] ?? '') !== '' ? (string)$_POST['slug'] : $title, $formId);
         $status = in_array(($_POST['status'] ?? ''), ['active', 'draft', 'archived'], true) ? (string)$_POST['status'] : 'draft';
         $pdo->prepare('UPDATE `fb_forms` SET title = ?, slug = ?, description = ?, status = ? WHERE id = ?')
             ->execute([$title, $slug, trim((string)($_POST['description'] ?? '')) ?: null, $status, $formId]);

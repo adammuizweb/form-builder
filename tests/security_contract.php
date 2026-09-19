@@ -8,7 +8,7 @@ $permissions = array_column($manifest['permissions'] ?? [], null, 'key');
 $composer = json_decode((string)file_get_contents($root . '/composer.json'), true, 32, JSON_THROW_ON_ERROR);
 $lock = json_decode((string)file_get_contents($root . '/composer.lock'), true, 64, JSON_THROW_ON_ERROR);
 $lockedPackages = array_column($lock['packages'] ?? [], 'version', 'name');
-$check(($manifest['version'] ?? null) === '1.7.8' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.122' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
+$check(($manifest['version'] ?? null) === '1.7.9' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.122' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
 $check(($composer['require']['php'] ?? null) === '>=8.1' && ($composer['require']['phpoffice/phpspreadsheet'] ?? null) === '~5.8.1'
     && ($composer['config']['platform']['php'] ?? null) === '8.1.0'
     && ($lockedPackages['phpoffice/phpspreadsheet'] ?? null) === '5.8.1'
@@ -34,6 +34,11 @@ $check(!str_contains((string)file_get_contents($root . '/plugin.php'), 'CREATE T
 $adminIndex = (string)file_get_contents($root . '/admin/index.php');
 $plugin = (string)file_get_contents($root . '/plugin.php');
 $settings = (string)file_get_contents($root . '/admin/settings.php');
+$check(str_contains($plugin, 'function fb_normalize_slug(')
+    && str_contains($plugin, 'function fb_unique_form_slug(')
+    && substr_count($adminIndex, 'fb_unique_form_slug(') === 2
+    && str_contains($settings, '$slug = fb_unique_form_slug('),
+    'form creation, duplication, and settings preserve valid hyphenated slugs');
 $check(str_contains($plugin, 'function fb_render_embed(')
     && str_contains($plugin, "'draft' => 'Form Draft'")
     && str_contains($plugin, "'archived' => 'Form Archived'")

@@ -14,7 +14,7 @@ Core runs `migrations/` during install, update, or enable. Runtime requests only
 
 ## Use
 
-Embed an active form with `[form slug="contact"]`. Theme Section integrations may render `form-builder` with a `slug` attribute, and Theme Zones may use the Form Builder widget. Repeated embeds receive unique DOM IDs. Authorized Form Builder editors see a non-public status notice when an embed points to a draft, archived, trashed, or missing form; visitors never receive an unavailable form.
+Embed an active form with `[form slug="contact"]`. Theme Section integrations may render `form-builder` with a `slug` attribute, and Theme Zones may use the Form Builder widget. Repeated embeds receive unique DOM IDs. Form slugs preserve valid hyphens and underscores when settings or status change. Authorized Form Builder editors see a non-public status notice when an embed points to a draft, archived, trashed, or missing form; visitors never receive an unavailable form.
 
 Definitions use schema version `1` and deterministically upsert by slug. The admin import/export controls omit submissions, files, secrets, ACL, and unsafe code by default. PHP integrations can call `fb_export_form_definition()` and `fb_upsert_form_definition()` directly after checking their own authorization.
 

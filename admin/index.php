@@ -27,10 +27,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $flash = 'Invalid CSRF token.'; $flashOk = false;
     } elseif ($act === 'create_form') {
         $title = trim((string)($_POST['title'] ?? 'Untitled Form')) ?: 'Untitled Form';
-        $base = fb_normalize_key($title);
-        $slug = $base;
-        $i = 2;
-        while (fb_get_form_by_slug($pdo, $slug) !== null) $slug = $base . '-' . $i++;
+        $slug = fb_unique_form_slug($pdo, $title);
         $pdo->prepare('INSERT INTO `fb_forms` (slug, title, status, settings_json, access_json, created_by) VALUES (?, ?, "draft", ?, ?, ?)')
             ->execute([
                 $slug, $title,
@@ -59,9 +56,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         if ($target === null || !fb_can_access_form($pdo, $target, $uid)) {
             $flash = 'Form not found or access denied.'; $flashOk = false;
         } elseif ($act === 'duplicate_form') {
-            $base = fb_normalize_key($target['slug'] . '-copy');
-            $slug = $base; $i = 2;
-            while (fb_get_form_by_slug($pdo, $slug) !== null) $slug = $base . '-' . $i++;
+            $slug = fb_unique_form_slug($pdo, $target['slug'] . '-copy');
             $pdo->prepare('INSERT INTO `fb_forms` (slug, title, description, status, settings_json, css, js, access_json, created_by) VALUES (?, ?, ?, "draft", ?, ?, ?, ?, ?)')
                 ->execute([$slug, $target['title'] . ' (Copy)', $target['description'], $target['settings_json'], $target['css'], $target['js'],
                     fb_json_encode(['roles' => [], 'users' => [], 'owner' => $uid, 'submissions' => ['roles' => [], 'users' => []]]), $uid]);
