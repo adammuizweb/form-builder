@@ -59,23 +59,37 @@ $check(str_contains($adminUi, 'function fb_visual_builder_url(')
     'new forms default to Visual Builder while Classic remains explicitly available');
 $check(str_contains($visualBuilder, "adiwira_require_permission(\$pdo, 'plugin.form-builder.workspace.access'")
     && str_contains($visualBuilder, 'fb_can_access_form($pdo, $form, $uid)')
-    && str_contains($visualBuilder, 'fb_render_form($pdo, $form)')
+    && str_contains($visualBuilder, 'fb_render_form($pdo, $previewForm)')
     && str_contains($visualBuilder, 'class="fbv-preview" inert')
     && str_contains($visualBuilder, 'data-device="desktop"')
     && str_contains($visualBuilder, 'data-device="mobile"')
     && str_contains($visualBuilder, "const ENDPOINT = '/fb-visual-builder/'")
     && str_contains($visualBuilder, "window.addEventListener('fbv:draft-change'")
     && str_contains($visualBuilder, 'Open Classic Builder'),
-    'Visual Builder is authorized, canonical-rendered, inert, responsive, autosave-ready, and Classic-compatible');
+    'Visual Builder is authorized, safely rendered, initially inert, responsive, autosave-ready, and Classic-compatible');
 $draftHelpers = (string)file_get_contents($root . '/includes/visual-drafts.php');
 $check(str_contains($draftHelpers, 'FOR UPDATE')
     && str_contains($draftHelpers, 'revision = ?')
     && str_contains($draftHelpers, 'hash_equals(')
-    && str_contains($draftHelpers, 'fb_visual_merge_protected_code('),
-    'Visual drafts use row locks, optimistic revisions, canonical hashes, and protected-code merging');
+    && str_contains($draftHelpers, 'fb_visual_merge_protected_code(')
+    && str_contains($draftHelpers, 'fb_render_field_html('),
+    'Visual drafts use row locks, optimistic revisions, canonical hashes, protected-code merging, and the safe public field renderer');
 $check(str_contains($visualBuilder, 'saveInFlight') && str_contains($visualBuilder, 'pendingDefinition')
     && str_contains($plugin, "DELETE FROM `fb_builder_drafts` WHERE form_id = ?"),
     'autosaves are serialized and hard deletion removes persisted drafts');
+$check(str_contains($visualBuilder, 'data-fbv-type=')
+    && str_contains($visualBuilder, 'const addField = (type)')
+    && str_contains($visualBuilder, 'const renderInspector = ()')
+    && str_contains($visualBuilder, 'data-fbv-delete')
+    && str_contains($visualBuilder, 'preview.removeAttribute(\'inert\')'),
+    'Visual Builder exposes draft-only add, select, inspect, and delete interactions after initialization');
+$check(str_contains($visualBuilder, 'let workingDefinition = null')
+    && str_contains($visualBuilder, 'workingDefinition === definition')
+    && substr_count($visualBuilder, 'definition !== workingDefinition') === 2
+    && str_contains($visualBuilder, 'id="fbvFieldPicker"')
+    && str_contains($visualBuilder, "window.addEventListener('beforeunload'")
+    && !str_contains($visualBuilder, '.fbv-preview form, .fbv-preview button'),
+    'Visual editing preserves the live working copy, exposes hidden fields, warns on unsaved navigation, and keeps fields selectable');
 $check(str_contains($plugin, 'function fb_normalize_slug(')
     && str_contains($plugin, 'function fb_unique_form_slug(')
     && substr_count($adminIndex, 'fb_unique_form_slug(') === 2

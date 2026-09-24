@@ -69,7 +69,7 @@ try {
     $draft['definition']['form']['title'] = 'Visual draft title';
     $savedDraft = fb_visual_save_draft($pdo, $formId, $draft['definition'], $draft['revision'], 11, true);
     $canonicalTitle = (string)$pdo->query("SELECT title FROM fb_forms WHERE id={$formId}")->fetchColumn();
-    $check($draft['revision'] === 1 && $savedDraft['revision'] === 2 && $canonicalTitle === 'Legacy', 'visual autosave increments its revision without mutating canonical form data');
+    $check($draft['revision'] === 1 && str_contains($draft['preview_html'], 'data-fbv-draft-preview') && $savedDraft['revision'] === 2 && str_contains($savedDraft['preview_html'], 'Visual draft title') && $canonicalTitle === 'Legacy', 'visual autosave returns an updated inert preview without mutating canonical form data');
     try { fb_visual_save_draft($pdo, $formId, $draft['definition'], 1, 12, true); $draftConflict = false; } catch (UnexpectedValueException) { $draftConflict = true; }
     $check($draftConflict, 'stale visual autosave revisions fail closed');
     $pdo->prepare('UPDATE fb_forms SET description = ? WHERE id = ?')->execute(['Changed in Classic', $formId]);
