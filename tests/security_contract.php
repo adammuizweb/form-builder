@@ -8,7 +8,7 @@ $permissions = array_column($manifest['permissions'] ?? [], null, 'key');
 $composer = json_decode((string)file_get_contents($root . '/composer.json'), true, 32, JSON_THROW_ON_ERROR);
 $lock = json_decode((string)file_get_contents($root . '/composer.lock'), true, 64, JSON_THROW_ON_ERROR);
 $lockedPackages = array_column($lock['packages'] ?? [], 'version', 'name');
-$check(($manifest['version'] ?? null) === '1.7.9' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.122' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
+$check(($manifest['version'] ?? null) === '2.0.0' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.122' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
 $check(($composer['require']['php'] ?? null) === '>=8.1' && ($composer['require']['phpoffice/phpspreadsheet'] ?? null) === '~5.8.1'
     && ($composer['config']['platform']['php'] ?? null) === '8.1.0'
     && ($lockedPackages['phpoffice/phpspreadsheet'] ?? null) === '5.8.1'
@@ -53,6 +53,7 @@ $adminIndex = (string)file_get_contents($root . '/admin/index.php');
 $plugin = (string)file_get_contents($root . '/plugin.php');
 $settings = (string)file_get_contents($root . '/admin/settings.php');
 $visualBuilder = (string)file_get_contents($root . '/admin/visual-builder.php');
+$visualPreview = (string)file_get_contents($root . '/admin/visual-preview.php');
 $classicBuilder = (string)file_get_contents($root . '/admin/builder.php');
 $adminUi = (string)file_get_contents($root . '/admin/_ui.php');
 $check(str_contains($adminUi, 'function fb_visual_builder_url(')
@@ -64,14 +65,27 @@ $check(str_contains($adminUi, 'function fb_visual_builder_url(')
     'new forms default to Visual Builder while Classic remains explicitly available');
 $check(str_contains($visualBuilder, "adiwira_require_permission(\$pdo, 'plugin.form-builder.workspace.access'")
     && str_contains($visualBuilder, 'fb_can_access_form($pdo, $form, $uid)')
-    && str_contains($visualBuilder, 'fb_render_form($pdo, $previewForm)')
-    && str_contains($visualBuilder, 'class="fbv-preview" inert')
+    && str_contains($visualBuilder, 'id="fbvPreviewFrame"')
+    && str_contains($visualBuilder, 'sandbox="allow-same-origin"')
+    && !str_contains($visualBuilder, 'allow-scripts')
+    && !str_contains($visualBuilder, 'allow-forms')
     && str_contains($visualBuilder, 'data-device="desktop"')
     && str_contains($visualBuilder, 'data-device="mobile"')
     && str_contains($visualBuilder, "const ENDPOINT = '/fb-visual-builder/'")
     && str_contains($visualBuilder, "window.addEventListener('fbv:draft-change'")
     && str_contains($visualBuilder, 'Open Classic Builder'),
     'Visual Builder is authorized, safely rendered, initially inert, responsive, autosave-ready, and Classic-compatible');
+$check(str_contains($visualPreview, "user_can(\$pdo, \$uid, 'plugin.form-builder.workspace.access'")
+    && str_contains($visualPreview, 'fb_can_access_form($pdo, $form, $uid)')
+    && str_contains($visualPreview, "\$previewSettings['unsafe_code_enabled'] = false")
+    && str_contains($visualPreview, "\$previewForm['css'] = null")
+    && str_contains($visualPreview, "\$previewForm['js'] = null")
+    && str_contains($visualPreview, 'fb_render_form($pdo, $previewForm)')
+    && str_contains($visualPreview, "add_filter('layout_slot_html'")
+    && str_contains($visualPreview, 'require $layoutPath')
+    && str_contains($visualPreview, 'Cache-Control: private, no-store')
+    && str_contains($visualPreview, 'X-Robots-Tag: noindex, nofollow'),
+    'Visual preview uses the authorized Core public layout without executable form customizations');
 $draftHelpers = (string)file_get_contents($root . '/includes/visual-drafts.php');
 $check(str_contains($draftHelpers, 'FOR UPDATE')
     && str_contains($draftHelpers, 'revision = ?')
@@ -123,8 +137,22 @@ $check(str_contains($visualBuilder, 'data-fbv-type=')
     && str_contains($visualBuilder, 'const addField = (type)')
     && str_contains($visualBuilder, 'const renderInspector = ()')
     && str_contains($visualBuilder, 'data-fbv-delete')
-    && str_contains($visualBuilder, 'preview.removeAttribute(\'inert\')'),
+    && str_contains($visualBuilder, 'const bindPreview = ()')
+    && str_contains($visualBuilder, 'previewFrame.contentDocument')
+    && str_contains($visualBuilder, 'element.inert = true'),
     'Visual Builder exposes draft-only add, select, inspect, and delete interactions after initialization');
+$check(str_contains($visualBuilder, 'id="fbvToggleLeft"')
+    && str_contains($visualBuilder, 'id="fbvToggleRight"')
+    && str_contains($visualBuilder, 'aria-controls="fbvQuestionLibrary"')
+    && str_contains($visualBuilder, 'aria-controls="fbvQuestionProperties"')
+    && str_contains($visualBuilder, "svg_ico('chevron-left', 'fbv-panel-icon')")
+    && str_contains($visualBuilder, "svg_ico('chevron-right', 'fbv-panel-icon')")
+    && !str_contains($visualBuilder, "toggle.textContent = side === 'left'")
+    && str_contains($visualBuilder, 'const setPanelHidden = (side, hidden, persist = true)')
+    && str_contains($visualBuilder, 'fbv_left_hidden')
+    && str_contains($visualBuilder, 'fbv_right_hidden')
+    && str_contains($visualBuilder, '--fbv-canvas-width: 1220px'),
+    'Visual Builder side panels collapse independently, persist their state, and widen the canvas');
 $check(str_contains($draftHelpers, 'data-fbv-row=')
     && str_contains($draftHelpers, 'data-fbv-col=')
     && str_contains($visualBuilder, 'id="fbvAddRow"')

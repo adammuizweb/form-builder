@@ -14,6 +14,7 @@ if (function_exists('register_frontend_route')) {
     // output clean of theme markup.
     register_frontend_route('fb-builder', PLUGIN_PATH . '/form-builder/admin/ajax.php', ['match' => 'exact', 'methods' => ['POST']]);
     register_frontend_route('fb-visual-builder', PLUGIN_PATH . '/form-builder/admin/visual-ajax.php', ['match' => 'exact', 'methods' => ['POST']]);
+    register_frontend_route('fb-visual-preview', PLUGIN_PATH . '/form-builder/admin/visual-preview.php', ['match' => 'exact', 'methods' => ['GET']]);
 }
 
 const FB_SECRET_KEY = 'form_builder_secret';

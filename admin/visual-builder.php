@@ -5,7 +5,6 @@ declare(strict_types=1);
 if (!defined('DASHBOARD_CONTEXT')) exit;
 
 require_once __DIR__ . '/_ui.php';
-require_once dirname(__DIR__) . '/public/render.php';
 
 $pdo = $GLOBALS['pdo'] ?? null;
 if (!($pdo instanceof PDO)) { echo '<p>Database not available.</p>'; return; }
@@ -30,17 +29,12 @@ $classicUrl = fb_url(['view' => 'builder', 'id' => $formId]);
 $settingsUrl = fb_url(['view' => 'settings', 'id' => $formId]);
 $formsUrl = fb_url(['view' => 'forms', 'id' => null]);
 $csrf = function_exists('csrf_token') ? csrf_token() : '';
-$previewForm = $form;
-$previewSettings = fb_form_settings($previewForm);
-$previewSettings['unsafe_code_enabled'] = false;
-$previewForm['settings_json'] = fb_json_encode($previewSettings);
-$previewForm['css'] = null;
-$previewForm['js'] = null;
-
 fb_admin_css();
 ?>
 <style>
-.fbv { --fbv-ink: #14261b; --fbv-muted: #68786e; --fbv-line: #dce5de; --fbv-paper: #f7faf7; color: var(--adam-text); }
+.fbv { --fbv-ink: #14261b; --fbv-muted: #68786e; --fbv-line: #dce5de; --fbv-paper: #f7faf7; --fbv-canvas-width: 860px; color: var(--adam-text); }
+.fbv.is-left-hidden, .fbv.is-right-hidden { --fbv-canvas-width: 1040px; }
+.fbv.is-left-hidden.is-right-hidden { --fbv-canvas-width: 1220px; }
 .fbv-topbar { display: flex; align-items: center; gap: .8rem; min-height: 58px; margin: -1rem -1rem 0; padding: .65rem 1rem; position: sticky; top: 0; z-index: 30; border-bottom: 1px solid var(--adam-border); background: color-mix(in srgb, var(--adam-card) 94%, transparent); backdrop-filter: blur(12px); }
 .fbv-back { display: inline-grid; place-items: center; width: 36px; height: 36px; border: 1px solid var(--adam-border); border-radius: 10px; color: var(--adam-text); text-decoration: none; }
 .fbv-title { min-width: 0; flex: 1; }
@@ -50,7 +44,19 @@ fb_admin_css();
 .fbv-status::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #2b7a4a; box-shadow: 0 0 0 4px rgba(43 122 74 / .12); }
 .fbv-status[data-state="loading"]::before, .fbv-status[data-state="saving"]::before { background: #ca8a04; box-shadow: 0 0 0 4px rgba(202 138 4 / .14); }
 .fbv-status[data-state="error"]::before, .fbv-status[data-state="conflict"]::before { background: #dc2626; box-shadow: 0 0 0 4px rgba(220 38 38 / .12); }
-.fbv-workspace { display: grid; grid-template-columns: 224px minmax(360px, 1fr) 288px; min-height: calc(100vh - 150px); margin: 0 -1rem -1rem; background: var(--adam-bg); }
+.fbv-workspace { position: relative; display: grid; grid-template-columns: 224px minmax(360px, 1fr) 288px; min-height: calc(100vh - 150px); margin: 0 -1rem -1rem; background: var(--adam-bg); }
+.fbv.is-left-hidden .fbv-workspace { grid-template-columns: minmax(360px, 1fr) 288px; }
+.fbv.is-right-hidden .fbv-workspace { grid-template-columns: 224px minmax(360px, 1fr); }
+.fbv.is-left-hidden.is-right-hidden .fbv-workspace { grid-template-columns: minmax(360px, 1fr); }
+.fbv.is-left-hidden .fbv-sidebar.left, .fbv.is-right-hidden .fbv-sidebar.right { display: none; }
+.fbv-panel-toggle { position: absolute; top: .75rem; z-index: 20; display: grid; place-items: center; width: 22px; height: 32px; padding: 0; border: 1px solid var(--adam-border); background: var(--adam-card); color: var(--adam-muted); font: 700 16px/1 system-ui, sans-serif; cursor: pointer; box-shadow: 0 3px 10px rgba(17 40 25 / .12); transition: left .2s, right .2s, color .15s, border-color .15s; }
+.fbv-panel-toggle:hover, .fbv-panel-toggle:focus-visible { color: var(--adam-accent); border-color: var(--adam-accent); outline: none; }
+.fbv-panel-toggle svg { display: block; width: 13px; height: 13px; transition: transform .2s ease; }
+.fbv-panel-toggle.left { left: 224px; border-left: 0; border-radius: 0 999px 999px 0; }
+.fbv-panel-toggle.right { right: 288px; border-right: 0; border-radius: 999px 0 0 999px; }
+.fbv.is-left-hidden .fbv-panel-toggle.left { left: 0; }
+.fbv.is-right-hidden .fbv-panel-toggle.right { right: 0; }
+.fbv.is-left-hidden .fbv-panel-toggle.left svg, .fbv.is-right-hidden .fbv-panel-toggle.right svg { transform: rotate(180deg); }
 .fbv-sidebar { padding: 1rem; background: var(--adam-card); }
 .fbv-sidebar.left { border-right: 1px solid var(--adam-border); }
 .fbv-sidebar.right { border-left: 1px solid var(--adam-border); }
@@ -70,25 +76,16 @@ fb_admin_css();
 .fbv-layout-actions button { width: 25px; height: 25px; padding: 0; border: 1px solid var(--adam-border); border-radius: 7px; background: var(--adam-card); color: var(--adam-text); cursor: pointer; }
 .fbv-library button::before { content: '+'; display: grid; place-items: center; width: 21px; height: 21px; border-radius: 7px; background: color-mix(in srgb, var(--adam-accent) 12%, transparent); color: var(--adam-accent); }
 .fbv-stage { min-width: 0; padding: 1rem clamp(1rem, 3vw, 2.5rem) 3rem; overflow: auto; }
-.fbv-notice { display: flex; gap: .65rem; align-items: flex-start; max-width: 860px; margin: 0 auto 1rem; padding: .7rem .85rem; border: 1px solid color-mix(in srgb, var(--adam-accent) 28%, var(--adam-border)); border-radius: 12px; background: color-mix(in srgb, var(--adam-accent) 6%, var(--adam-card)); font-size: .78rem; line-height: 1.5; }
+.fbv-notice { display: flex; gap: .65rem; align-items: flex-start; max-width: var(--fbv-canvas-width); margin: 0 auto 1rem; padding: .7rem .85rem; border: 1px solid color-mix(in srgb, var(--adam-accent) 28%, var(--adam-border)); border-radius: 12px; background: color-mix(in srgb, var(--adam-accent) 6%, var(--adam-card)); font-size: .78rem; line-height: 1.5; transition: max-width .25s ease; }
 .fbv-notice .fba-btn { flex: 0 0 auto; margin-left: auto; }
-.fbv-canvas-tools { display: flex; align-items: center; justify-content: space-between; gap: .7rem; max-width: 860px; margin: 0 auto .65rem; }
+.fbv-canvas-tools { display: flex; align-items: center; justify-content: space-between; gap: .7rem; max-width: var(--fbv-canvas-width); margin: 0 auto .65rem; transition: max-width .25s ease; }
 .fbv-devices { display: inline-flex; gap: .2rem; padding: .2rem; border: 1px solid var(--adam-border); border-radius: 10px; background: var(--adam-card); }
 .fbv-device { border: 0; border-radius: 7px; padding: .35rem .6rem; background: transparent; color: var(--adam-muted); font: inherit; font-size: .73rem; cursor: pointer; }
 .fbv-device.is-active { background: var(--adam-accent); color: #fff; }
 .fbv-count { color: var(--adam-muted); font-size: .73rem; }
-.fbv-canvas-shell { width: 100%; max-width: 860px; min-height: 500px; margin: 0 auto; padding: clamp(1rem, 3vw, 2.2rem); border: 1px solid var(--adam-border); border-radius: 18px; background: #eef3ef; box-shadow: 0 22px 60px rgba(17 40 25 / .11); transition: max-width .25s ease; }
+.fbv-canvas-shell { width: 100%; max-width: var(--fbv-canvas-width); min-height: 500px; margin: 0 auto; padding: clamp(1rem, 3vw, 2.2rem); border: 1px solid var(--adam-border); border-radius: 18px; background: #eef3ef; box-shadow: 0 22px 60px rgba(17 40 25 / .11); transition: max-width .25s ease; }
 .fbv-canvas-shell[data-device="mobile"] { max-width: 430px; }
-.fbv-preview { position: relative; }
-.fbv-preview .fb-wrap { margin: 0; box-shadow: 0 10px 35px rgba(26 55 37 / .09); }
-.fbv-preview button, .fbv-preview input, .fbv-preview textarea, .fbv-preview select { pointer-events: none; }
-.fbv-preview .fb-field { position: relative; border-radius: 10px; cursor: pointer; outline: 2px solid transparent; outline-offset: 6px; transition: outline-color .15s, background .15s; }
-.fbv-preview .fb-field[draggable="true"] { cursor: grab; }
-.fbv-preview .fb-field.is-dragging { opacity: .35; }
-.fbv-preview .fb-col { min-height: 42px; border-radius: 10px; transition: background .15s, outline-color .15s; }
-.fbv-preview .fb-col.is-drop-target, .fbv-preview .fb-field.is-drop-target { outline: 2px dashed var(--adam-accent); outline-offset: 5px; background: color-mix(in srgb, var(--adam-accent) 8%, transparent); }
-.fbv-preview .fb-field:hover { outline-color: color-mix(in srgb, var(--adam-accent) 36%, transparent); }
-.fbv-preview .fb-field.is-selected { outline-color: var(--adam-accent); background: color-mix(in srgb, var(--adam-accent) 5%, transparent); }
+.fbv-preview-frame { display: block; width: 100%; height: min(900px, 78vh); min-height: 620px; border: 0; border-radius: 12px; background: #fff; }
 .fbv-inspector-empty { padding: 1.1rem; border: 1px dashed var(--adam-border); border-radius: 12px; background: var(--adam-bg); color: var(--adam-muted); font-size: .78rem; line-height: 1.55; }
 .fbv-inspector-type { display: inline-flex; margin-bottom: .8rem; padding: .2rem .45rem; border-radius: 999px; background: color-mix(in srgb, var(--adam-accent) 10%, transparent); color: var(--adam-accent); font-size: .65rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
 .fbv-inspector .fba-field { margin-bottom: .7rem; }
@@ -102,12 +99,18 @@ fb_admin_css();
 .fbv-mode-card span { display: block; margin-bottom: .65rem; color: var(--adam-muted); font-size: .72rem; line-height: 1.45; }
 @media (max-width: 1100px) {
   .fbv-workspace { grid-template-columns: 190px minmax(320px, 1fr); }
+  .fbv.is-left-hidden .fbv-workspace, .fbv.is-left-hidden.is-right-hidden .fbv-workspace { grid-template-columns: minmax(320px, 1fr); }
+  .fbv.is-right-hidden:not(.is-left-hidden) .fbv-workspace { grid-template-columns: 190px minmax(320px, 1fr); }
+  .fbv-panel-toggle.left { left: 190px; }
+  .fbv-panel-toggle.right { right: 0; }
+  .fbv.is-left-hidden .fbv-panel-toggle.left { left: 0; }
   .fbv-sidebar.right { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--adam-border); }
 }
 @media (max-width: 760px) {
   .fbv-topbar { flex-wrap: wrap; }
   .fbv-status { order: 10; width: 100%; padding-left: .2rem; font-size: .7rem; }
   .fbv-workspace { display: block; }
+  .fbv-panel-toggle.left { left: 0; }
   .fbv-sidebar.left { border: 0; border-bottom: 1px solid var(--adam-border); }
   .fbv-library { display: flex; overflow-x: auto; padding-bottom: .25rem; }
   .fbv-library button { min-width: 135px; }
@@ -116,7 +119,7 @@ fb_admin_css();
 }
 </style>
 
-<div class="fbv">
+<div class="fbv" id="fbvApp">
   <header class="fbv-topbar">
     <a class="fbv-back" href="<?= htmlspecialchars($formsUrl, ENT_QUOTES) ?>" aria-label="Back to forms">&larr;</a>
     <div class="fbv-title">
@@ -131,7 +134,9 @@ fb_admin_css();
   </header>
 
   <div class="fbv-workspace">
-    <aside class="fbv-sidebar left" aria-label="Question library">
+    <button class="fbv-panel-toggle left" id="fbvToggleLeft" type="button" aria-controls="fbvQuestionLibrary" aria-expanded="true" title="Hide question library"><?= svg_ico('chevron-left', 'fbv-panel-icon') ?></button>
+    <button class="fbv-panel-toggle right" id="fbvToggleRight" type="button" aria-controls="fbvQuestionProperties" aria-expanded="true" title="Hide question properties"><?= svg_ico('chevron-right', 'fbv-panel-icon') ?></button>
+    <aside class="fbv-sidebar left" id="fbvQuestionLibrary" aria-label="Question library">
       <h2>Add a question</h2>
       <p>Add a field to the final column, then select it on the canvas to edit its draft properties.</p>
       <?php foreach (['input' => 'Questions', 'element' => 'Content'] as $group => $label): ?>
@@ -166,13 +171,11 @@ fb_admin_css();
         <span class="fbv-count" id="fbvFieldCount"><?= $fieldCount ?> field<?= $fieldCount === 1 ? '' : 's' ?></span>
       </div>
       <div class="fbv-canvas-shell" id="fbvCanvas" data-device="desktop">
-        <div class="fbv-preview" inert id="fbvPreview" aria-label="Form preview">
-          <?= fb_render_form($pdo, $previewForm) ?>
-        </div>
+        <iframe class="fbv-preview-frame" id="fbvPreviewFrame" title="Public form preview" src="about:blank" data-src="/fb-visual-preview/?id=<?= $formId ?>" sandbox="allow-same-origin" tabindex="-1"></iframe>
       </div>
     </main>
 
-    <aside class="fbv-sidebar right" aria-label="Question properties">
+    <aside class="fbv-sidebar right" id="fbvQuestionProperties" aria-label="Question properties">
       <h2>Question properties</h2>
       <p>Select a question on the canvas to edit its label, help text, options, required state, and visibility.</p>
       <select class="fbv-field-picker" id="fbvFieldPicker" aria-label="Select a field" disabled><option value="">Select a field</option></select>
@@ -193,8 +196,9 @@ fb_admin_css();
   const CSRF = <?= json_encode($csrf, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
   const CAN_UNSAFE = <?= $canUnsafeCode ? 'true' : 'false' ?>;
   const TYPES = <?= json_encode($types, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+  const app = document.getElementById('fbvApp');
   const canvas = document.getElementById('fbvCanvas');
-  const preview = document.getElementById('fbvPreview');
+  const previewFrame = document.getElementById('fbvPreviewFrame');
   const inspector = document.getElementById('fbvInspector');
   const fieldPicker = document.getElementById('fbvFieldPicker');
   const fieldCount = document.getElementById('fbvFieldCount');
@@ -209,6 +213,8 @@ fb_admin_css();
   const addRowButton = document.getElementById('fbvAddRow');
   const newRowColumns = document.getElementById('fbvNewRowColumns');
   const layoutList = document.getElementById('fbvLayoutList');
+  const leftToggle = document.getElementById('fbvToggleLeft');
+  const rightToggle = document.getElementById('fbvToggleRight');
   let draft = null;
   let workingDefinition = null;
   let selectedKey = null;
@@ -218,6 +224,23 @@ fb_admin_css();
   let hasUnsavedChanges = false;
   let draggedFieldKey = null;
   let retryTimer = 0;
+  let preview = null;
+
+  const setPanelHidden = (side, hidden, persist = true) => {
+    const toggle = side === 'left' ? leftToggle : rightToggle;
+    app.classList.toggle(`is-${side}-hidden`, hidden);
+    toggle.setAttribute('aria-expanded', hidden ? 'false' : 'true');
+    toggle.title = `${hidden ? 'Show' : 'Hide'} question ${side === 'left' ? 'library' : 'properties'}`;
+    if (persist) {
+      try { localStorage.setItem(`fbv_${side}_hidden`, hidden ? '1' : '0'); } catch (error) {}
+    }
+  };
+  leftToggle.addEventListener('click', () => setPanelHidden('left', !app.classList.contains('is-left-hidden')));
+  rightToggle.addEventListener('click', () => setPanelHidden('right', !app.classList.contains('is-right-hidden')));
+  try {
+    setPanelHidden('left', localStorage.getItem('fbv_left_hidden') === '1', false);
+    setPanelHidden('right', localStorage.getItem('fbv_right_hidden') === '1', false);
+  } catch (error) {}
 
   const setStatus = (message, state = 'ready') => {
     status.textContent = message;
@@ -273,6 +296,7 @@ fb_admin_css();
     fieldCount.textContent = `${count} field${count === 1 ? '' : 's'}`;
   };
   const markSelection = () => {
+    if (!preview) return;
     preview.querySelectorAll('.fb-field').forEach((element) => element.classList.toggle('is-selected', element.dataset.key === selectedKey));
   };
   const renderFieldPicker = () => {
@@ -290,8 +314,8 @@ fb_admin_css();
     }).join('');
   };
   const applyPreview = (html) => {
-    if (!html) return;
-    const template = document.createElement('template');
+    if (!html || !preview) return;
+    const template = preview.ownerDocument.createElement('template');
     template.innerHTML = html.trim();
     const fresh = template.content.querySelector('.fb-wrap');
     const existing = preview.querySelector('.fb-wrap');
@@ -575,7 +599,6 @@ fb_admin_css();
     workingDefinition = loaded.definition;
     syncHeader(workingDefinition);
     applyPreview(draft.preview_html);
-    preview.removeAttribute('inert');
     renderInspector();
     renderFieldPicker();
     libraryButtons.forEach((button) => button.disabled = button.dataset.unsafe === '1' && !CAN_UNSAFE);
@@ -598,46 +621,62 @@ fb_admin_css();
     const remove = event.target.closest('[data-row-delete]');
     if (remove) deleteEmptyRow(row.dataset.layoutRow);
   });
-  preview.addEventListener('click', (event) => {
-    const field = event.target.closest('.fb-field[data-key]');
-    if (!field || !preview.contains(field)) return;
-    selectedKey = field.dataset.key;
-    markSelection();
-    renderInspector();
-    renderFieldPicker();
+  const bindPreview = () => {
+    if (!preview || preview.dataset.fbvBound === '1') return;
+    preview.dataset.fbvBound = '1';
+    preview.addEventListener('click', (event) => {
+      const field = event.target.closest('.fb-field[data-key]');
+      if (!field || !preview.contains(field)) return;
+      selectedKey = field.dataset.key;
+      markSelection();
+      renderInspector();
+      renderFieldPicker();
+    });
+    const clearDropTargets = () => preview.querySelectorAll('.is-drop-target, .is-dragging').forEach((element) => element.classList.remove('is-drop-target', 'is-dragging'));
+    preview.addEventListener('dragstart', (event) => {
+      const field = event.target.closest('.fb-field[data-key]');
+      if (!field) return;
+      draggedFieldKey = field.dataset.key;
+      field.classList.add('is-dragging');
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', draggedFieldKey);
+    });
+    preview.addEventListener('dragover', (event) => {
+      if (!draggedFieldKey) return;
+      const field = event.target.closest('.fb-field[data-key]');
+      const column = event.target.closest('.fb-col[data-fbv-col]');
+      if (!column) return;
+      event.preventDefault();
+      preview.querySelectorAll('.is-drop-target').forEach((element) => element.classList.remove('is-drop-target'));
+      (field && field.dataset.key !== draggedFieldKey ? field : column).classList.add('is-drop-target');
+      event.dataTransfer.dropEffect = 'move';
+    });
+    preview.addEventListener('drop', (event) => {
+      if (!draggedFieldKey) return;
+      const field = event.target.closest('.fb-field[data-key]');
+      const column = event.target.closest('.fb-col[data-fbv-col]');
+      event.preventDefault();
+      if (column) moveField(draggedFieldKey, column.dataset.fbvCol, field?.dataset.key || null);
+      draggedFieldKey = null;
+      clearDropTargets();
+    });
+    preview.addEventListener('dragend', () => {
+      draggedFieldKey = null;
+      clearDropTargets();
+    });
+    preview.addEventListener('submit', (event) => event.preventDefault(), true);
+  };
+  previewFrame.addEventListener('load', () => {
+    const frameDocument = previewFrame.contentDocument;
+    preview = frameDocument?.getElementById('fbvPreview') || null;
+    if (!preview) { setStatus('Public preview unavailable', 'error'); return; }
+    Array.from(frameDocument.body.children).forEach((element) => {
+      if (element.id !== 'site-main' && element.tagName !== 'SCRIPT') element.inert = true;
+    });
+    bindPreview();
+    if (draft?.preview_html) applyPreview(draft.preview_html);
   });
-  const clearDropTargets = () => preview.querySelectorAll('.is-drop-target, .is-dragging').forEach((element) => element.classList.remove('is-drop-target', 'is-dragging'));
-  preview.addEventListener('dragstart', (event) => {
-    const field = event.target.closest('.fb-field[data-key]');
-    if (!field) return;
-    draggedFieldKey = field.dataset.key;
-    field.classList.add('is-dragging');
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/plain', draggedFieldKey);
-  });
-  preview.addEventListener('dragover', (event) => {
-    if (!draggedFieldKey) return;
-    const field = event.target.closest('.fb-field[data-key]');
-    const column = event.target.closest('.fb-col[data-fbv-col]');
-    if (!column) return;
-    event.preventDefault();
-    preview.querySelectorAll('.is-drop-target').forEach((element) => element.classList.remove('is-drop-target'));
-    (field && field.dataset.key !== draggedFieldKey ? field : column).classList.add('is-drop-target');
-    event.dataTransfer.dropEffect = 'move';
-  });
-  preview.addEventListener('drop', (event) => {
-    if (!draggedFieldKey) return;
-    const field = event.target.closest('.fb-field[data-key]');
-    const column = event.target.closest('.fb-col[data-fbv-col]');
-    event.preventDefault();
-    if (column) moveField(draggedFieldKey, column.dataset.fbvCol, field?.dataset.key || null);
-    draggedFieldKey = null;
-    clearDropTargets();
-  });
-  preview.addEventListener('dragend', () => {
-    draggedFieldKey = null;
-    clearDropTargets();
-  });
+  previewFrame.src = previewFrame.dataset.src;
   fieldPicker.addEventListener('change', () => {
     selectedKey = fieldPicker.value || null;
     markSelection();
@@ -800,6 +839,5 @@ fb_admin_css();
     });
     canvas.dataset.device = button.dataset.device;
   }));
-  preview.addEventListener('submit', (event) => event.preventDefault(), true);
 })();
 </script>

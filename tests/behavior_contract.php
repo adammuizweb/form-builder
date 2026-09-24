@@ -51,7 +51,9 @@ $check(($GLOBALS['_routes']['form-submit']['match'] ?? null) === 'exact'
     && ($GLOBALS['_routes']['form-submit']['methods'] ?? null) === ['POST']
     && ($GLOBALS['_routes']['fb-builder']['methods'] ?? null) === ['POST']
     && ($GLOBALS['_routes']['fb-visual-builder']['match'] ?? null) === 'exact'
-    && ($GLOBALS['_routes']['fb-visual-builder']['methods'] ?? null) === ['POST'],
+    && ($GLOBALS['_routes']['fb-visual-builder']['methods'] ?? null) === ['POST']
+    && ($GLOBALS['_routes']['fb-visual-preview']['match'] ?? null) === 'exact'
+    && ($GLOBALS['_routes']['fb-visual-preview']['methods'] ?? null) === ['GET'],
     'runtime route registration is exact and method-aware');
 $formAccess = ['created_by'=>1,'access_json'=>fb_json_encode(['owner'=>1,'roles'=>['international-editor'],'users'=>[2],'submissions'=>['roles'=>['international-reviewer'],'users'=>[3]]])];
 $GLOBALS['_actors'] = [1=>['admin'],2=>['author'],3=>['author'],4=>['international-reviewer'],5=>['author'],6=>['admin']];
@@ -143,7 +145,10 @@ $countryField = ['type'=>'country','field_key'=>'country','label'=>'Country','re
 $phoneField = ['type'=>'intl_phone','field_key'=>'phone','label'=>'Phone','required'=>1,'is_hidden'=>0,'placeholder'=>'','help_text'=>'','validation_json'=>fb_json_encode(['maxlength'=>25]),'settings_json'=>fb_json_encode(['country_field'=>'country'])];
 $countryHtml = fb_render_field_html($countryField, 'contract', 'i1', false, fb_default_settings());
 $phoneHtml = fb_render_field_html($phoneField, 'contract', 'i1', false, fb_default_settings());
-$check(str_contains($countryHtml, 'data-fb-country-search') && str_contains($countryHtml, 'value="ID"') && !str_contains($countryHtml, 'Indonesia (+62)') && str_contains($phoneHtml, 'data-country-field="country"'), 'country picker keeps labels country-focused while phone rendering declares its country dependency');
+$check(str_contains($countryHtml, 'data-fb-country') && str_contains($countryHtml, 'value="ID"') && !str_contains($countryHtml, 'Indonesia (+62)')
+    && !str_contains($countryHtml, 'type="search"') && !str_contains($countryHtml, 'data-fb-country-search')
+    && str_contains($phoneHtml, 'data-country-field="country"'),
+    'country picker uses one native type-ahead select and declares its phone dependency');
 $GLOBALS['__APP_LOCALE'] = 'fr-CA';
 $localizedSettings = array_merge(fb_default_settings(), $definition['form']['settings']);
 $localizedPhone = fb_localized_field(['field_key'=>'phone','label'=>'Phone'], $localizedSettings);
