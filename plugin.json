@@ -110,6 +110,17 @@
                 ]
             },
             {
+                "route": "admin/tools/form-builder/editor",
+                "file": "admin/visual-builder.php",
+                "title": "Visual Form Builder",
+                "permission": "plugin.form-builder.workspace.access",
+                "roles": [
+                    "admin",
+                    "author"
+                ],
+                "hidden": true
+            },
+            {
                 "route": "admin/bin/form-builder/index",
                 "file": "admin/bin.php",
                 "title": "Bin Form Builder",

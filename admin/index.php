@@ -36,7 +36,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 $uid,
             ]);
         $newId = (int)$pdo->lastInsertId();
-        fb_js_redirect(fb_url(['view' => 'builder', 'id' => $newId]));
+        fb_js_redirect(fb_visual_builder_url($newId));
         return;
     } elseif ($act === 'save_recaptcha') {
         if (!$canGlobalSettings) {
@@ -254,12 +254,13 @@ $listUrl = static function (array $extra = []) use ($q, $pageNum): string {
             <td data-col="status"><span class="fba-badge <?= $statusCls ?>"><?= htmlspecialchars($f['status'], ENT_QUOTES) ?></span></td>
             <td data-col="updated" style="white-space:nowrap" class="fba-sub"><?= htmlspecialchars(date('d M Y H:i', strtotime((string)$f['updated_at'])), ENT_QUOTES) ?></td>
             <td style="white-space:nowrap">
-              <?php if ($canEditForm): ?><a class="fba-btn sm primary" href="<?= fb_url(['view' => 'builder', 'id' => $fid]) ?>">Builder</a><?php elseif ($canViewFormSubmissions): ?><a class="fba-btn sm primary" href="<?= fb_url(['view' => 'submissions', 'id' => $fid]) ?>">Submissions</a><?php endif; ?>
+               <?php if ($canEditForm): ?><a class="fba-btn sm primary" href="<?= fb_visual_builder_url($fid) ?>">Visual Builder</a><?php elseif ($canViewFormSubmissions): ?><a class="fba-btn sm primary" href="<?= fb_url(['view' => 'submissions', 'id' => $fid]) ?>">Submissions</a><?php endif; ?>
               <details class="fba-more">
                 <summary class="fba-btn sm" title="Aksi lainnya" aria-label="Aksi lainnya"><svg class="lucide-icon fba-menu-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></svg></summary>
                 <div class="fba-more-menu">
                    <?php if ($canViewFormSubmissions): ?><a href="<?= fb_url(['view' => 'submissions', 'id' => $fid]) ?>"><?= svg_ico('clipboard-list') ?><span>Submissions</span></a><?php endif; ?>
-                   <?php if ($canEditForm): ?><a href="<?= fb_url(['view' => 'settings', 'id' => $fid]) ?>"><?= svg_ico('settings') ?><span>Settings</span></a>
+                   <?php if ($canEditForm): ?><a href="<?= fb_url(['view' => 'builder', 'id' => $fid]) ?>"><?= svg_ico('layout-template') ?><span>Classic Builder</span></a>
+                   <a href="<?= fb_url(['view' => 'settings', 'id' => $fid]) ?>"><?= svg_ico('settings') ?><span>Settings</span></a>
                    <?php if ($canDefinitions): ?><a href="<?= fb_url(['action' => 'export_definition', 'id' => $fid]) ?>"><?= svg_ico('download') ?><span>Export definition</span></a><?php endif; ?>
                    <button type="submit" form="fba-dup-<?= $fid ?>"><?= svg_ico('copy') ?><span>Duplikat</span></button>
                    <button type="submit" form="fba-arch-<?= $fid ?>" class="danger"><?= svg_ico('box') ?><span>Arsipkan</span></button>

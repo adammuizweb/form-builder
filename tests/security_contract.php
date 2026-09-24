@@ -17,6 +17,11 @@ $check(($composer['require']['php'] ?? null) === '>=8.1' && ($composer['require'
     'Excel export ships a locked plugin-local PhpSpreadsheet runtime');
 $check(array_diff(['pdo','pdo_mysql','fileinfo','dom','json','mbstring'], $manifest['requires']['extensions'] ?? []) === [] && !in_array('zip', $manifest['requires']['extensions'] ?? [], true), 'runtime extensions are complete without obsolete DOCX zip dependency');
 foreach (['submissions.manage','workflow.manage','definitions.manage','unsafe-code.manage'] as $suffix) $check(isset($permissions['plugin.form-builder.' . $suffix]), 'narrow permission ' . $suffix . ' is declared');
+$adminPages = array_column($manifest['admin']['pages'] ?? [], null, 'route');
+$check(($adminPages['admin/tools/form-builder/editor']['file'] ?? null) === 'admin/visual-builder.php'
+    && ($adminPages['admin/tools/form-builder/editor']['permission'] ?? null) === 'plugin.form-builder.workspace.access'
+    && ($adminPages['admin/tools/form-builder/editor']['hidden'] ?? false) === true,
+    'Visual Builder has a hidden permission-bound dashboard route');
 $check(is_file($root . '/migrations/0001-baseline.sql') && is_file($root . '/migrations/0002-submission-workflow.php') && count(glob($root . '/migrations/*') ?: []) === 2, 'only final append-only migration names ship');
 $builder = (string)file_get_contents($root . '/tools/build-package.php');
 $check(!str_contains($builder, "'form-builder/' .") && str_contains($builder, "str_replace(DIRECTORY_SEPARATOR, '/', \$relative)"), 'package builder writes plugin.json at the archive root');
@@ -34,6 +39,24 @@ $check(!str_contains((string)file_get_contents($root . '/plugin.php'), 'CREATE T
 $adminIndex = (string)file_get_contents($root . '/admin/index.php');
 $plugin = (string)file_get_contents($root . '/plugin.php');
 $settings = (string)file_get_contents($root . '/admin/settings.php');
+$visualBuilder = (string)file_get_contents($root . '/admin/visual-builder.php');
+$classicBuilder = (string)file_get_contents($root . '/admin/builder.php');
+$adminUi = (string)file_get_contents($root . '/admin/_ui.php');
+$check(str_contains($adminUi, 'function fb_visual_builder_url(')
+    && str_contains($adminIndex, 'fb_js_redirect(fb_visual_builder_url($newId))')
+    && str_contains($adminIndex, '>Visual Builder</a>')
+    && str_contains($adminIndex, '>Classic Builder</span>')
+    && str_contains($classicBuilder, 'Classic Builder:')
+    && str_contains($classicBuilder, 'fb_visual_builder_url($formId)'),
+    'new forms default to Visual Builder while Classic remains explicitly available');
+$check(str_contains($visualBuilder, "adiwira_require_permission(\$pdo, 'plugin.form-builder.workspace.access'")
+    && str_contains($visualBuilder, 'fb_can_access_form($pdo, $form, $uid)')
+    && str_contains($visualBuilder, 'fb_render_form($pdo, $form)')
+    && str_contains($visualBuilder, 'class="fbv-preview" inert')
+    && str_contains($visualBuilder, 'data-device="desktop"')
+    && str_contains($visualBuilder, 'data-device="mobile"')
+    && str_contains($visualBuilder, 'Open Classic Builder'),
+    'Visual Builder foundation is authorized, canonical-rendered, inert, responsive, and Classic-compatible');
 $check(str_contains($plugin, 'function fb_normalize_slug(')
     && str_contains($plugin, 'function fb_unique_form_slug(')
     && substr_count($adminIndex, 'fb_unique_form_slug(') === 2
