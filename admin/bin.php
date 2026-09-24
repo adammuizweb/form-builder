@@ -54,6 +54,22 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             $flash = 'Item tidak ditemukan di Bin.'; $flashOk = false;
         } else {
             $formId = (int)$f['form_id'];
+            try {
+                $mutationLock = fb_acquire_form_mutation_lock($pdo, $formId);
+                register_shutdown_function(static function () use ($pdo, $mutationLock): void { fb_release_form_mutation_lock($pdo, $mutationLock); });
+            } catch (UnexpectedValueException $error) {
+                $flash = $error->getMessage(); $flashOk = false;
+                $_SESSION['fb_bin_flash'] = [$flash, $flashOk];
+                fb_js_redirect('?page=admin/bin/form-builder/index');
+                return;
+            }
+            $f = $fbGetNode((int)($_POST['field_id'] ?? 0));
+            if ($f === null || $f['deleted_at'] === null || in_array($f['type'], ['row', 'col'], true)) {
+                $flash = 'Item tidak ditemukan di Bin.'; $flashOk = false;
+                $_SESSION['fb_bin_flash'] = [$flash, $flashOk];
+                fb_js_redirect('?page=admin/bin/form-builder/index');
+                return;
+            }
             if ($f['type'] === 'intl_phone') {
                 $countryKey = (string)(fb_field_settings($f)['country_field'] ?? '');
                 $country = $pdo->prepare("SELECT required,is_hidden FROM fb_fields WHERE form_id = ? AND field_key = ? AND type = 'country' AND deleted_at IS NULL LIMIT 1");
@@ -66,52 +82,99 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                     return;
                 }
             }
-            $parentId = (int)$f['parent_id'];
-            $col = $parentId > 0 ? $fbGetNode($parentId) : null;
-            if ($col === null || $col['type'] !== 'col' || (int)$col['form_id'] !== $formId) {
-                // ancestor gone: create a fresh row+column at the end of the form
-                $maxSort = (int)$pdo->query("SELECT COALESCE(MAX(sort_order), 0) FROM `fb_fields` WHERE form_id = {$formId} AND parent_id = 0")->fetchColumn();
-                $pdo->prepare("INSERT INTO `fb_fields` (form_id, type, label, field_key, parent_id, sort_order) VALUES (?, 'row', '', ?, 0, ?)")
-                    ->execute([$formId, 'row_' . bin2hex(random_bytes(4)), $maxSort + 10]);
-                $rowId = (int)$pdo->lastInsertId();
-                $pdo->prepare("INSERT INTO `fb_fields` (form_id, type, label, field_key, parent_id, sort_order) VALUES (?, 'col', '', ?, ?, 10)")
-                    ->execute([$formId, 'col_' . bin2hex(random_bytes(4)), $rowId]);
-                $parentId = (int)$pdo->lastInsertId();
-            } else {
-                // undelete the ancestor chain (col + its row)
-                $rowId = (int)$col['parent_id'];
-                if ($rowId > 0) {
-                    $pdo->prepare('UPDATE `fb_fields` SET deleted_at = NULL WHERE id = ?')->execute([$rowId]);
-                }
-                $pdo->prepare('UPDATE `fb_fields` SET deleted_at = NULL WHERE id = ?')->execute([(int)$col['id']]);
+            $duplicate = $pdo->prepare('SELECT COUNT(*) FROM fb_fields WHERE form_id = ? AND field_key = ? AND id <> ? AND deleted_at IS NULL');
+            $duplicate->execute([$formId, (string)$f['field_key'], (int)$f['id']]);
+            if ((int)$duplicate->fetchColumn() > 0) {
+                $flash = 'A live field already uses this key. Rename it in the form before restoring this item.'; $flashOk = false;
+                $_SESSION['fb_bin_flash'] = [$flash, $flashOk];
+                fb_js_redirect('?page=admin/bin/form-builder/index');
+                return;
             }
-            $maxInCol = (int)$pdo->query("SELECT COALESCE(MAX(sort_order), 0) FROM `fb_fields` WHERE parent_id = {$parentId} AND deleted_at IS NULL")->fetchColumn();
-            $pdo->prepare('UPDATE `fb_fields` SET deleted_at = NULL, parent_id = ?, sort_order = ? WHERE id = ?')
-                ->execute([$parentId, $maxInCol + 10, (int)$f['id']]);
-            $pdo->prepare('UPDATE `fb_forms` SET updated_at = NOW() WHERE id = ?')->execute([$formId]);
-            $flash = 'Field dipulihkan ke form.';
+            $pdo->beginTransaction();
+            try {
+                $parentId = (int)$f['parent_id'];
+                $col = $parentId > 0 ? $fbGetNode($parentId) : null;
+                $row = $col !== null && (int)$col['parent_id'] > 0 ? $fbGetNode((int)$col['parent_id']) : null;
+                if ($col === null || $col['type'] !== 'col' || (int)$col['form_id'] !== $formId || $col['deleted_at'] !== null
+                    || $row === null || $row['type'] !== 'row' || (int)$row['form_id'] !== $formId || $row['deleted_at'] !== null) {
+                    // ancestor gone: create a fresh row+column at the end of the form
+                    $maxSort = (int)$pdo->query("SELECT COALESCE(MAX(sort_order), 0) FROM `fb_fields` WHERE form_id = {$formId} AND parent_id = 0")->fetchColumn();
+                    $pdo->prepare("INSERT INTO `fb_fields` (form_id, type, label, field_key, parent_id, sort_order) VALUES (?, 'row', '', ?, 0, ?)")
+                        ->execute([$formId, 'row_' . bin2hex(random_bytes(4)), $maxSort + 10]);
+                    $rowId = (int)$pdo->lastInsertId();
+                    $pdo->prepare("INSERT INTO `fb_fields` (form_id, type, label, field_key, parent_id, sort_order) VALUES (?, 'col', '', ?, ?, 10)")
+                        ->execute([$formId, 'col_' . bin2hex(random_bytes(4)), $rowId]);
+                    $parentId = (int)$pdo->lastInsertId();
+                } else {
+                    $parentId = (int)$col['id'];
+                }
+                $maxInCol = (int)$pdo->query("SELECT COALESCE(MAX(sort_order), 0) FROM `fb_fields` WHERE parent_id = {$parentId} AND deleted_at IS NULL")->fetchColumn();
+                $restore = $pdo->prepare('UPDATE `fb_fields` SET deleted_at = NULL, parent_id = ?, sort_order = ? WHERE id = ? AND deleted_at IS NOT NULL');
+                $restore->execute([$parentId, $maxInCol + 10, (int)$f['id']]);
+                if ($restore->rowCount() !== 1) throw new UnexpectedValueException('Field changed before it could be restored.');
+                $pdo->prepare('UPDATE `fb_forms` SET updated_at = NOW() WHERE id = ?')->execute([$formId]);
+                $pdo->commit();
+                $flash = 'Field dipulihkan ke form.';
+            } catch (Throwable $error) {
+                if ($pdo->inTransaction()) $pdo->rollBack();
+                $flash = $error->getMessage(); $flashOk = false;
+            }
         }
     } elseif ($act === 'purge') {
         $f = $fbGetNode((int)($_POST['field_id'] ?? 0));
         if ($f === null || $f['deleted_at'] === null) {
             $flash = 'Item tidak ditemukan di Bin.'; $flashOk = false;
         } else {
-            $parentId = (int)$f['parent_id'];
-            $pdo->prepare('DELETE FROM `fb_fields` WHERE id = ?')->execute([(int)$f['id']]);
-            $fbPruneAncestors($parentId > 0 ? $parentId : null);
-            $flash = 'Field dihapus permanen.';
+            $formId = (int)$f['form_id'];
+            try {
+                $mutationLock = fb_acquire_form_mutation_lock($pdo, $formId);
+                register_shutdown_function(static function () use ($pdo, $mutationLock): void { fb_release_form_mutation_lock($pdo, $mutationLock); });
+                $f = $fbGetNode((int)($_POST['field_id'] ?? 0));
+                if ($f === null || $f['deleted_at'] === null) throw new UnexpectedValueException('Item tidak ditemukan di Bin.');
+                $pdo->beginTransaction();
+                $parentId = (int)$f['parent_id'];
+                $pdo->prepare('DELETE FROM `fb_fields` WHERE id = ?')->execute([(int)$f['id']]);
+                $fbPruneAncestors($parentId > 0 ? $parentId : null);
+                $pdo->commit();
+                $flash = 'Field dihapus permanen.';
+            } catch (Throwable $error) {
+                if ($pdo->inTransaction()) $pdo->rollBack();
+                $flash = $error->getMessage(); $flashOk = false;
+            }
         }
     } elseif ($act === 'purge_all') {
-        $rows = $pdo->query("SELECT id, parent_id FROM `fb_fields` WHERE deleted_at IS NOT NULL AND type NOT IN ('row','col')")->fetchAll(PDO::FETCH_ASSOC) ?: [];
-        $del = $pdo->prepare('DELETE FROM `fb_fields` WHERE id = ?');
-        foreach ($rows as $r) {
-            $del->execute([(int)$r['id']]);
-            $fbPruneAncestors((int)$r['parent_id'] > 0 ? (int)$r['parent_id'] : null);
+        $rows = $pdo->query('SELECT id, parent_id, form_id FROM `fb_fields` WHERE deleted_at IS NOT NULL')->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $formIds = array_values(array_unique(array_map(static fn(array $row): int => (int)$row['form_id'], $rows)));
+        sort($formIds, SORT_NUMERIC);
+        if ($formIds === []) {
+            $flash = '0 item dihapus permanen.';
+        } else {
+          try {
+            foreach ($formIds as $formId) {
+                $mutationLock = fb_acquire_form_mutation_lock($pdo, $formId);
+                register_shutdown_function(static function () use ($pdo, $mutationLock): void { fb_release_form_mutation_lock($pdo, $mutationLock); });
+            }
+            $pdo->beginTransaction();
+            $placeholders = implode(',', array_fill(0, count($formIds), '?'));
+            $selectRows = $pdo->prepare("SELECT id, parent_id FROM `fb_fields` WHERE deleted_at IS NOT NULL AND type NOT IN ('row','col') AND form_id IN ({$placeholders})");
+            $selectRows->execute($formIds);
+            $rows = $selectRows->fetchAll(PDO::FETCH_ASSOC) ?: [];
+            $del = $pdo->prepare('DELETE FROM `fb_fields` WHERE id = ?');
+            foreach ($rows as $r) {
+                $del->execute([(int)$r['id']]);
+                $fbPruneAncestors((int)$r['parent_id'] > 0 ? (int)$r['parent_id'] : null);
+            }
+            // sweep any remaining trashed containers with no children
+            $sweep = $pdo->prepare("DELETE c FROM `fb_fields` c WHERE c.deleted_at IS NOT NULL AND c.type IN ('row','col') AND c.form_id IN ({$placeholders})
+                AND NOT EXISTS (SELECT 1 FROM `fb_fields` ch WHERE ch.parent_id = c.id)");
+            $sweep->execute($formIds);
+            $pdo->commit();
+            $flash = count($rows) . ' item dihapus permanen.';
+          } catch (Throwable $error) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            $flash = $error->getMessage(); $flashOk = false;
+          }
         }
-        // sweep any remaining trashed containers with no children
-        $pdo->exec("DELETE c FROM `fb_fields` c WHERE c.deleted_at IS NOT NULL AND c.type IN ('row','col')
-            AND NOT EXISTS (SELECT 1 FROM `fb_fields` ch WHERE ch.parent_id = c.id)");
-        $flash = count($rows) . ' item dihapus permanen.';
     } elseif ($act === 'restore_form') {
         $st = $pdo->prepare('SELECT * FROM `fb_forms` WHERE id = ? LIMIT 1');
         $st->execute([(int)($_POST['form_id'] ?? 0)]);

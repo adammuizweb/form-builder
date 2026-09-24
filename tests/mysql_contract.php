@@ -92,6 +92,9 @@ try {
     $newProtectedField['form']['fields'][] = ['key'=>'protected_copy','parent'=>$draftColumn,'type'=>'raw_html','label'=>'','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>30,'hidden'=>false,'options'=>[],'validation'=>[],'settings'=>[]];
     try { fb_visual_save_draft($pdo, $formId, $newProtectedField, $safeSave['revision'], 12, false); $unsafeAdditionRejected = false; } catch (InvalidArgumentException) { $unsafeAdditionRejected = true; }
     $check($unsafeRemovalRejected && $unsafeAdditionRejected, 'editors without unsafe-code permission cannot add, remove, or change protected field types');
+    try { fb_visual_publish_draft($pdo, $formId, $safeSave['revision'], 12, false); $stalePublishRejected = false; } catch (UnexpectedValueException) { $stalePublishRejected = true; }
+    $resetDraft = fb_visual_reset_draft($pdo, $formId, $safeSave['revision'], 12, false);
+    $check($stalePublishRejected && $resetDraft['revision'] === 5 && $resetDraft['published_changed'] === false && $resetDraft['has_unpublished_changes'] === false, 'publish rejects canonical drift and revision-safe reset reloads the Classic version');
 
     $form = fb_get_form($pdo, $formId); $fields = fb_flat_fields(fb_get_fields($pdo, $formId));
     $record = ['schema'=>1,'reference_code'=>'LEGACY-MYSQL-1','workflow_status'=>'reviewing','created_at'=>'2025-01-02 03:04:05','updated_at'=>'2025-01-03 04:05:06','notes'=>[['at'=>'2025-01-03 04:05:06','actor'=>null,'text'=>'Imported note']],'history'=>[['at'=>'2025-01-02 03:04:05','actor'=>null,'from'=>null,'to'=>'submitted','source'=>'legacy']],'source'=>['system'=>'contract'],'data'=>['a'=>'one','b'=>'two'],'files'=>[],'totals'=>[],'ip'=>null,'is_read'=>false,'is_deleted'=>false];
@@ -101,10 +104,30 @@ try {
     $record['data']['a'] = 'changed';
     try { fb_import_legacy_submission($pdo, $formId, 'contract', 'record-1', $record); $divergent = false; } catch (DomainException) { $divergent = true; }
     $check($divergent && (int)$pdo->query('SELECT COUNT(*) FROM fb_submissions')->fetchColumn() === 1, 'divergent legacy import repeat fails closed without duplication');
-    $deleteForm = fb_get_form($pdo, (int)$definitionFirst['form_id']);
-    fb_visual_load_draft($pdo, (int)$definitionFirst['form_id'], 11, true);
+    $publishFormId = (int)$definitionFirst['form_id'];
+    $unsafeSettings = fb_form_settings(fb_get_form($pdo, $publishFormId));
+    $unsafeSettings['unsafe_code_enabled'] = true;
+    $pdo->prepare('UPDATE fb_forms SET settings_json=?,css=?,js=? WHERE id=?')->execute([fb_json_encode($unsafeSettings),'.published-unsafe{color:red}','window.publishedUnsafe=true',$publishFormId]);
+    $publishDraft = fb_visual_load_draft($pdo, $publishFormId, 11, true);
+    $publishDraft['definition']['form']['title'] = 'Published visual form';
+    $publishDraft['definition']['form']['css'] = '.published-unsafe{color:blue}';
+    $publishDraft['definition']['form']['fields'][4]['label'] = 'Published email';
+    $publishSaved = fb_visual_save_draft($pdo, $publishFormId, $publishDraft['definition'], $publishDraft['revision'], 11, true);
+    try { fb_visual_publish_draft($pdo, $publishFormId, $publishSaved['revision'], 12, false); $unsafePublishRejected = false; } catch (DomainException) { $unsafePublishRejected = true; }
+    $publishedDraft = fb_visual_publish_draft($pdo, $publishFormId, $publishSaved['revision'], 11, true);
+    $publishedForm = fb_get_form($pdo, $publishFormId);
+    $publishedSettings = fb_form_settings($publishedForm);
+    $publishedField = $pdo->query("SELECT label FROM fb_fields WHERE form_id={$publishFormId} AND field_key='email' AND deleted_at IS NULL")->fetchColumn();
+    $check($unsafePublishRejected && $publishedDraft['revision'] === 3 && $publishedDraft['published_changed'] === false && $publishedDraft['has_unpublished_changes'] === false && $publishedForm['title'] === 'Published visual form' && $publishedForm['status'] === 'active' && $publishedField === 'Published email' && $publishedSettings['unsafe_code_enabled'] === true && $publishedForm['css'] === '.published-unsafe{color:blue}' && $publishedForm['js'] === 'window.publishedUnsafe=true', 'transactional publish requires unsafe permission for protected changes without disabling existing unsafe content');
+    $deleteForm = $publishedForm;
+    $storageRoot = fb_prepare_files_base_dir($deleteForm);
+    $storedDirectory = fb_ensure_storage_directory($storageRoot, [(string)$publishFormId, '2026', '09']);
+    $storedPath = $storedDirectory . '/delete-contract.pdf';
+    file_put_contents($storedPath, '%PDF-delete-contract');
+    $storedRelative = $publishFormId . '/2026/09/delete-contract.pdf';
+    $pdo->prepare('INSERT INTO fb_submissions (form_id,reference_code,workflow_status,files_json) VALUES (?,?,?,?)')->execute([$publishFormId,'DELETE-CONTRACT','submitted',fb_json_encode(['attachment'=>['stored'=>$storedRelative]])]);
     fb_hard_delete_form($pdo, $deleteForm);
-    $check((int)$pdo->query('SELECT COUNT(*) FROM fb_builder_drafts WHERE form_id = ' . (int)$definitionFirst['form_id'])->fetchColumn() === 0, 'hard deletion removes the associated visual draft');
+    $check((int)$pdo->query('SELECT COUNT(*) FROM fb_builder_drafts WHERE form_id = ' . $publishFormId)->fetchColumn() === 0 && !file_exists($storedPath) && !is_dir($storageRoot . '/' . $publishFormId), 'hard deletion removes the associated draft and recoverably cleans scoped storage');
 } finally {
     $pdo = null;
     if (str_starts_with($database, 'fb_contract_')) $server->exec('DROP DATABASE IF EXISTS `' . $database . '`');

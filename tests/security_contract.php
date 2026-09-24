@@ -36,6 +36,11 @@ $check(str_contains($visualAjax, "user_can(\$pdo, \$uid, 'plugin.form-builder.wo
     && str_contains($visualAjax, 'UnexpectedValueException')
     && str_contains($visualAjax, 'error_log('),
     'Visual draft API requires workspace, CSRF, form scope, unsafe-code capability, and safe conflict handling');
+$check(str_contains($visualAjax, "\$action === 'publish' || \$action === 'reset'")
+    && str_contains($visualAjax, 'canonical_conflict')
+    && str_contains($ajax, 'fb_acquire_form_mutation_lock($pdo, $formId)')
+    && str_contains($ajax, "['add_row', 'set_cols', 'add_field', 'move', 'delete', 'save_field']"),
+    'Visual publish/reset and every Classic field mutation share a form-scoped lock');
 $submit = (string)file_get_contents($root . '/public/submit.php');
 $check(!preg_match('/(?<!jy_)mail\s*\(/', $submit) && strpos($submit, '$pdo->commit()') < strpos($submit, 'jy_mail_send'), 'Core mail executes only after persistence');
 $check(!str_contains($submit, 'HTTP_X_FORWARDED_FOR') && str_contains($submit, 'do_action_isolated'), 'submission path retains trusted IP and isolated observer contracts');
@@ -74,6 +79,43 @@ $check(str_contains($draftHelpers, 'FOR UPDATE')
     && str_contains($draftHelpers, 'fb_visual_merge_protected_code(')
     && str_contains($draftHelpers, 'fb_render_field_html('),
     'Visual drafts use row locks, optimistic revisions, canonical hashes, protected-code merging, and the safe public field renderer');
+$check(str_contains($draftHelpers, 'function fb_visual_publish_draft(')
+    && str_contains($draftHelpers, 'function fb_visual_reset_draft(')
+    && str_contains($draftHelpers, 'function fb_visual_canonical_definition(')
+    && str_contains($draftHelpers, 'fb_visual_replace_canonical(')
+    && str_contains($draftHelpers, 'deleted_at IS NULL')
+    && str_contains($plugin, 'SELECT GET_LOCK(?, ?)')
+    && str_contains((string)file_get_contents($root . '/admin/bin.php'), 'fb_acquire_form_mutation_lock($pdo, $formId)'),
+    'transactional publishing preserves the field bin and serializes with Classic edits and restores');
+$check(str_contains($draftHelpers, 'function fb_visual_protected_code_hash(')
+    && str_contains($draftHelpers, 'Unsafe-code permission is required to publish protected content changes.')
+    && str_contains($visualAjax, 'catch (DomainException $error)')
+    && str_contains($visualAjax, '], 403)'),
+    'unprivileged editors cannot publish protected code changes hidden by draft redaction');
+$definitionsSource = (string)file_get_contents($root . '/includes/definitions.php');
+$binSource = (string)file_get_contents($root . '/admin/bin.php');
+$check(str_contains($definitionsSource, 'fb_acquire_form_mutation_lock($pdo, (int)$lockFormId)')
+    && substr_count($plugin, 'fb_acquire_form_mutation_lock($pdo, $fid)') >= 3
+    && substr_count($binSource, 'fb_acquire_form_mutation_lock($pdo, $formId)') >= 3
+    && str_contains($binSource, 'Field changed before it could be restored.')
+    && str_contains($binSource, '$pdo->beginTransaction()'),
+    'definition import, form lifecycle, and transactional Bin operations participate in mutation locking');
+$submitSource = (string)file_get_contents($root . '/public/submit.php');
+$settingsSource = (string)file_get_contents($root . '/admin/settings.php');
+$check(substr_count($submitSource, 'fb_acquire_form_mutation_lock($pdo, (int)$formId') === 2
+    && str_contains($submitSource, 'Form schema changed during submission.')
+    && str_contains($settingsSource, 'fb_acquire_form_mutation_lock($pdo, $formId)')
+    && str_contains($settingsSource, 'if ($canUnsafeCode) $settings[\'unsafe_code_enabled\'] = true;')
+    && str_contains($binSource, 'A live field already uses this key.')
+    && str_contains($binSource, 'AND form_id IN ({$placeholders})'),
+    'public submissions detect schema swaps while settings and Bin operations honor form mutation locks');
+$check(str_contains($plugin, 'function fb_recover_storage_trash(')
+    && str_contains($plugin, 'function fb_merge_storage_tree(')
+    && str_contains($plugin, "'/pending-' . \$fid")
+    && str_contains($plugin, "'/ready-' . \$fid")
+    && str_contains($plugin, 'fb_remove_storage_tree($readyStorage)')
+    && str_contains($plugin, 'restore pending form storage after rollback'),
+    'hard deletion stages scoped storage and leaves recoverable cleanup tombstones across failures');
 $check(str_contains($visualBuilder, 'saveInFlight') && str_contains($visualBuilder, 'pendingDefinition')
     && str_contains($plugin, "DELETE FROM `fb_builder_drafts` WHERE form_id = ?"),
     'autosaves are serialized and hard deletion removes persisted drafts');
@@ -90,6 +132,15 @@ $check(str_contains($visualBuilder, 'let workingDefinition = null')
     && str_contains($visualBuilder, "window.addEventListener('beforeunload'")
     && !str_contains($visualBuilder, '.fbv-preview form, .fbv-preview button'),
     'Visual editing preserves the live working copy, exposes hidden fields, warns on unsaved navigation, and keeps fields selectable');
+$check(str_contains($visualBuilder, 'id="fbvPublish"')
+    && str_contains($visualBuilder, "request('publish'")
+    && str_contains($visualBuilder, "request('reset'")
+    && str_contains($visualBuilder, 'has_unpublished_changes'),
+    'Visual Builder enables publishing only for synchronized saved changes and exposes explicit Classic conflict reset');
+$check(str_contains($visualBuilder, 'const syncHeader = (definition)')
+    && str_contains($visualBuilder, 'id="fbvFormTitle"')
+    && str_contains($visualBuilder, 'id="fbvFormSlug"'),
+    'publish and Classic reset keep Visual Builder header metadata synchronized');
 $check(str_contains($plugin, 'function fb_normalize_slug(')
     && str_contains($plugin, 'function fb_unique_form_slug(')
     && substr_count($adminIndex, 'fb_unique_form_slug(') === 2

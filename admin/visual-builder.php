@@ -64,6 +64,7 @@ fb_admin_css();
 .fbv-library button::before { content: '+'; display: grid; place-items: center; width: 21px; height: 21px; border-radius: 7px; background: color-mix(in srgb, var(--adam-accent) 12%, transparent); color: var(--adam-accent); }
 .fbv-stage { min-width: 0; padding: 1rem clamp(1rem, 3vw, 2.5rem) 3rem; overflow: auto; }
 .fbv-notice { display: flex; gap: .65rem; align-items: flex-start; max-width: 860px; margin: 0 auto 1rem; padding: .7rem .85rem; border: 1px solid color-mix(in srgb, var(--adam-accent) 28%, var(--adam-border)); border-radius: 12px; background: color-mix(in srgb, var(--adam-accent) 6%, var(--adam-card)); font-size: .78rem; line-height: 1.5; }
+.fbv-notice .fba-btn { flex: 0 0 auto; margin-left: auto; }
 .fbv-canvas-tools { display: flex; align-items: center; justify-content: space-between; gap: .7rem; max-width: 860px; margin: 0 auto .65rem; }
 .fbv-devices { display: inline-flex; gap: .2rem; padding: .2rem; border: 1px solid var(--adam-border); border-radius: 10px; background: var(--adam-card); }
 .fbv-device { border: 0; border-radius: 7px; padding: .35rem .6rem; background: transparent; color: var(--adam-muted); font: inherit; font-size: .73rem; cursor: pointer; }
@@ -107,14 +108,14 @@ fb_admin_css();
   <header class="fbv-topbar">
     <a class="fbv-back" href="<?= htmlspecialchars($formsUrl, ENT_QUOTES) ?>" aria-label="Back to forms">&larr;</a>
     <div class="fbv-title">
-      <strong><?= htmlspecialchars((string)$form['title'], ENT_QUOTES) ?></strong>
-      <span><?= htmlspecialchars((string)$form['slug'], ENT_QUOTES) ?> &middot; Visual Builder</span>
+      <strong id="fbvFormTitle"><?= htmlspecialchars((string)$form['title'], ENT_QUOTES) ?></strong>
+      <span id="fbvFormSlug"><?= htmlspecialchars((string)$form['slug'], ENT_QUOTES) ?> &middot; Visual Builder</span>
     </div>
-    <span class="fba-badge <?= $statusClass ?>"><?= htmlspecialchars((string)$form['status'], ENT_QUOTES) ?></span>
+    <span class="fba-badge <?= $statusClass ?>" id="fbvFormStatus"><?= htmlspecialchars((string)$form['status'], ENT_QUOTES) ?></span>
     <div class="fbv-status" id="fbvDraftStatus" data-state="loading" role="status">Loading draft...</div>
     <a class="fba-btn" href="<?= htmlspecialchars($settingsUrl, ENT_QUOTES) ?>">Settings</a>
     <a class="fba-btn" href="<?= htmlspecialchars($classicUrl, ENT_QUOTES) ?>">Classic</a>
-    <button class="fba-btn primary" type="button" disabled title="Draft publishing arrives with the next foundation slice">Publish</button>
+    <button class="fba-btn primary" id="fbvPublish" type="button" disabled>Publish</button>
   </header>
 
   <div class="fbv-workspace">
@@ -136,7 +137,8 @@ fb_admin_css();
     <main class="fbv-stage">
       <div class="fbv-notice" role="status">
         <strong>Draft workspace.</strong>
-        <span>Select a field to edit its draft. Changes autosave separately and do not affect the published form until publishing is enabled.</span>
+        <span>Select a field to edit its draft. Changes autosave separately and do not affect the live form until you publish.</span>
+        <button class="fba-btn sm" id="fbvReset" type="button" hidden>Reload Classic version</button>
       </div>
       <div class="fbv-canvas-tools">
         <div class="fbv-devices" aria-label="Preview width">
@@ -178,6 +180,11 @@ fb_admin_css();
   const inspector = document.getElementById('fbvInspector');
   const fieldPicker = document.getElementById('fbvFieldPicker');
   const fieldCount = document.getElementById('fbvFieldCount');
+  const formTitle = document.getElementById('fbvFormTitle');
+  const formSlug = document.getElementById('fbvFormSlug');
+  const formStatus = document.getElementById('fbvFormStatus');
+  const publishButton = document.getElementById('fbvPublish');
+  const resetButton = document.getElementById('fbvReset');
   const status = document.getElementById('fbvDraftStatus');
   const devices = document.querySelectorAll('.fbv-device');
   const libraryButtons = document.querySelectorAll('[data-fbv-type]');
@@ -193,6 +200,13 @@ fb_admin_css();
     status.textContent = message;
     status.dataset.state = state;
   };
+  const updateActions = () => {
+    const busy = !draft || hasUnsavedChanges || saveInFlight;
+    publishButton.disabled = busy || draft.published_changed || !draft.has_unpublished_changes;
+    publishButton.title = draft?.published_changed ? 'Reload the Classic version before publishing' : publishButton.disabled ? '' : 'Publish this draft';
+    resetButton.hidden = !draft?.published_changed;
+    resetButton.disabled = saveInFlight;
+  };
   const request = async (action, values = {}) => {
     const body = new URLSearchParams({ fb_action: action, form_id: String(FORM_ID), csrf_token: CSRF, ...values });
     const response = await fetch(ENDPOINT, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' }, body });
@@ -200,6 +214,7 @@ fb_admin_css();
     if (!response.ok || !payload.ok) {
       const error = new Error(payload.error || 'Draft request failed');
       error.conflict = response.status === 409 || payload.conflict === true;
+      error.canonicalConflict = payload.canonical_conflict === true;
       throw error;
     }
     return payload.draft;
@@ -207,9 +222,19 @@ fb_admin_css();
   const showDraftState = () => {
     if (draft.published_changed) setStatus('Draft ready - Classic changed since draft start', 'conflict');
     else if (draft.unsafe_content_protected) setStatus(`Draft ready - revision ${draft.revision} - protected code preserved`);
+    else if (!draft.has_unpublished_changes) setStatus(`Published version - revision ${draft.revision}`);
     else setStatus(`Draft ready - revision ${draft.revision}`);
+    updateActions();
   };
   const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[character]);
+  const syncHeader = (definition) => {
+    const form = definition?.form;
+    if (!form) return;
+    formTitle.textContent = form.title;
+    formSlug.textContent = `${form.slug} · Visual Builder`;
+    formStatus.textContent = form.status;
+    formStatus.className = `fba-badge ${{ active: 'active', draft: 'draft', archived: 'arch' }[form.status] || 'draft'}`;
+  };
   const currentFields = () => workingDefinition?.form?.fields || [];
   const currentField = () => currentFields().find((field) => field.key === selectedKey) || null;
   const updateFieldCount = () => {
@@ -332,6 +357,7 @@ fb_admin_css();
     }
     saveInFlight = true;
     setStatus('Saving draft...', 'saving');
+    updateActions();
     try {
       const saved = await request('save', { revision: String(draft.revision), definition: JSON.stringify(definition) });
       draft = saved;
@@ -354,6 +380,7 @@ fb_admin_css();
         pendingDefinition = null;
         save(nextDefinition).catch(() => {});
       }
+      updateActions();
     }
   };
   const queueSave = (definition) => {
@@ -368,6 +395,7 @@ fb_admin_css();
     pendingDefinition = definition;
     hasUnsavedChanges = true;
     setStatus('Unsaved changes', 'saving');
+    updateActions();
     saveTimer = window.setTimeout(() => {
       const nextDefinition = pendingDefinition;
       pendingDefinition = null;
@@ -382,6 +410,7 @@ fb_admin_css();
   request('load').then((loaded) => {
     draft = loaded;
     workingDefinition = loaded.definition;
+    syncHeader(workingDefinition);
     applyPreview(draft.preview_html);
     preview.removeAttribute('inert');
     renderInspector();
@@ -404,6 +433,51 @@ fb_admin_css();
     selectedKey = fieldPicker.value || null;
     markSelection();
     renderInspector();
+  });
+  publishButton.addEventListener('click', async () => {
+    if (publishButton.disabled || !draft) return;
+    saveInFlight = true;
+    setStatus('Publishing draft...', 'saving');
+    updateActions();
+    try {
+      const published = await request('publish', { revision: String(draft.revision) });
+      draft = published;
+      workingDefinition = published.definition;
+      hasUnsavedChanges = false;
+      applyPreview(published.preview_html);
+      renderInspector();
+      syncHeader(workingDefinition);
+      setStatus(`Published - revision ${published.revision}`);
+    } catch (error) {
+      if (error.canonicalConflict) draft.published_changed = true;
+      setStatus(error.conflict ? 'Publish conflict - reload required' : error.message, error.conflict ? 'conflict' : 'error');
+    } finally {
+      saveInFlight = false;
+      updateActions();
+    }
+  });
+  resetButton.addEventListener('click', async () => {
+    if (!draft || resetButton.disabled || !window.confirm('Discard the visual draft and reload the latest Classic version?')) return;
+    saveInFlight = true;
+    setStatus('Reloading Classic version...', 'saving');
+    updateActions();
+    try {
+      const reset = await request('reset', { revision: String(draft.revision) });
+      draft = reset;
+      workingDefinition = reset.definition;
+      syncHeader(workingDefinition);
+      selectedKey = null;
+      pendingDefinition = null;
+      hasUnsavedChanges = false;
+      applyPreview(reset.preview_html);
+      renderInspector();
+      showDraftState();
+    } catch (error) {
+      setStatus(error.conflict ? 'Reset conflict - reload the page' : error.message, error.conflict ? 'conflict' : 'error');
+    } finally {
+      saveInFlight = false;
+      updateActions();
+    }
   });
   inspector.addEventListener('input', (event) => {
     const property = event.target.dataset.fieldProp;

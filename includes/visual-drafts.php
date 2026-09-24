@@ -5,6 +5,14 @@ function fb_visual_definition_hash(array $definition): string {
     return hash('sha256', fb_json_encode($definition));
 }
 
+function fb_visual_canonical_definition(PDO $pdo, int $formId): array {
+    $form = fb_get_form($pdo, $formId);
+    if ($form === null) throw new InvalidArgumentException('Form not found.');
+    $definition = fb_definition_decode(fb_export_form_definition($pdo, $formId, true));
+    $definition['form']['settings']['unsafe_code_enabled'] = (fb_form_settings($form)['unsafe_code_enabled'] ?? false) === true;
+    return fb_definition_decode($definition);
+}
+
 function fb_visual_definition_has_unsafe_code(array $definition): bool {
     $form = $definition['form'] ?? [];
     if (!is_array($form)) return false;
@@ -13,6 +21,22 @@ function fb_visual_definition_has_unsafe_code(array $definition): bool {
         if (is_array($field) && in_array($field['type'] ?? null, ['richtext', 'raw_html'], true) && ($field['settings']['html'] ?? '') !== '') return true;
     }
     return false;
+}
+
+function fb_visual_protected_code_hash(array $definition): string {
+    $form = $definition['form'] ?? [];
+    $protectedFields = [];
+    foreach (($form['fields'] ?? []) as $field) {
+        if (!is_array($field) || !in_array($field['type'] ?? null, ['richtext', 'raw_html'], true)) continue;
+        $protectedFields[] = ['key'=>(string)($field['key'] ?? ''),'type'=>(string)$field['type'],'html'=>(string)($field['settings']['html'] ?? '')];
+    }
+    usort($protectedFields, static fn(array $a, array $b): int => [$a['key'],$a['type']] <=> [$b['key'],$b['type']]);
+    return hash('sha256', fb_json_encode([
+        'enabled' => ($form['settings']['unsafe_code_enabled'] ?? false) === true,
+        'css' => (string)($form['css'] ?? ''),
+        'js' => (string)($form['js'] ?? ''),
+        'fields' => $protectedFields,
+    ]));
 }
 
 function fb_visual_safe_definition(array $definition): array {
@@ -117,24 +141,27 @@ function fb_visual_render_preview(array $definition): string {
 function fb_visual_draft_response(array $row, array $currentDefinition, bool $allowUnsafeCode): array {
     $definition = fb_definition_decode((string)$row['definition_json']);
     $protected = !$allowUnsafeCode && fb_visual_definition_has_unsafe_code($definition);
+    $currentHash = fb_visual_definition_hash($currentDefinition);
     return [
         'definition' => $protected ? fb_visual_safe_definition($definition) : $definition,
         'preview_html' => fb_visual_render_preview($definition),
         'revision' => (int)$row['revision'],
         'published_sha256' => (string)$row['published_sha256'],
-        'published_changed' => !hash_equals((string)$row['published_sha256'], fb_visual_definition_hash($currentDefinition)),
+        'published_changed' => !hash_equals((string)$row['published_sha256'], $currentHash),
+        'has_unpublished_changes' => !hash_equals(fb_visual_definition_hash($definition), $currentHash),
         'unsafe_content_protected' => $protected,
         'updated_at' => (string)$row['updated_at'],
     ];
 }
 
 function fb_visual_load_draft(PDO $pdo, int $formId, ?int $actorId, bool $allowUnsafeCode): array {
-    $pdo->beginTransaction();
+    $mutationLock = fb_acquire_form_mutation_lock($pdo, $formId);
     try {
+        $pdo->beginTransaction();
         $lock = $pdo->prepare('SELECT id FROM fb_forms WHERE id = ? AND deleted_at IS NULL FOR UPDATE');
         $lock->execute([$formId]);
         if ($lock->fetchColumn() === false) throw new InvalidArgumentException('Form not found.');
-        $current = fb_definition_decode(fb_export_form_definition($pdo, $formId, true));
+        $current = fb_visual_canonical_definition($pdo, $formId);
         $select = $pdo->prepare('SELECT * FROM fb_builder_drafts WHERE form_id = ? FOR UPDATE');
         $select->execute([$formId]);
         $row = $select->fetch(PDO::FETCH_ASSOC);
@@ -153,14 +180,17 @@ function fb_visual_load_draft(PDO $pdo, int $formId, ?int $actorId, bool $allowU
     } catch (Throwable $error) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         throw $error;
+    } finally {
+        fb_release_form_mutation_lock($pdo, $mutationLock);
     }
 }
 
 function fb_visual_save_draft(PDO $pdo, int $formId, array|string $input, int $expectedRevision, ?int $actorId, bool $allowUnsafeCode): array {
     if ($expectedRevision < 1) throw new InvalidArgumentException('Invalid draft revision.');
     $definition = fb_definition_decode($input);
-    $pdo->beginTransaction();
+    $mutationLock = fb_acquire_form_mutation_lock($pdo, $formId);
     try {
+        $pdo->beginTransaction();
         $lock = $pdo->prepare('SELECT id FROM fb_forms WHERE id = ? AND deleted_at IS NULL FOR UPDATE');
         $lock->execute([$formId]);
         if ($lock->fetchColumn() === false) throw new InvalidArgumentException('Form not found.');
@@ -178,7 +208,7 @@ function fb_visual_save_draft(PDO $pdo, int $formId, array|string $input, int $e
         if ($update->rowCount() !== 1) throw new UnexpectedValueException('Draft changed in another session.');
         $select->execute([$formId]);
         $saved = $select->fetch(PDO::FETCH_ASSOC);
-        $current = fb_definition_decode(fb_export_form_definition($pdo, $formId, true));
+        $current = fb_visual_canonical_definition($pdo, $formId);
         if (!is_array($saved)) throw new RuntimeException('Unable to reload Visual Builder draft.');
         $response = fb_visual_draft_response($saved, $current, $allowUnsafeCode);
         $pdo->commit();
@@ -186,5 +216,104 @@ function fb_visual_save_draft(PDO $pdo, int $formId, array|string $input, int $e
     } catch (Throwable $error) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         throw $error;
+    } finally {
+        fb_release_form_mutation_lock($pdo, $mutationLock);
+    }
+}
+
+function fb_visual_replace_canonical(PDO $pdo, int $formId, array $definition): void {
+    $definition = fb_definition_decode($definition);
+    $form = $definition['form'];
+    $form['status'] = 'active';
+    $conflict = $pdo->prepare('SELECT id FROM fb_forms WHERE slug = ? AND id <> ? LIMIT 1 FOR UPDATE');
+    $conflict->execute([$form['slug'], $formId]);
+    if ($conflict->fetchColumn() !== false) throw new InvalidArgumentException('The draft slug is already in use.');
+    $settings = array_merge(fb_default_settings(), fb_definition_safe_settings($form['settings'] ?? []));
+    $pdo->prepare('UPDATE fb_forms SET slug=?,title=?,description=?,status=?,settings_json=?,css=?,js=?,updated_at=NOW() WHERE id=?')
+        ->execute([$form['slug'],trim($form['title']),trim($form['description']) ?: null,'active',fb_json_encode($settings),$form['css'] !== '' ? $form['css'] : null,$form['js'] !== '' ? $form['js'] : null,$formId]);
+    // Keep soft-deleted field-bin entries; missing ancestors are rebuilt by restore.
+    $pdo->prepare('DELETE FROM fb_fields WHERE form_id = ? AND deleted_at IS NULL')->execute([$formId]);
+    $ids = []; $pending = $form['fields'];
+    $insert = $pdo->prepare('INSERT INTO fb_fields (form_id,parent_id,type,label,field_key,placeholder,help_text,required,width,sort_order,is_hidden,options_json,validation_json,settings_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+    while ($pending !== []) {
+        $progress = false;
+        foreach ($pending as $index => $field) {
+            $parent = $field['parent'] ?? null;
+            if ($parent !== null && !isset($ids[$parent])) continue;
+            $insert->execute([$formId,$parent === null ? 0 : $ids[$parent],$field['type'],$field['label'],$field['key'],($field['placeholder'] ?? '') ?: null,($field['help'] ?? '') ?: null,!empty($field['required']) ? 1 : 0,$field['width'] ?? 12,$field['order'] ?? 0,!empty($field['hidden']) ? 1 : 0,($field['options'] ?? []) !== [] ? fb_json_encode($field['options']) : null,($field['validation'] ?? []) !== [] ? fb_json_encode($field['validation']) : null,($field['settings'] ?? []) !== [] ? fb_json_encode($field['settings']) : null]);
+            $ids[$field['key']] = (int)$pdo->lastInsertId();
+            unset($pending[$index]);
+            $progress = true;
+        }
+        if (!$progress) throw new InvalidArgumentException('Cyclic field layout.');
+    }
+}
+
+function fb_visual_publish_draft(PDO $pdo, int $formId, int $expectedRevision, ?int $actorId, bool $allowUnsafeCode): array {
+    if ($expectedRevision < 1) throw new InvalidArgumentException('Invalid draft revision.');
+    $mutationLock = fb_acquire_form_mutation_lock($pdo, $formId);
+    try {
+        $pdo->beginTransaction();
+        $formLock = $pdo->prepare('SELECT id FROM fb_forms WHERE id = ? AND deleted_at IS NULL FOR UPDATE');
+        $formLock->execute([$formId]);
+        if ($formLock->fetchColumn() === false) throw new InvalidArgumentException('Form not found.');
+        $select = $pdo->prepare('SELECT * FROM fb_builder_drafts WHERE form_id = ? FOR UPDATE');
+        $select->execute([$formId]);
+        $row = $select->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($row)) throw new LogicException('Draft must be loaded before it can be published.');
+        if ((int)$row['revision'] !== $expectedRevision) throw new UnexpectedValueException('Draft changed in another session.');
+        $current = fb_visual_canonical_definition($pdo, $formId);
+        if (!hash_equals((string)$row['published_sha256'], fb_visual_definition_hash($current))) throw new UnexpectedValueException('Classic Builder changed this form. Reload its version before publishing.');
+        $definition = fb_definition_decode((string)$row['definition_json']);
+        if (!$allowUnsafeCode && !hash_equals(fb_visual_protected_code_hash($current), fb_visual_protected_code_hash($definition))) throw new DomainException('Unsafe-code permission is required to publish protected content changes.');
+        $definition['form']['status'] = 'active';
+        fb_visual_replace_canonical($pdo, $formId, $definition);
+        $canonical = fb_visual_canonical_definition($pdo, $formId);
+        $hash = fb_visual_definition_hash($canonical);
+        $nextRevision = $expectedRevision + 1;
+        $pdo->prepare('UPDATE fb_builder_drafts SET definition_json=?,revision=?,published_sha256=?,updated_by=?,updated_at=NOW() WHERE form_id=? AND revision=?')
+            ->execute([fb_json_encode($canonical),$nextRevision,$hash,$actorId,$formId,$expectedRevision]);
+        $select->execute([$formId]);
+        $published = $select->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($published)) throw new RuntimeException('Unable to reload the published draft.');
+        $response = fb_visual_draft_response($published, $canonical, $allowUnsafeCode);
+        $pdo->commit();
+        return $response;
+    } catch (Throwable $error) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $error;
+    } finally {
+        fb_release_form_mutation_lock($pdo, $mutationLock);
+    }
+}
+
+function fb_visual_reset_draft(PDO $pdo, int $formId, int $expectedRevision, ?int $actorId, bool $allowUnsafeCode): array {
+    if ($expectedRevision < 1) throw new InvalidArgumentException('Invalid draft revision.');
+    $mutationLock = fb_acquire_form_mutation_lock($pdo, $formId);
+    try {
+        $pdo->beginTransaction();
+        $formLock = $pdo->prepare('SELECT id FROM fb_forms WHERE id = ? AND deleted_at IS NULL FOR UPDATE');
+        $formLock->execute([$formId]);
+        if ($formLock->fetchColumn() === false) throw new InvalidArgumentException('Form not found.');
+        $select = $pdo->prepare('SELECT * FROM fb_builder_drafts WHERE form_id = ? FOR UPDATE');
+        $select->execute([$formId]);
+        $row = $select->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($row) || (int)$row['revision'] !== $expectedRevision) throw new UnexpectedValueException('Draft changed in another session.');
+        $current = fb_visual_canonical_definition($pdo, $formId);
+        $hash = fb_visual_definition_hash($current);
+        $nextRevision = $expectedRevision + 1;
+        $pdo->prepare('UPDATE fb_builder_drafts SET definition_json=?,revision=?,published_sha256=?,updated_by=?,updated_at=NOW() WHERE form_id=? AND revision=?')
+            ->execute([fb_json_encode($current),$nextRevision,$hash,$actorId,$formId,$expectedRevision]);
+        $select->execute([$formId]);
+        $reset = $select->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($reset)) throw new RuntimeException('Unable to reload the reset draft.');
+        $response = fb_visual_draft_response($reset, $current, $allowUnsafeCode);
+        $pdo->commit();
+        return $response;
+    } catch (Throwable $error) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $error;
+    } finally {
+        fb_release_form_mutation_lock($pdo, $mutationLock);
     }
 }

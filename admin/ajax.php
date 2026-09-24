@@ -51,6 +51,13 @@ $node = static function (int $id) use ($pdo, $formId): ?array {
 };
 
 try {
+    if (in_array($action, ['add_row', 'set_cols', 'add_field', 'move', 'delete', 'save_field'], true)) {
+        $mutationLock = fb_acquire_form_mutation_lock($pdo, $formId);
+        register_shutdown_function(static function () use ($pdo, $mutationLock): void { fb_release_form_mutation_lock($pdo, $mutationLock); });
+        $form = fb_get_form($pdo, $formId);
+        if ($form === null || ($form['deleted_at'] ?? null) !== null) fb_json(['ok' => false, 'error' => 'Form not found'], 404);
+        if (!fb_can_access_form($pdo, $form, $uid)) fb_json(['ok' => false, 'error' => 'Access denied'], 403);
+    }
     switch ($action) {
         case 'canvas':
             fb_json(['ok' => true, 'html' => fb_render_canvas($form, fb_get_tree($pdo, $formId))]);
@@ -303,6 +310,8 @@ try {
         default:
             fb_json(['ok' => false, 'error' => 'Unknown action'], 422);
     }
+} catch (UnexpectedValueException $e) {
+    fb_json(['ok' => false, 'error' => $e->getMessage(), 'conflict' => true], 409);
 } catch (Throwable $e) {
     error_log('[form-builder] builder action failed: ' . $e->getMessage());
     fb_json(['ok' => false, 'error' => 'Server error. Please try again.'], 500);

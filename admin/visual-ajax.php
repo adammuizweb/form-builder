@@ -37,9 +37,19 @@ try {
         if (!is_string($definition)) fb_visual_json(['ok' => false, 'error' => 'Invalid form definition'], 422);
         fb_visual_json(['ok' => true, 'draft' => fb_visual_save_draft($pdo, $formId, $definition, $revision, $uid, $allowUnsafeCode)]);
     }
+    if ($action === 'publish' || $action === 'reset') {
+        $revision = filter_var($_POST['revision'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if ($revision === false) fb_visual_json(['ok' => false, 'error' => 'Invalid draft revision'], 422);
+        $draft = $action === 'publish'
+            ? fb_visual_publish_draft($pdo, $formId, $revision, $uid, $allowUnsafeCode)
+            : fb_visual_reset_draft($pdo, $formId, $revision, $uid, $allowUnsafeCode);
+        fb_visual_json(['ok' => true, 'draft' => $draft]);
+    }
     fb_visual_json(['ok' => false, 'error' => 'Unknown action'], 400);
 } catch (UnexpectedValueException $error) {
-    fb_visual_json(['ok' => false, 'error' => $error->getMessage(), 'conflict' => true], 409);
+    fb_visual_json(['ok' => false, 'error' => $error->getMessage(), 'conflict' => true, 'canonical_conflict' => str_starts_with($error->getMessage(), 'Classic Builder')], 409);
+} catch (DomainException $error) {
+    fb_visual_json(['ok' => false, 'error' => $error->getMessage()], 403);
 } catch (LogicException|JsonException $error) {
     fb_visual_json(['ok' => false, 'error' => $error->getMessage()], 422);
 } catch (Throwable $error) {
