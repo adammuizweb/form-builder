@@ -47,7 +47,14 @@ $check(fb_project_root() === realpath($sandbox)
     && fb_files_base_dir([]) === $preparedBase
     && is_writable($preparedBase),
     'storage safely provisions a writable PROJECT_ROOT/private_files/form-builder namespace');
-$check(($GLOBALS['_routes']['form-submit']['match'] ?? null) === 'exact' && ($GLOBALS['_routes']['form-submit']['methods'] ?? null) === ['POST'] && ($GLOBALS['_routes']['fb-builder']['methods'] ?? null) === ['POST'], 'runtime route registration is exact and method-aware');
+$check(($GLOBALS['_routes']['form-submit']['match'] ?? null) === 'exact'
+    && ($GLOBALS['_routes']['form-submit']['methods'] ?? null) === ['POST']
+    && ($GLOBALS['_routes']['fb-builder']['methods'] ?? null) === ['POST']
+    && ($GLOBALS['_routes']['fb-visual-builder']['match'] ?? null) === 'exact'
+    && ($GLOBALS['_routes']['fb-visual-builder']['methods'] ?? null) === ['POST']
+    && ($GLOBALS['_routes']['fb-visual-preview']['match'] ?? null) === 'exact'
+    && ($GLOBALS['_routes']['fb-visual-preview']['methods'] ?? null) === ['GET'],
+    'runtime route registration is exact and method-aware');
 $formAccess = ['created_by'=>1,'access_json'=>fb_json_encode(['owner'=>1,'roles'=>['international-editor'],'users'=>[2],'submissions'=>['roles'=>['international-reviewer'],'users'=>[3]]])];
 $GLOBALS['_actors'] = [1=>['admin'],2=>['author'],3=>['author'],4=>['international-reviewer'],5=>['author'],6=>['admin']];
 foreach ([1,2,3,4,5,6] as $accessUid) $GLOBALS['_permissions'][$accessUid]['plugin.form-builder.workspace.access'] = true;
@@ -93,7 +100,7 @@ $check($context === ['csrf'=>'core-stateless-token','ip'=>'203.0.113.10'] && fb_
 $token = fb_started_token(new PDO('sqlite::memory:'), 7, 'fr-ca');
 $check(fb_started_check(new PDO('sqlite::memory:'), 7, $token, 0, 'fr-ca') && !fb_started_check(new PDO('sqlite::memory:'), 7, $token, 0, 'ja'), 'signed start token binds any valid rendered locale');
 $migrations = plugin_migrations_discover($sandbox . '/plugins/form-builder');
-$check(array_keys($migrations) === ['0001-baseline.sql','0002-submission-workflow.php'], 'Core discovers the final append-only migration filenames');
+$check(array_keys($migrations) === ['0001-baseline.sql','0002-submission-workflow.php','0003-visual-builder-drafts.php'], 'Core discovers the final append-only migration filenames');
 
 $pathBase = fb_files_base_dir([]); mkdir($pathBase . '/1', 0750); file_put_contents($pathBase . '/1/test.pdf', '%PDF-contract');
 $check(fb_contained_path($pathBase, '1/test.pdf', true) === $pathBase . '/1/test.pdf' && fb_contained_path($pathBase, '../private_files/secret', false) === null && fb_contained_path($pathBase, '/etc/passwd', true) === null, 'private path containment accepts only contained regular paths');
@@ -113,6 +120,24 @@ $fields = $definition['form']['fields'];
 $byKey = array_column($fields, null, 'key');
 $check(count(fb_country_catalog()) === 249 && fb_country('ID')['dial'] === '62' && fb_country('ZZ') === null, 'bundled catalog contains the ISO 3166-1 alpha-2 countries and calling metadata');
 $check($byKey['phone']['settings']['country_field'] === 'country' && array_keys($definition['form']['settings']['translations']) === ['fr','fr-ca','ja'], 'generic definitions link international phones and accept configurable locales');
+$previewDefinition = $definition;
+$previewDefinition['form']['css'] = '.draft-unsafe-css{display:none}';
+$previewDefinition['form']['js'] = 'window.draftUnsafeScript=true';
+$previewDefinition['form']['settings']['unsafe_code_enabled'] = true;
+$previewDefinition['form']['fields'][] = ['key'=>'unsafe_block','parent'=>'col_main','type'=>'raw_html','label'=>'Unsafe','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>40,'hidden'=>false,'options'=>[],'validation'=>[],'settings'=>['html'=>'<script>window.draftRawHtml=true</script>']];
+$previewDefinition['form']['fields'][] = ['key'=>'rich_block','parent'=>'col_main','type'=>'richtext','label'=>'Rich','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>50,'hidden'=>false,'options'=>[],'validation'=>[],'settings'=>['html'=>'<a href="javascript:window.draftRichHtml=true">Unsafe link</a>']];
+$previewHtml = fb_visual_render_preview($previewDefinition);
+$check(str_contains($previewHtml, 'data-fbv-draft-preview')
+    && str_contains($previewHtml, 'data-fbv-row="row_main"')
+    && str_contains($previewHtml, 'data-fbv-col="col_main"')
+    && str_contains($previewHtml, 'data-key="country"')
+    && str_contains($previewHtml, 'type="button" class="fb-submit"')
+    && !str_contains($previewHtml, 'draft-unsafe-css')
+    && !str_contains($previewHtml, 'draftUnsafeScript')
+    && !str_contains($previewHtml, 'draftRawHtml')
+    && !str_contains($previewHtml, 'draftRichHtml')
+    && !str_contains($previewHtml, '/form-submit/'),
+    'draft preview exposes safe layout identities and public field markup without executable custom code or submission controls');
 $checkbox = ['type'=>'checkbox','field_key'=>'consent','label'=>'Consent','required'=>1,'is_hidden'=>0,'options_json'=>fb_json_encode([['value'=>'yes','label'=>'I agree','price'=>0]]),'validation_json'=>null,'settings_json'=>null];
 $checkboxHtml = fb_render_field_html($checkbox, 'contract', 'i1', false, fb_default_settings());
 $check(str_contains($checkboxHtml, 'name="consent[]"') && str_contains($checkboxHtml, 'required'), 'single-option required checkboxes render without undefined state');
@@ -120,7 +145,10 @@ $countryField = ['type'=>'country','field_key'=>'country','label'=>'Country','re
 $phoneField = ['type'=>'intl_phone','field_key'=>'phone','label'=>'Phone','required'=>1,'is_hidden'=>0,'placeholder'=>'','help_text'=>'','validation_json'=>fb_json_encode(['maxlength'=>25]),'settings_json'=>fb_json_encode(['country_field'=>'country'])];
 $countryHtml = fb_render_field_html($countryField, 'contract', 'i1', false, fb_default_settings());
 $phoneHtml = fb_render_field_html($phoneField, 'contract', 'i1', false, fb_default_settings());
-$check(str_contains($countryHtml, 'data-fb-country-search') && str_contains($countryHtml, 'value="ID"') && !str_contains($countryHtml, 'Indonesia (+62)') && str_contains($phoneHtml, 'data-country-field="country"'), 'country picker keeps labels country-focused while phone rendering declares its country dependency');
+$check(str_contains($countryHtml, 'data-fb-country') && str_contains($countryHtml, 'value="ID"') && !str_contains($countryHtml, 'Indonesia (+62)')
+    && !str_contains($countryHtml, 'type="search"') && !str_contains($countryHtml, 'data-fb-country-search')
+    && str_contains($phoneHtml, 'data-country-field="country"'),
+    'country picker uses one native type-ahead select and declares its phone dependency');
 $GLOBALS['__APP_LOCALE'] = 'fr-CA';
 $localizedSettings = array_merge(fb_default_settings(), $definition['form']['settings']);
 $localizedPhone = fb_localized_field(['field_key'=>'phone','label'=>'Phone'], $localizedSettings);

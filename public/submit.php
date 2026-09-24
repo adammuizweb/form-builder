@@ -30,18 +30,34 @@ if ($form === null || !empty($form['deleted_at']) || ($form['status'] ?? '') !==
 if (!is_string($_POST['fb_slug'] ?? null) || trim($_POST['fb_slug']) !== (string)$form['slug']) $fail(fb_message($settings, 'invalid_form'));
 
 $settings = fb_form_settings($form);
+[$localizedForm, $settings] = fb_localized_form($form, $settings);
+$ctx = fb_public_ctx($pdo);
+if (!is_string($_POST['csrf_token'] ?? null) || !fb_csrf_check('', $_POST['csrf_token'])) $fail(fb_message($settings, 'security_invalid'));
+if (!is_string($_POST['fb_website'] ?? null) || trim($_POST['fb_website']) !== '') $fail(fb_message($settings, 'spam'), 400);
+$idempotency = is_string($_POST['fb_idempotency'] ?? null) ? strtolower(trim($_POST['fb_idempotency'])) : '';
+if (preg_match('/\A[a-f0-9]{32,64}\z/', $idempotency) !== 1) $fail(fb_message($settings, 'invalid_submission_key'), 400);
+
+$initialMutationLock = null;
+try {
+    $initialMutationLock = fb_acquire_form_mutation_lock($pdo, (int)$formId, 1);
+    register_shutdown_function(static function () use ($pdo, $initialMutationLock): void { fb_release_form_mutation_lock($pdo, $initialMutationLock); });
+} catch (Throwable $error) {
+    $fail(fb_message($settings, 'service_unavailable'), 503);
+}
+$form = fb_get_form($pdo, (int)$formId);
+if ($form === null || !empty($form['deleted_at']) || ($form['status'] ?? '') !== 'active' || trim((string)($_POST['fb_slug'] ?? '')) !== (string)$form['slug']) $fail(fb_message($settings, 'form_unavailable'));
+fb_recover_storage_trash($pdo, fb_files_base_dir($form), 5, (int)$formId, true);
+$settings = fb_form_settings($form);
 $fields = fb_flat_fields(fb_get_fields($pdo, (int)$formId, false));
 $localizedFields = [];
 foreach ($fields as $field) $localizedFields[] = fb_localized_field($field, $settings);
 $localizedByKey = [];
 foreach ($localizedFields as $field) $localizedByKey[$field['field_key']] = $field;
 [$localizedForm, $settings] = fb_localized_form($form, $settings);
-$ctx = fb_public_ctx($pdo);
-if (!is_string($_POST['csrf_token'] ?? null) || !fb_csrf_check('', $_POST['csrf_token'])) $fail(fb_message($settings, 'security_invalid'));
-if (!is_string($_POST['fb_website'] ?? null) || trim($_POST['fb_website']) !== '') $fail(fb_message($settings, 'spam'), 400);
+$canonicalToken = fb_visual_definition_hash(fb_visual_canonical_definition($pdo, (int)$formId));
+fb_release_form_mutation_lock($pdo, $initialMutationLock);
+$initialMutationLock = null;
 if (!is_string($_POST['fb_started'] ?? null) || !fb_started_check($pdo, (int)$formId, $_POST['fb_started'], (int)$settings['min_fill_seconds'], $locale)) $fail(fb_message($settings, 'wait'), 400);
-$idempotency = is_string($_POST['fb_idempotency'] ?? null) ? strtolower(trim($_POST['fb_idempotency'])) : '';
-if (preg_match('/\A[a-f0-9]{32,64}\z/', $idempotency) !== 1) $fail(fb_message($settings, 'invalid_submission_key'), 400);
 
 if ($settings['recaptcha'] === '1') {
     $keys = fb_recaptcha_keys($pdo);
@@ -71,6 +87,7 @@ if ($uploadFields !== []) {
     }
 }
 $staged = [];
+$submissionMutationLock = null;
 $cleanup = static function (array $paths, ?string $dir = null): void {
     foreach ($paths as $path) if (is_string($path) && is_file($path)) @unlink($path);
     if ($dir !== null && is_dir($dir)) @rmdir($dir);
@@ -91,6 +108,10 @@ try {
             'mime' => (string)$finfo->file($path), 'size' => (int)filesize($path), 'sha256' => hash_file('sha256', $path)];
     }
 
+    $submissionMutationLock = fb_acquire_form_mutation_lock($pdo, (int)$formId);
+    register_shutdown_function(static function () use ($pdo, $submissionMutationLock): void { fb_release_form_mutation_lock($pdo, $submissionMutationLock); });
+    $currentToken = fb_visual_definition_hash(fb_visual_canonical_definition($pdo, (int)$formId));
+    if (!hash_equals($canonicalToken, $currentToken)) throw new UnexpectedValueException('Form schema changed during submission.');
     $pdo->beginTransaction();
     $rate = fb_rate_limit_check($pdo, $ctx['ip'], 'submit_f' . $formId, (int)$settings['rate_window'], (int)$settings['rate_max']);
     if (!$rate['allowed']) {
@@ -126,8 +147,11 @@ try {
     $stmt->execute([$formId,$reference,'submitted',fb_json_encode($history),fb_json_encode($source),$idempotency,fb_json_encode($data),$files ? fb_json_encode($files) : null,fb_json_encode(['total'=>fb_compute_total($fields,$data)]),fb_search_blob($fields,$data),$ctx['ip']]);
     $submissionId = (int)$pdo->lastInsertId();
     $pdo->commit();
+    fb_release_form_mutation_lock($pdo, $submissionMutationLock);
+    $submissionMutationLock = null;
 } catch (Throwable $error) {
     if ($pdo->inTransaction()) $pdo->rollBack();
+    if ($submissionMutationLock !== null) fb_release_form_mutation_lock($pdo, $submissionMutationLock);
     $cleanup(array_merge(array_column($staged, 'path'), $finalPaths ?? []), $stageDir);
     if ($error instanceof PDOException && (int)($error->errorInfo[1] ?? 0) === 1062) {
         $replay = $pdo->prepare('SELECT reference_code FROM fb_submissions WHERE form_id = ? AND idempotency_key = ? LIMIT 1');

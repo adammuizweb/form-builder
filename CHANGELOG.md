@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.0.0 - 2026-09-24
+
+- Add a persisted Visual Builder with revision-safe autosave, safe draft previews, field inspection, and Classic Builder fallback.
+- Add transactional publish/reset with canonical drift detection, protected-code permission checks, and form-scoped mutation locking.
+- Add responsive row and column controls, accessible field reordering, pointer drag-and-drop, and collapsible side panels.
+- Render Visual Builder previews inside the active Core public layout while keeping public header and footer chrome muted and inert.
+- Use one native country select with browser type-ahead instead of a separate country search input.
+
 ## 1.7.9 - 2026-09-19
 
 - Preserve valid hyphens and underscores in form slugs when changing form settings or status.

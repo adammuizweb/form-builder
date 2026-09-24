@@ -1,0 +1,843 @@
+<?php
+// /plugins/form-builder/admin/visual-builder.php
+declare(strict_types=1);
+
+if (!defined('DASHBOARD_CONTEXT')) exit;
+
+require_once __DIR__ . '/_ui.php';
+
+$pdo = $GLOBALS['pdo'] ?? null;
+if (!($pdo instanceof PDO)) { echo '<p>Database not available.</p>'; return; }
+[$uid] = adiwira_require_permission($pdo, 'plugin.form-builder.workspace.access', false);
+
+fb_assert_schema($pdo);
+$formId = is_scalar($_GET['id'] ?? null) ? (int)$_GET['id'] : 0;
+$form = fb_get_form($pdo, $formId);
+if ($form === null || ($form['deleted_at'] ?? null) !== null || !fb_can_access_form($pdo, $form, $uid)) {
+    fb_admin_css();
+    echo '<div class="fba"><div class="fba-empty">Form not found or access denied. <a href="?page=admin/tools/form-builder">Back to forms</a></div></div>';
+    return;
+}
+
+$types = fb_field_types();
+$canUnsafeCode = user_can($pdo, $uid, 'plugin.form-builder.unsafe-code.manage');
+$tree = fb_get_tree($pdo, $formId);
+$fieldCount = 0;
+foreach ($tree as $row) foreach ($row['cols'] as $column) $fieldCount += count($column['fields']);
+$statusClass = ['active' => 'active', 'draft' => 'draft', 'archived' => 'arch'][$form['status']] ?? 'draft';
+$classicUrl = fb_url(['view' => 'builder', 'id' => $formId]);
+$settingsUrl = fb_url(['view' => 'settings', 'id' => $formId]);
+$formsUrl = fb_url(['view' => 'forms', 'id' => null]);
+$csrf = function_exists('csrf_token') ? csrf_token() : '';
+fb_admin_css();
+?>
+<style>
+.fbv { --fbv-ink: #14261b; --fbv-muted: #68786e; --fbv-line: #dce5de; --fbv-paper: #f7faf7; --fbv-canvas-width: 860px; color: var(--adam-text); }
+.fbv.is-left-hidden, .fbv.is-right-hidden { --fbv-canvas-width: 1040px; }
+.fbv.is-left-hidden.is-right-hidden { --fbv-canvas-width: 1220px; }
+.fbv-topbar { display: flex; align-items: center; gap: .8rem; min-height: 58px; margin: -1rem -1rem 0; padding: .65rem 1rem; position: sticky; top: 0; z-index: 30; border-bottom: 1px solid var(--adam-border); background: color-mix(in srgb, var(--adam-card) 94%, transparent); backdrop-filter: blur(12px); }
+.fbv-back { display: inline-grid; place-items: center; width: 36px; height: 36px; border: 1px solid var(--adam-border); border-radius: 10px; color: var(--adam-text); text-decoration: none; }
+.fbv-title { min-width: 0; flex: 1; }
+.fbv-title strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fbv-title span { color: var(--adam-muted); font-size: .73rem; }
+.fbv-status { display: inline-flex; align-items: center; gap: .4rem; color: var(--adam-muted); font-size: .76rem; }
+.fbv-status::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #2b7a4a; box-shadow: 0 0 0 4px rgba(43 122 74 / .12); }
+.fbv-status[data-state="loading"]::before, .fbv-status[data-state="saving"]::before { background: #ca8a04; box-shadow: 0 0 0 4px rgba(202 138 4 / .14); }
+.fbv-status[data-state="error"]::before, .fbv-status[data-state="conflict"]::before { background: #dc2626; box-shadow: 0 0 0 4px rgba(220 38 38 / .12); }
+.fbv-workspace { position: relative; display: grid; grid-template-columns: 224px minmax(360px, 1fr) 288px; min-height: calc(100vh - 150px); margin: 0 -1rem -1rem; background: var(--adam-bg); }
+.fbv.is-left-hidden .fbv-workspace { grid-template-columns: minmax(360px, 1fr) 288px; }
+.fbv.is-right-hidden .fbv-workspace { grid-template-columns: 224px minmax(360px, 1fr); }
+.fbv.is-left-hidden.is-right-hidden .fbv-workspace { grid-template-columns: minmax(360px, 1fr); }
+.fbv.is-left-hidden .fbv-sidebar.left, .fbv.is-right-hidden .fbv-sidebar.right { display: none; }
+.fbv-panel-toggle { position: absolute; top: .75rem; z-index: 20; display: grid; place-items: center; width: 22px; height: 32px; padding: 0; border: 1px solid var(--adam-border); background: var(--adam-card); color: var(--adam-muted); font: 700 16px/1 system-ui, sans-serif; cursor: pointer; box-shadow: 0 3px 10px rgba(17 40 25 / .12); transition: left .2s, right .2s, color .15s, border-color .15s; }
+.fbv-panel-toggle:hover, .fbv-panel-toggle:focus-visible { color: var(--adam-accent); border-color: var(--adam-accent); outline: none; }
+.fbv-panel-toggle svg { display: block; width: 13px; height: 13px; transition: transform .2s ease; }
+.fbv-panel-toggle.left { left: 224px; border-left: 0; border-radius: 0 999px 999px 0; }
+.fbv-panel-toggle.right { right: 288px; border-right: 0; border-radius: 999px 0 0 999px; }
+.fbv.is-left-hidden .fbv-panel-toggle.left { left: 0; }
+.fbv.is-right-hidden .fbv-panel-toggle.right { right: 0; }
+.fbv.is-left-hidden .fbv-panel-toggle.left svg, .fbv.is-right-hidden .fbv-panel-toggle.right svg { transform: rotate(180deg); }
+.fbv-sidebar { padding: 1rem; background: var(--adam-card); }
+.fbv-sidebar.left { border-right: 1px solid var(--adam-border); }
+.fbv-sidebar.right { border-left: 1px solid var(--adam-border); }
+.fbv-sidebar h2 { margin: 0 0 .25rem; font-size: .92rem; }
+.fbv-sidebar > p { margin: 0 0 1rem; color: var(--adam-muted); font-size: .75rem; line-height: 1.45; }
+.fbv-library-title { margin: 1rem 0 .5rem; color: var(--adam-muted); font-size: .66rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.fbv-library { display: grid; gap: .4rem; }
+.fbv-library button { display: flex; align-items: center; gap: .55rem; width: 100%; padding: .55rem .65rem; border: 1px solid var(--adam-border); border-radius: 10px; background: var(--adam-bg); color: var(--adam-text); font: inherit; font-size: .78rem; font-weight: 600; text-align: left; cursor: pointer; }
+.fbv-library button:hover:not(:disabled) { border-color: var(--adam-accent); background: color-mix(in srgb, var(--adam-accent) 6%, var(--adam-card)); }
+.fbv-library button:disabled { cursor: not-allowed; opacity: .45; }
+.fbv-layout-add { display: grid; grid-template-columns: 1fr auto; gap: .4rem; margin-top: .5rem; }
+.fbv-layout-list { display: grid; gap: .4rem; margin-top: .65rem; }
+.fbv-layout-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .35rem; align-items: center; padding: .45rem; border: 1px solid var(--adam-border); border-radius: 10px; background: var(--adam-bg); }
+.fbv-layout-row strong { display: block; font-size: .72rem; }
+.fbv-layout-row select { width: 100%; margin-top: .25rem; font-size: .7rem; }
+.fbv-layout-actions { display: grid; grid-template-columns: repeat(2, 25px); gap: .2rem; }
+.fbv-layout-actions button { width: 25px; height: 25px; padding: 0; border: 1px solid var(--adam-border); border-radius: 7px; background: var(--adam-card); color: var(--adam-text); cursor: pointer; }
+.fbv-library button::before { content: '+'; display: grid; place-items: center; width: 21px; height: 21px; border-radius: 7px; background: color-mix(in srgb, var(--adam-accent) 12%, transparent); color: var(--adam-accent); }
+.fbv-stage { min-width: 0; padding: 1rem clamp(1rem, 3vw, 2.5rem) 3rem; overflow: auto; }
+.fbv-notice { display: flex; gap: .65rem; align-items: flex-start; max-width: var(--fbv-canvas-width); margin: 0 auto 1rem; padding: .7rem .85rem; border: 1px solid color-mix(in srgb, var(--adam-accent) 28%, var(--adam-border)); border-radius: 12px; background: color-mix(in srgb, var(--adam-accent) 6%, var(--adam-card)); font-size: .78rem; line-height: 1.5; transition: max-width .25s ease; }
+.fbv-notice .fba-btn { flex: 0 0 auto; margin-left: auto; }
+.fbv-canvas-tools { display: flex; align-items: center; justify-content: space-between; gap: .7rem; max-width: var(--fbv-canvas-width); margin: 0 auto .65rem; transition: max-width .25s ease; }
+.fbv-devices { display: inline-flex; gap: .2rem; padding: .2rem; border: 1px solid var(--adam-border); border-radius: 10px; background: var(--adam-card); }
+.fbv-device { border: 0; border-radius: 7px; padding: .35rem .6rem; background: transparent; color: var(--adam-muted); font: inherit; font-size: .73rem; cursor: pointer; }
+.fbv-device.is-active { background: var(--adam-accent); color: #fff; }
+.fbv-count { color: var(--adam-muted); font-size: .73rem; }
+.fbv-canvas-shell { width: 100%; max-width: var(--fbv-canvas-width); min-height: 500px; margin: 0 auto; padding: clamp(1rem, 3vw, 2.2rem); border: 1px solid var(--adam-border); border-radius: 18px; background: #eef3ef; box-shadow: 0 22px 60px rgba(17 40 25 / .11); transition: max-width .25s ease; }
+.fbv-canvas-shell[data-device="mobile"] { max-width: 430px; }
+.fbv-preview-frame { display: block; width: 100%; height: min(900px, 78vh); min-height: 620px; border: 0; border-radius: 12px; background: #fff; }
+.fbv-inspector-empty { padding: 1.1rem; border: 1px dashed var(--adam-border); border-radius: 12px; background: var(--adam-bg); color: var(--adam-muted); font-size: .78rem; line-height: 1.55; }
+.fbv-inspector-type { display: inline-flex; margin-bottom: .8rem; padding: .2rem .45rem; border-radius: 999px; background: color-mix(in srgb, var(--adam-accent) 10%, transparent); color: var(--adam-accent); font-size: .65rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+.fbv-inspector .fba-field { margin-bottom: .7rem; }
+.fbv-field-picker { width: 100%; margin-bottom: .85rem; }
+.fbv-inspector textarea { resize: vertical; }
+.fbv-inspector-actions { display: flex; justify-content: space-between; gap: .5rem; margin-top: 1rem; padding-top: .8rem; border-top: 1px solid var(--adam-border); }
+.fbv-position-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; }
+.fbv-inspector-key { font-family: ui-monospace, monospace; font-size: .72rem; }
+.fbv-mode-card { margin-top: 1rem; padding: .85rem; border: 1px solid var(--adam-border); border-radius: 12px; }
+.fbv-mode-card strong { display: block; margin-bottom: .25rem; font-size: .78rem; }
+.fbv-mode-card span { display: block; margin-bottom: .65rem; color: var(--adam-muted); font-size: .72rem; line-height: 1.45; }
+@media (max-width: 1100px) {
+  .fbv-workspace { grid-template-columns: 190px minmax(320px, 1fr); }
+  .fbv.is-left-hidden .fbv-workspace, .fbv.is-left-hidden.is-right-hidden .fbv-workspace { grid-template-columns: minmax(320px, 1fr); }
+  .fbv.is-right-hidden:not(.is-left-hidden) .fbv-workspace { grid-template-columns: 190px minmax(320px, 1fr); }
+  .fbv-panel-toggle.left { left: 190px; }
+  .fbv-panel-toggle.right { right: 0; }
+  .fbv.is-left-hidden .fbv-panel-toggle.left { left: 0; }
+  .fbv-sidebar.right { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--adam-border); }
+}
+@media (max-width: 760px) {
+  .fbv-topbar { flex-wrap: wrap; }
+  .fbv-status { order: 10; width: 100%; padding-left: .2rem; font-size: .7rem; }
+  .fbv-workspace { display: block; }
+  .fbv-panel-toggle.left { left: 0; }
+  .fbv-sidebar.left { border: 0; border-bottom: 1px solid var(--adam-border); }
+  .fbv-library { display: flex; overflow-x: auto; padding-bottom: .25rem; }
+  .fbv-library button { min-width: 135px; }
+  .fbv-library-title { display: none; }
+  .fbv-stage { padding: 1rem .75rem 2rem; }
+}
+</style>
+
+<div class="fbv" id="fbvApp">
+  <header class="fbv-topbar">
+    <a class="fbv-back" href="<?= htmlspecialchars($formsUrl, ENT_QUOTES) ?>" aria-label="Back to forms">&larr;</a>
+    <div class="fbv-title">
+      <strong id="fbvFormTitle"><?= htmlspecialchars((string)$form['title'], ENT_QUOTES) ?></strong>
+      <span id="fbvFormSlug"><?= htmlspecialchars((string)$form['slug'], ENT_QUOTES) ?> &middot; Visual Builder</span>
+    </div>
+    <span class="fba-badge <?= $statusClass ?>" id="fbvFormStatus"><?= htmlspecialchars((string)$form['status'], ENT_QUOTES) ?></span>
+    <div class="fbv-status" id="fbvDraftStatus" data-state="loading" role="status">Loading draft...</div>
+    <a class="fba-btn" href="<?= htmlspecialchars($settingsUrl, ENT_QUOTES) ?>">Settings</a>
+    <a class="fba-btn" href="<?= htmlspecialchars($classicUrl, ENT_QUOTES) ?>">Classic</a>
+    <button class="fba-btn primary" id="fbvPublish" type="button" disabled>Publish</button>
+  </header>
+
+  <div class="fbv-workspace">
+    <button class="fbv-panel-toggle left" id="fbvToggleLeft" type="button" aria-controls="fbvQuestionLibrary" aria-expanded="true" title="Hide question library"><?= svg_ico('chevron-left', 'fbv-panel-icon') ?></button>
+    <button class="fbv-panel-toggle right" id="fbvToggleRight" type="button" aria-controls="fbvQuestionProperties" aria-expanded="true" title="Hide question properties"><?= svg_ico('chevron-right', 'fbv-panel-icon') ?></button>
+    <aside class="fbv-sidebar left" id="fbvQuestionLibrary" aria-label="Question library">
+      <h2>Add a question</h2>
+      <p>Add a field to the final column, then select it on the canvas to edit its draft properties.</p>
+      <?php foreach (['input' => 'Questions', 'element' => 'Content'] as $group => $label): ?>
+        <div class="fbv-library-title"><?= $label ?></div>
+        <div class="fbv-library">
+          <?php foreach ($types as $type => $meta):
+            if (!empty($meta['container']) || ($meta['group'] ?? '') !== $group) continue; ?>
+            <?php $unsafeType = in_array($type, ['richtext', 'raw_html'], true); ?>
+            <button type="button" disabled data-fbv-type="<?= htmlspecialchars((string)$type, ENT_QUOTES) ?>" data-unsafe="<?= $unsafeType ? '1' : '0' ?>"<?= $unsafeType && !$canUnsafeCode ? ' title="Unsafe-code permission required"' : '' ?>><?= htmlspecialchars((string)$meta['label'], ENT_QUOTES) ?></button>
+          <?php endforeach; ?>
+        </div>
+      <?php endforeach; ?>
+      <div class="fbv-library-title">Layout</div>
+      <div class="fbv-layout-add">
+        <select id="fbvNewRowColumns" aria-label="Columns in new row"><option value="1">1 column</option><option value="2" selected>2 columns</option><option value="3">3 columns</option><option value="4">4 columns</option></select>
+        <button class="fba-btn sm" id="fbvAddRow" type="button" disabled>Add row</button>
+      </div>
+      <div class="fbv-layout-list" id="fbvLayoutList"></div>
+    </aside>
+
+    <main class="fbv-stage">
+      <div class="fbv-notice" role="status">
+        <strong>Draft workspace.</strong>
+        <span>Select a field to edit its draft. Changes autosave separately and do not affect the live form until you publish.</span>
+        <button class="fba-btn sm" id="fbvReset" type="button" hidden>Reload Classic version</button>
+      </div>
+      <div class="fbv-canvas-tools">
+        <div class="fbv-devices" aria-label="Preview width">
+          <button class="fbv-device is-active" type="button" data-device="desktop" aria-pressed="true">Desktop</button>
+          <button class="fbv-device" type="button" data-device="mobile" aria-pressed="false">Mobile</button>
+        </div>
+        <span class="fbv-count" id="fbvFieldCount"><?= $fieldCount ?> field<?= $fieldCount === 1 ? '' : 's' ?></span>
+      </div>
+      <div class="fbv-canvas-shell" id="fbvCanvas" data-device="desktop">
+        <iframe class="fbv-preview-frame" id="fbvPreviewFrame" title="Public form preview" src="about:blank" data-src="/fb-visual-preview/?id=<?= $formId ?>" sandbox="allow-same-origin" tabindex="-1"></iframe>
+      </div>
+    </main>
+
+    <aside class="fbv-sidebar right" id="fbvQuestionProperties" aria-label="Question properties">
+      <h2>Question properties</h2>
+      <p>Select a question on the canvas to edit its label, help text, options, required state, and visibility.</p>
+      <select class="fbv-field-picker" id="fbvFieldPicker" aria-label="Select a field" disabled><option value="">Select a field</option></select>
+      <div class="fbv-inspector" id="fbvInspector"><div class="fbv-inspector-empty">Select a field on the canvas, or add one from the library.</div></div>
+      <div class="fbv-mode-card">
+        <strong>Need advanced layout?</strong>
+        <span>Rows, columns, custom HTML, and current production controls remain available.</span>
+        <a class="fba-btn sm" href="<?= htmlspecialchars($classicUrl, ENT_QUOTES) ?>">Open Classic Builder</a>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script>
+(() => {
+  const ENDPOINT = '/fb-visual-builder/';
+  const FORM_ID = <?= $formId ?>;
+  const CSRF = <?= json_encode($csrf, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+  const CAN_UNSAFE = <?= $canUnsafeCode ? 'true' : 'false' ?>;
+  const TYPES = <?= json_encode($types, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+  const app = document.getElementById('fbvApp');
+  const canvas = document.getElementById('fbvCanvas');
+  const previewFrame = document.getElementById('fbvPreviewFrame');
+  const inspector = document.getElementById('fbvInspector');
+  const fieldPicker = document.getElementById('fbvFieldPicker');
+  const fieldCount = document.getElementById('fbvFieldCount');
+  const formTitle = document.getElementById('fbvFormTitle');
+  const formSlug = document.getElementById('fbvFormSlug');
+  const formStatus = document.getElementById('fbvFormStatus');
+  const publishButton = document.getElementById('fbvPublish');
+  const resetButton = document.getElementById('fbvReset');
+  const status = document.getElementById('fbvDraftStatus');
+  const devices = document.querySelectorAll('.fbv-device');
+  const libraryButtons = document.querySelectorAll('[data-fbv-type]');
+  const addRowButton = document.getElementById('fbvAddRow');
+  const newRowColumns = document.getElementById('fbvNewRowColumns');
+  const layoutList = document.getElementById('fbvLayoutList');
+  const leftToggle = document.getElementById('fbvToggleLeft');
+  const rightToggle = document.getElementById('fbvToggleRight');
+  let draft = null;
+  let workingDefinition = null;
+  let selectedKey = null;
+  let saveTimer = 0;
+  let saveInFlight = false;
+  let pendingDefinition = null;
+  let hasUnsavedChanges = false;
+  let draggedFieldKey = null;
+  let retryTimer = 0;
+  let preview = null;
+
+  const setPanelHidden = (side, hidden, persist = true) => {
+    const toggle = side === 'left' ? leftToggle : rightToggle;
+    app.classList.toggle(`is-${side}-hidden`, hidden);
+    toggle.setAttribute('aria-expanded', hidden ? 'false' : 'true');
+    toggle.title = `${hidden ? 'Show' : 'Hide'} question ${side === 'left' ? 'library' : 'properties'}`;
+    if (persist) {
+      try { localStorage.setItem(`fbv_${side}_hidden`, hidden ? '1' : '0'); } catch (error) {}
+    }
+  };
+  leftToggle.addEventListener('click', () => setPanelHidden('left', !app.classList.contains('is-left-hidden')));
+  rightToggle.addEventListener('click', () => setPanelHidden('right', !app.classList.contains('is-right-hidden')));
+  try {
+    setPanelHidden('left', localStorage.getItem('fbv_left_hidden') === '1', false);
+    setPanelHidden('right', localStorage.getItem('fbv_right_hidden') === '1', false);
+  } catch (error) {}
+
+  const setStatus = (message, state = 'ready') => {
+    status.textContent = message;
+    status.dataset.state = state;
+  };
+  const updateActions = () => {
+    const busy = !draft || hasUnsavedChanges || saveInFlight;
+    publishButton.disabled = busy || draft.published_changed || !draft.has_unpublished_changes;
+    publishButton.title = draft?.published_changed ? 'Reload the Classic version before publishing' : publishButton.disabled ? '' : 'Publish this draft';
+    resetButton.hidden = !draft?.published_changed;
+    resetButton.disabled = saveInFlight;
+    addRowButton.disabled = !draft || saveInFlight;
+  };
+  const request = async (action, values = {}) => {
+    const body = new URLSearchParams({ fb_action: action, form_id: String(FORM_ID), csrf_token: CSRF, ...values });
+    const response = await fetch(ENDPOINT, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' }, body });
+    const payload = await response.json().catch(() => ({ ok: false, error: 'Invalid server response' }));
+    if (!response.ok || !payload.ok) {
+      const error = new Error(payload.error || 'Draft request failed');
+      error.status = response.status;
+      error.conflict = response.status === 409 || payload.conflict === true;
+      error.canonicalConflict = payload.canonical_conflict === true;
+      throw error;
+    }
+    return payload.draft;
+  };
+  const showDraftState = () => {
+    if (draft.published_changed) setStatus('Draft ready - Classic changed since draft start', 'conflict');
+    else if (draft.unsafe_content_protected) setStatus(`Draft ready - revision ${draft.revision} - protected code preserved`);
+    else if (!draft.has_unpublished_changes) setStatus(`Published version - revision ${draft.revision}`);
+    else setStatus(`Draft ready - revision ${draft.revision}`);
+    updateActions();
+  };
+  const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[character]);
+  const syncHeader = (definition) => {
+    const form = definition?.form;
+    if (!form) return;
+    formTitle.textContent = form.title;
+    formSlug.textContent = `${form.slug} · Visual Builder`;
+    formStatus.textContent = form.status;
+    formStatus.className = `fba-badge ${{ active: 'active', draft: 'draft', archived: 'arch' }[form.status] || 'draft'}`;
+  };
+  const currentFields = () => workingDefinition?.form?.fields || [];
+  const currentField = () => currentFields().find((field) => field.key === selectedKey) || null;
+  const ordered = (fields) => [...fields].sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0) || a.key.localeCompare(b.key));
+  const layoutRows = () => ordered(currentFields().filter((field) => field.type === 'row'));
+  const layoutColumns = () => layoutRows().flatMap((row, rowIndex) => ordered(currentFields().filter((field) => field.type === 'col' && field.parent === row.key)).map((column, columnIndex) => ({ row, column, rowIndex, columnIndex })));
+  const normalizeOrders = (fields, parent) => {
+    ordered(fields.filter((field) => field.parent === parent)).forEach((field, index) => { field.order = (index + 1) * 10; });
+  };
+  const updateFieldCount = () => {
+    const count = currentFields().filter((field) => !['row', 'col'].includes(field.type)).length;
+    fieldCount.textContent = `${count} field${count === 1 ? '' : 's'}`;
+  };
+  const markSelection = () => {
+    if (!preview) return;
+    preview.querySelectorAll('.fb-field').forEach((element) => element.classList.toggle('is-selected', element.dataset.key === selectedKey));
+  };
+  const renderFieldPicker = () => {
+    const fields = currentFields().filter((field) => !['row', 'col'].includes(field.type));
+    fieldPicker.innerHTML = `<option value="">Select a field (${fields.length})</option>` + fields.map((field) => `<option value="${escapeHtml(field.key)}"${field.key === selectedKey ? ' selected' : ''}>${escapeHtml(field.label || TYPES[field.type]?.label || field.key)}${field.hidden ? ' (hidden)' : ''}</option>`).join('');
+    fieldPicker.disabled = !draft || fields.length === 0;
+  };
+  const renderLayout = () => {
+    const rows = layoutRows();
+    layoutList.innerHTML = rows.map((row, index) => {
+      const columns = currentFields().filter((field) => field.type === 'col' && field.parent === row.key).length;
+      const columnChoices = [1,2,3,4];
+      if (!columnChoices.includes(columns)) columnChoices.unshift(columns);
+      return `<div class="fbv-layout-row" data-layout-row="${escapeHtml(row.key)}"><div><strong>Row ${index + 1}</strong><select data-row-columns aria-label="Columns in row ${index + 1}">${columnChoices.map((count) => `<option value="${count}"${count === columns ? ' selected' : ''}>${count} column${count === 1 ? '' : 's'}${count < 1 || count > 4 ? ' (advanced)' : ''}</option>`).join('')}</select></div><div class="fbv-layout-actions"><button type="button" data-row-move="up" title="Move row up"${index === 0 ? ' disabled' : ''}>&uarr;</button><button type="button" data-row-move="down" title="Move row down"${index === rows.length - 1 ? ' disabled' : ''}>&darr;</button><button type="button" data-row-delete title="Delete empty row">&times;</button></div></div>`;
+    }).join('');
+  };
+  const applyPreview = (html) => {
+    if (!html || !preview) return;
+    const template = preview.ownerDocument.createElement('template');
+    template.innerHTML = html.trim();
+    const fresh = template.content.querySelector('.fb-wrap');
+    const existing = preview.querySelector('.fb-wrap');
+    if (fresh && existing) existing.replaceWith(fresh);
+    preview.querySelectorAll('input, textarea, select, button').forEach((control) => control.tabIndex = -1);
+    preview.querySelectorAll('.fb-field[data-key]').forEach((field) => field.draggable = true);
+    markSelection();
+    updateFieldCount();
+    renderFieldPicker();
+    renderLayout();
+  };
+  const renderInspector = () => {
+    const field = currentField();
+    if (!field) {
+      inspector.innerHTML = '<div class="fbv-inspector-empty">Select a field on the canvas, or add one from the library.</div>';
+      return;
+    }
+    const meta = TYPES[field.type] || { label: field.type };
+    const isInput = meta.input === true;
+    const isChoice = meta.options === true;
+    const encodeOptionPart = (value) => String(value ?? '').replace(/\\/g, '\\\\').replace(/\r/g, '\\r').replace(/\n/g, '\\n').replace(/\|/g, '\\|');
+    const options = (field.options || []).map((option) => `${encodeOptionPart(option.value)}|${encodeOptionPart(option.label)}|${option.price || 0}`).join('\n');
+    const labelControl = field.type === 'divider' ? '' : `<div class="fba-field"><label>${field.type === 'paragraph' ? 'Text' : 'Label'}</label>${field.type === 'paragraph' ? `<textarea data-field-prop="label" rows="4" maxlength="1000">${escapeHtml(field.label)}</textarea>` : `<input data-field-prop="label" type="text" maxlength="1000" value="${escapeHtml(field.label)}">`}</div>`;
+    const headingControl = field.type === 'heading' ? `<div class="fba-field"><label>Heading level</label><select data-setting-prop="level">${['h1','h2','h3','h4','h5','h6'].map((level) => `<option value="${level}"${(field.settings?.level || 'h2') === level ? ' selected' : ''}>${level.toUpperCase()}</option>`).join('')}</select></div>` : '';
+    const inputControls = isInput ? `<div class="fba-field"><label>Field key</label><input class="fbv-inspector-key" type="text" value="${escapeHtml(field.key)}" readonly></div><div class="fba-field"><label>Placeholder</label><input data-field-prop="placeholder" type="text" maxlength="1000" value="${escapeHtml(field.placeholder || '')}"></div><div class="fba-field"><label>Help text</label><input data-field-prop="help" type="text" maxlength="2000" value="${escapeHtml(field.help || '')}"></div>${isChoice ? `<div class="fba-field"><label>Options <span class="fba-hint">value|Label|price, use \\| for a literal pipe</span></label><textarea data-field-options rows="6">${escapeHtml(options)}</textarea></div>` : ''}<div class="fba-checks"><label class="fba-check"><input data-field-prop="required" type="checkbox"${field.required ? ' checked' : ''}> Required</label><label class="fba-check"><input data-field-prop="hidden" type="checkbox"${field.hidden ? ' checked' : ''}> Hidden</label></div>` : '';
+    const siblings = ordered(currentFields().filter((candidate) => candidate.parent === field.parent && !['row', 'col'].includes(candidate.type)));
+    const siblingIndex = siblings.findIndex((candidate) => candidate.key === field.key);
+    const positionControls = `<div class="fba-field"><label>Column</label><select data-field-parent>${layoutColumns().map(({ row, column, rowIndex, columnIndex }) => `<option value="${escapeHtml(column.key)}"${column.key === field.parent ? ' selected' : ''}>Row ${rowIndex + 1}, column ${columnIndex + 1}</option>`).join('')}</select></div><div class="fbv-position-actions"><button class="fba-btn sm" type="button" data-field-move="up"${siblingIndex <= 0 ? ' disabled' : ''}>Move up</button><button class="fba-btn sm" type="button" data-field-move="down"${siblingIndex < 0 || siblingIndex >= siblings.length - 1 ? ' disabled' : ''}>Move down</button></div>`;
+    const protectedType = ['richtext', 'raw_html'].includes(field.type) && !CAN_UNSAFE;
+    inspector.innerHTML = `<span class="fbv-inspector-type">${escapeHtml(meta.label)}</span>${labelControl}${headingControl}${inputControls}${positionControls}<div class="fbv-inspector-actions"><span class="fba-hint">Autosaved draft</span><button class="fba-btn danger sm" type="button" data-fbv-delete${protectedType ? ' disabled title="Unsafe-code permission required"' : ''}>Delete</button></div>`;
+  };
+  const mutateDefinition = (callback, refreshInspector = false) => {
+    if (!draft) return;
+    const definition = structuredClone(workingDefinition);
+    callback(definition);
+    workingDefinition = definition;
+    if (refreshInspector) renderInspector();
+    updateFieldCount();
+    renderFieldPicker();
+    renderLayout();
+    queueSave(definition);
+  };
+  const uniqueKey = (base, fields = currentFields()) => {
+    const stem = String(base || 'field').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'field';
+    const used = new Set(fields.map((field) => field.key));
+    let key = stem.slice(0, 80);
+    let suffix = 2;
+    while (used.has(key)) {
+      const ending = `_${suffix++}`;
+      key = stem.slice(0, 80 - ending.length) + ending;
+    }
+    return key;
+  };
+  const newNode = (key, parent, type, label, order) => ({ key, parent, type, label, placeholder: '', help: '', required: false, width: 12, order, hidden: false, options: [], validation: {}, settings: {} });
+  const moveField = (fieldKey, parentKey, beforeKey = null) => {
+    if (!fieldKey || !parentKey || fieldKey === beforeKey) return;
+    mutateDefinition((definition) => {
+      const fields = definition.form.fields;
+      const field = fields.find((candidate) => candidate.key === fieldKey && !['row', 'col'].includes(candidate.type));
+      const parent = fields.find((candidate) => candidate.key === parentKey && candidate.type === 'col');
+      if (!field || !parent) return;
+      const sourceParent = field.parent;
+      const destination = ordered(fields.filter((candidate) => candidate.parent === parentKey && !['row', 'col'].includes(candidate.type) && candidate.key !== fieldKey));
+      const beforeIndex = beforeKey ? destination.findIndex((candidate) => candidate.key === beforeKey) : -1;
+      destination.splice(beforeIndex >= 0 ? beforeIndex : destination.length, 0, field);
+      field.parent = parentKey;
+      destination.forEach((candidate, index) => { candidate.order = (index + 1) * 10; });
+      if (sourceParent !== parentKey) normalizeOrders(fields, sourceParent);
+      selectedKey = fieldKey;
+    }, true);
+  };
+  const reorderField = (fieldKey, delta) => {
+    mutateDefinition((definition) => {
+      const fields = definition.form.fields;
+      const field = fields.find((candidate) => candidate.key === fieldKey);
+      if (!field) return;
+      const siblings = ordered(fields.filter((candidate) => candidate.parent === field.parent && !['row', 'col'].includes(candidate.type)));
+      const index = siblings.findIndex((candidate) => candidate.key === fieldKey);
+      const target = index + delta;
+      if (index < 0 || target < 0 || target >= siblings.length) return;
+      [siblings[index], siblings[target]] = [siblings[target], siblings[index]];
+      siblings.forEach((candidate, position) => { candidate.order = (position + 1) * 10; });
+    }, true);
+  };
+  const addRow = (columnCount) => {
+    columnCount = Math.max(1, Math.min(4, Number(columnCount) || 1));
+    if (currentFields().length + columnCount + 1 > 300) {
+      setStatus('This form has reached the 300-field limit', 'error');
+      return;
+    }
+    mutateDefinition((definition) => {
+      const fields = definition.form.fields;
+      const rowOrder = Math.max(0, ...fields.filter((field) => field.type === 'row').map((field) => Number(field.order) || 0)) + 10;
+      const rowKey = uniqueKey('row_visual', fields);
+      fields.push(newNode(rowKey, null, 'row', '', rowOrder));
+      for (let index = 0; index < columnCount; index++) {
+        const columnKey = uniqueKey('col_visual', fields);
+        fields.push(newNode(columnKey, rowKey, 'col', '', (index + 1) * 10));
+      }
+    }, true);
+  };
+  const setRowColumns = (rowKey, columnCount) => {
+    columnCount = Math.max(1, Math.min(4, Number(columnCount) || 1));
+    const existingCount = currentFields().filter((field) => field.type === 'col' && field.parent === rowKey).length;
+    if ((existingCount < 1 || existingCount > 4) && columnCount !== existingCount && !window.confirm(`Convert this ${existingCount}-column advanced row to ${columnCount} columns?`)) {
+      renderLayout();
+      return;
+    }
+    if (columnCount > existingCount && currentFields().length + columnCount - existingCount > 300) {
+      setStatus('This form has reached the 300-field limit', 'error');
+      renderLayout();
+      return;
+    }
+    mutateDefinition((definition) => {
+      const fields = definition.form.fields;
+      const columns = ordered(fields.filter((field) => field.type === 'col' && field.parent === rowKey));
+      if (columnCount > columns.length) {
+        for (let index = columns.length; index < columnCount; index++) {
+          const key = uniqueKey('col_visual', fields);
+          const column = newNode(key, rowKey, 'col', '', (index + 1) * 10);
+          fields.push(column);
+          columns.push(column);
+        }
+      } else if (columnCount < columns.length) {
+        const kept = columns.slice(0, columnCount);
+        const removed = columns.slice(columnCount);
+        const destination = kept.at(-1);
+        let nextOrder = Math.max(0, ...fields.filter((field) => field.parent === destination.key).map((field) => Number(field.order) || 0));
+        removed.forEach((column) => {
+          ordered(fields.filter((field) => field.parent === column.key)).forEach((field) => { field.parent = destination.key; field.order = nextOrder += 10; });
+        });
+        const removedKeys = new Set(removed.map((column) => column.key));
+        definition.form.fields = fields.filter((field) => !removedKeys.has(field.key));
+      }
+      normalizeOrders(definition.form.fields, rowKey);
+    }, true);
+  };
+  const moveRow = (rowKey, delta) => {
+    mutateDefinition((definition) => {
+      const rows = ordered(definition.form.fields.filter((field) => field.type === 'row'));
+      const index = rows.findIndex((row) => row.key === rowKey);
+      const target = index + delta;
+      if (index < 0 || target < 0 || target >= rows.length) return;
+      [rows[index], rows[target]] = [rows[target], rows[index]];
+      rows.forEach((row, position) => { row.order = (position + 1) * 10; });
+    }, true);
+  };
+  const deleteEmptyRow = (rowKey) => {
+    const columns = currentFields().filter((field) => field.type === 'col' && field.parent === rowKey);
+    const columnKeys = new Set(columns.map((column) => column.key));
+    if (currentFields().some((field) => columnKeys.has(field.parent) && !['row', 'col'].includes(field.type))) {
+      setStatus('Move or delete the fields before removing this row', 'error');
+      return;
+    }
+    mutateDefinition((definition) => {
+      definition.form.fields = definition.form.fields.filter((field) => field.key !== rowKey && !columnKeys.has(field.key));
+      normalizeOrders(definition.form.fields, null);
+    }, true);
+  };
+  const addField = (type) => {
+    const meta = TYPES[type];
+    if (!meta || meta.container || (['richtext', 'raw_html'].includes(type) && !CAN_UNSAFE)) return;
+    const existingRows = ordered(currentFields().filter((field) => field.type === 'row'));
+    const finalRow = existingRows.at(-1);
+    const finalRowHasColumn = finalRow && currentFields().some((field) => field.type === 'col' && field.parent === finalRow.key);
+    const nodesNeeded = 1 + (existingRows.length ? (finalRowHasColumn ? 0 : 1) : 2);
+    if (currentFields().length + nodesNeeded > 300) {
+      setStatus('This form has reached the 300-field limit', 'error');
+      return;
+    }
+    const country = currentFields().find((field) => field.type === 'country' && !field.hidden);
+    if (type === 'intl_phone' && !country) {
+      setStatus('Add a visible Country field first', 'error');
+      return;
+    }
+    mutateDefinition((definition) => {
+      const fields = definition.form.fields;
+      let rows = ordered(fields.filter((field) => field.type === 'row'));
+      if (!rows.length) {
+        const rowKey = uniqueKey('row_visual', fields);
+        fields.push(newNode(rowKey, null, 'row', '', 10));
+        rows = ordered(fields.filter((field) => field.type === 'row'));
+      }
+      const row = rows.at(-1);
+      let columns = ordered(fields.filter((field) => field.type === 'col' && field.parent === row.key));
+      if (!columns.length) {
+        const columnKey = uniqueKey('col_visual', fields);
+        fields.push(newNode(columnKey, row.key, 'col', '', 10));
+        columns = ordered(fields.filter((field) => field.type === 'col' && field.parent === row.key));
+      }
+      const column = columns.at(-1);
+      const siblings = fields.filter((field) => field.parent === column.key);
+      const key = uniqueKey(meta.label || type, fields);
+      const field = newNode(key, column.key, type, meta.label || type, Math.max(0, ...siblings.map((item) => Number(item.order) || 0)) + 10);
+      if (meta.options) field.options = [{ value: 'option_1', label: 'Option 1', price: 0 }];
+      if (type === 'heading') field.settings.level = 'h2';
+      if (type === 'intl_phone') field.settings.country_field = country.key;
+      fields.push(field);
+      selectedKey = key;
+    }, true);
+  };
+  const save = async (definition) => {
+    if (!draft) throw new Error('Draft is not ready');
+    if (definition !== workingDefinition) {
+      workingDefinition = structuredClone(definition);
+      updateFieldCount();
+      renderFieldPicker();
+      renderInspector();
+    }
+    definition = workingDefinition;
+    if (saveInFlight) {
+      pendingDefinition = definition;
+      return;
+    }
+    saveInFlight = true;
+    let saveFailed = false;
+    setStatus('Saving draft...', 'saving');
+    updateActions();
+    try {
+      const saved = await request('save', { revision: String(draft.revision), definition: JSON.stringify(definition) });
+      draft = saved;
+      if (!pendingDefinition && workingDefinition === definition) {
+        applyPreview(saved.preview_html);
+        hasUnsavedChanges = false;
+      }
+      showDraftState();
+      window.dispatchEvent(new CustomEvent('fbv:draft-saved', { detail: draft }));
+    } catch (error) {
+      saveFailed = true;
+      pendingDefinition = pendingDefinition || workingDefinition;
+      hasUnsavedChanges = true;
+      setStatus(error.conflict ? 'Autosave conflict - reload required' : error.message, error.conflict ? 'conflict' : 'error');
+      window.dispatchEvent(new CustomEvent('fbv:draft-error', { detail: error }));
+      if (!error.conflict && (!error.status || error.status >= 500)) {
+        window.clearTimeout(retryTimer);
+        retryTimer = window.setTimeout(() => {
+          if (saveInFlight || !pendingDefinition) return;
+          const retryDefinition = pendingDefinition;
+          pendingDefinition = null;
+          save(retryDefinition).catch(() => {});
+        }, 2000);
+      }
+      throw error;
+    } finally {
+      saveInFlight = false;
+      if (!saveFailed && pendingDefinition) {
+        const nextDefinition = pendingDefinition;
+        pendingDefinition = null;
+        save(nextDefinition).catch(() => {});
+      }
+      updateActions();
+    }
+  };
+  const queueSave = (definition) => {
+    if (definition !== workingDefinition) {
+      workingDefinition = structuredClone(definition);
+      updateFieldCount();
+      renderFieldPicker();
+      renderInspector();
+    }
+    definition = workingDefinition;
+    window.clearTimeout(saveTimer);
+    window.clearTimeout(retryTimer);
+    pendingDefinition = definition;
+    hasUnsavedChanges = true;
+    setStatus('Unsaved changes', 'saving');
+    updateActions();
+    saveTimer = window.setTimeout(() => {
+      const nextDefinition = pendingDefinition;
+      pendingDefinition = null;
+      if (nextDefinition) save(nextDefinition).catch(() => {});
+    }, 700);
+  };
+
+  window.fbVisualDraft = { get current() { return draft ? { ...draft, definition: workingDefinition } : null; }, save, queueSave };
+  window.addEventListener('fbv:draft-change', (event) => {
+    if (event.detail?.definition) queueSave(event.detail.definition);
+  });
+  request('load').then((loaded) => {
+    draft = loaded;
+    workingDefinition = loaded.definition;
+    syncHeader(workingDefinition);
+    applyPreview(draft.preview_html);
+    renderInspector();
+    renderFieldPicker();
+    libraryButtons.forEach((button) => button.disabled = button.dataset.unsafe === '1' && !CAN_UNSAFE);
+    showDraftState();
+  })
+    .catch(() => setStatus('Draft unavailable', 'error'));
+
+  libraryButtons.forEach((button) => button.addEventListener('click', () => addField(button.dataset.fbvType)));
+  addRowButton.addEventListener('click', () => addRow(newRowColumns.value));
+  layoutList.addEventListener('change', (event) => {
+    if (!event.target.matches('[data-row-columns]')) return;
+    const row = event.target.closest('[data-layout-row]');
+    if (row) setRowColumns(row.dataset.layoutRow, event.target.value);
+  });
+  layoutList.addEventListener('click', (event) => {
+    const row = event.target.closest('[data-layout-row]');
+    if (!row) return;
+    const move = event.target.closest('[data-row-move]');
+    if (move && !move.disabled) moveRow(row.dataset.layoutRow, move.dataset.rowMove === 'up' ? -1 : 1);
+    const remove = event.target.closest('[data-row-delete]');
+    if (remove) deleteEmptyRow(row.dataset.layoutRow);
+  });
+  const bindPreview = () => {
+    if (!preview || preview.dataset.fbvBound === '1') return;
+    preview.dataset.fbvBound = '1';
+    preview.addEventListener('click', (event) => {
+      const field = event.target.closest('.fb-field[data-key]');
+      if (!field || !preview.contains(field)) return;
+      selectedKey = field.dataset.key;
+      markSelection();
+      renderInspector();
+      renderFieldPicker();
+    });
+    const clearDropTargets = () => preview.querySelectorAll('.is-drop-target, .is-dragging').forEach((element) => element.classList.remove('is-drop-target', 'is-dragging'));
+    preview.addEventListener('dragstart', (event) => {
+      const field = event.target.closest('.fb-field[data-key]');
+      if (!field) return;
+      draggedFieldKey = field.dataset.key;
+      field.classList.add('is-dragging');
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', draggedFieldKey);
+    });
+    preview.addEventListener('dragover', (event) => {
+      if (!draggedFieldKey) return;
+      const field = event.target.closest('.fb-field[data-key]');
+      const column = event.target.closest('.fb-col[data-fbv-col]');
+      if (!column) return;
+      event.preventDefault();
+      preview.querySelectorAll('.is-drop-target').forEach((element) => element.classList.remove('is-drop-target'));
+      (field && field.dataset.key !== draggedFieldKey ? field : column).classList.add('is-drop-target');
+      event.dataTransfer.dropEffect = 'move';
+    });
+    preview.addEventListener('drop', (event) => {
+      if (!draggedFieldKey) return;
+      const field = event.target.closest('.fb-field[data-key]');
+      const column = event.target.closest('.fb-col[data-fbv-col]');
+      event.preventDefault();
+      if (column) moveField(draggedFieldKey, column.dataset.fbvCol, field?.dataset.key || null);
+      draggedFieldKey = null;
+      clearDropTargets();
+    });
+    preview.addEventListener('dragend', () => {
+      draggedFieldKey = null;
+      clearDropTargets();
+    });
+    preview.addEventListener('submit', (event) => event.preventDefault(), true);
+  };
+  previewFrame.addEventListener('load', () => {
+    const frameDocument = previewFrame.contentDocument;
+    preview = frameDocument?.getElementById('fbvPreview') || null;
+    if (!preview) { setStatus('Public preview unavailable', 'error'); return; }
+    Array.from(frameDocument.body.children).forEach((element) => {
+      if (element.id !== 'site-main' && element.tagName !== 'SCRIPT') element.inert = true;
+    });
+    bindPreview();
+    if (draft?.preview_html) applyPreview(draft.preview_html);
+  });
+  previewFrame.src = previewFrame.dataset.src;
+  fieldPicker.addEventListener('change', () => {
+    selectedKey = fieldPicker.value || null;
+    markSelection();
+    renderInspector();
+  });
+  publishButton.addEventListener('click', async () => {
+    if (publishButton.disabled || !draft) return;
+    saveInFlight = true;
+    setStatus('Publishing draft...', 'saving');
+    updateActions();
+    try {
+      const published = await request('publish', { revision: String(draft.revision) });
+      draft = published;
+      workingDefinition = published.definition;
+      hasUnsavedChanges = false;
+      applyPreview(published.preview_html);
+      renderInspector();
+      syncHeader(workingDefinition);
+      setStatus(`Published - revision ${published.revision}`);
+    } catch (error) {
+      if (error.canonicalConflict) draft.published_changed = true;
+      setStatus(error.conflict ? 'Publish conflict - reload required' : error.message, error.conflict ? 'conflict' : 'error');
+    } finally {
+      saveInFlight = false;
+      updateActions();
+    }
+  });
+  resetButton.addEventListener('click', async () => {
+    if (!draft || resetButton.disabled || !window.confirm('Discard the visual draft and reload the latest Classic version?')) return;
+    saveInFlight = true;
+    setStatus('Reloading Classic version...', 'saving');
+    updateActions();
+    try {
+      const reset = await request('reset', { revision: String(draft.revision) });
+      draft = reset;
+      workingDefinition = reset.definition;
+      syncHeader(workingDefinition);
+      selectedKey = null;
+      pendingDefinition = null;
+      hasUnsavedChanges = false;
+      applyPreview(reset.preview_html);
+      renderInspector();
+      showDraftState();
+    } catch (error) {
+      setStatus(error.conflict ? 'Reset conflict - reload the page' : error.message, error.conflict ? 'conflict' : 'error');
+    } finally {
+      saveInFlight = false;
+      updateActions();
+    }
+  });
+  inspector.addEventListener('input', (event) => {
+    if (event.target.matches('[data-field-parent]')) {
+      moveField(selectedKey, event.target.value);
+      return;
+    }
+    const property = event.target.dataset.fieldProp;
+    const setting = event.target.dataset.settingProp;
+    if (!property && !setting && !event.target.matches('[data-field-options]')) return;
+    if (event.target.matches('[data-field-options]')) {
+      const parseOptionLine = (line) => {
+        const parts = [''];
+        let escaped = false;
+        for (const character of line) {
+          if (escaped) {
+            parts[parts.length - 1] += character === 'n' ? '\n' : character === 'r' ? '\r' : character;
+            escaped = false;
+          } else if (character === '\\') escaped = true;
+          else if (character === '|') parts.push('');
+          else parts[parts.length - 1] += character;
+        }
+        if (escaped) parts[parts.length - 1] += '\\';
+        return parts;
+      };
+      const lines = event.target.value.split(/\r?\n/).filter((line) => line.trim() !== '');
+      const parsed = lines.map(parseOptionLine);
+      const options = parsed.map(([value = '', label = '', price = '0']) => ({ value, label, price: Number(price) }));
+      const optionValues = options.map((option) => option.value);
+      if (!options.length || options.length > 200 || parsed.some((parts) => parts.length < 2 || parts.length > 3) || new Set(optionValues).size !== optionValues.length || options.some((option) => option.value.trim() === '' || option.label.trim() === '' || /[\x00-\x1f\x7f]/.test(option.value) || !Number.isSafeInteger(option.price) || Math.abs(option.price) > 1000000000000)) {
+        setStatus('Options need unique value|Label|integer price entries', 'error');
+        return;
+      }
+      mutateDefinition((definition) => {
+        definition.form.fields.find((field) => field.key === selectedKey).options = options;
+        const allowedValues = new Set(options.map((option) => option.value));
+        Object.values(definition.form.settings.translations || {}).forEach((translation) => {
+          const translated = translation?.fields?.[selectedKey]?.options;
+          if (!translated) return;
+          Object.keys(translated).forEach((value) => { if (!allowedValues.has(value)) delete translated[value]; });
+        });
+      });
+      return;
+    }
+    const value = event.target.type === 'checkbox' ? event.target.checked : event.target.value;
+    const selected = currentField();
+    if (!selected) return;
+    if (selected.type === 'country' && property === 'hidden' && value && currentFields().some((candidate) => candidate.type === 'intl_phone' && candidate.settings?.country_field === selected.key)) {
+      event.target.checked = false;
+      setStatus('A linked international phone requires a visible country', 'error');
+      return;
+    }
+    if (selected.type === 'country' && property === 'required' && !value && currentFields().some((candidate) => candidate.type === 'intl_phone' && candidate.required && candidate.settings?.country_field === selected.key)) {
+      event.target.checked = true;
+      setStatus('Country must remain required while its linked phone is required', 'error');
+      return;
+    }
+    mutateDefinition((definition) => {
+      const field = definition.form.fields.find((candidate) => candidate.key === selectedKey);
+      if (!field) return;
+      if (setting) field.settings[setting] = value;
+      else {
+        field[property] = value;
+        if (field.type === 'intl_phone' && property === 'required' && value) {
+          const countryField = definition.form.fields.find((candidate) => candidate.key === field.settings?.country_field);
+          if (countryField) countryField.required = true;
+        }
+      }
+    });
+  });
+  inspector.addEventListener('click', (event) => {
+    const move = event.target.closest('[data-field-move]');
+    if (move && !move.disabled) {
+      reorderField(selectedKey, move.dataset.fieldMove === 'up' ? -1 : 1);
+      return;
+    }
+    const button = event.target.closest('[data-fbv-delete]');
+    if (!button || button.disabled) return;
+    const field = currentField();
+    if (!field) return;
+    if (field.type === 'country' && currentFields().some((candidate) => candidate.type === 'intl_phone' && candidate.settings?.country_field === field.key)) {
+      setStatus('Remove linked international phone fields first', 'error');
+      return;
+    }
+    mutateDefinition((definition) => {
+      definition.form.fields = definition.form.fields.filter((candidate) => candidate.key !== selectedKey);
+      const settings = definition.form.settings;
+      settings.columns = (settings.columns || []).filter((key) => key !== selectedKey);
+      ['confirmation_email_field', 'reply_to_email_field'].forEach((key) => { if (settings[key] === selectedKey) settings[key] = ''; });
+      Object.values(settings.translations || {}).forEach((translation) => { if (translation?.fields) delete translation.fields[selectedKey]; });
+      definition.form.fields.forEach((candidate) => {
+        if (candidate.validation?.after_field === selectedKey) delete candidate.validation.after_field;
+        if (candidate.validation?.before_field === selectedKey) delete candidate.validation.before_field;
+      });
+    });
+    selectedKey = null;
+    renderInspector();
+    renderFieldPicker();
+  });
+
+  window.addEventListener('beforeunload', (event) => {
+    if (!hasUnsavedChanges && !saveInFlight) return;
+    event.preventDefault();
+    event.returnValue = '';
+  });
+
+  devices.forEach((button) => button.addEventListener('click', () => {
+    devices.forEach((candidate) => {
+      const active = candidate === button;
+      candidate.classList.toggle('is-active', active);
+      candidate.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    canvas.dataset.device = button.dataset.device;
+  }));
+})();
+</script>

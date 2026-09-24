@@ -17,6 +17,23 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         echo '<div class="fba-empty">Invalid CSRF token.</div>';
         return;
     }
+    try {
+        $mutationLock = fb_acquire_form_mutation_lock($pdo, $formId);
+        register_shutdown_function(static function () use ($pdo, $mutationLock): void { fb_release_form_mutation_lock($pdo, $mutationLock); });
+    } catch (UnexpectedValueException $error) {
+        echo '<div class="fba-empty">' . htmlspecialchars($error->getMessage(), ENT_QUOTES) . '</div>';
+        return;
+    }
+    $form = fb_get_form($pdo, $formId);
+    if ($form === null || !empty($form['deleted_at']) || !fb_can_access_form($pdo, $form, $uid)) {
+        echo '<div class="fba-empty">Form not found or access denied.</div>';
+        return;
+    }
+    $settings = fb_form_settings($form);
+    $access = fb_form_access($form);
+    $fields = fb_flat_fields(fb_get_fields($pdo, $formId));
+    $inputFields = array_values(array_filter($fields, static fn($field) => !empty($types[$field['type']]['input']) && empty($types[$field['type']]['file'])));
+    $canDelegate = user_can($pdo, $uid, 'plugin.form-builder.forms.manage-any') || $access['owner'] === $uid;
     $act = (string)($_POST['fb_action'] ?? '');
 
     if ($act === 'save_general') {
@@ -58,7 +75,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $presets = fb_accent_presets();
         $accent = (string)($_POST['accent'] ?? 'green');
         $settings['accent'] = isset($presets[$accent]) ? $accent : 'green';
-        $settings['unsafe_code_enabled'] = $canUnsafeCode;
+        if ($canUnsafeCode) $settings['unsafe_code_enabled'] = true;
         $pdo->prepare('UPDATE `fb_forms` SET settings_json = ?, css = ?, js = ? WHERE id = ?')
             ->execute([
                 fb_json_encode($settings),

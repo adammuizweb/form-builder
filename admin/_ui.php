@@ -25,6 +25,13 @@ function fb_url(array $over = []): string {
     return '?' . http_build_query($q);
 }
 
+function fb_visual_builder_url(int $formId): string {
+    return '?' . http_build_query([
+        'page' => 'admin/tools/form-builder/editor',
+        'id' => $formId,
+    ]);
+}
+
 // Admin pages are included AFTER the theme header is printed, so PHP header()
 // redirects fail ("headers already sent"). Use a JS redirect + return instead.
 function fb_js_redirect(string $url): void {

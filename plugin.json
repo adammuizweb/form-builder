@@ -1,6 +1,6 @@
 {
     "name": "form-builder",
-    "version": "1.7.9",
+    "version": "2.0.0",
     "title": "Form Builder",
     "icon": "icon.png",
     "description": "Production form builder with multilingual definitions, country-aware international phone fields, private validated uploads, idempotent submissions, review workflows, Core Mail, CSV export, and shortcode/theme-section embedding.",
@@ -108,6 +108,17 @@
                     "admin",
                     "author"
                 ]
+            },
+            {
+                "route": "admin/tools/form-builder/editor",
+                "file": "admin/visual-builder.php",
+                "title": "Visual Form Builder",
+                "permission": "plugin.form-builder.workspace.access",
+                "roles": [
+                    "admin",
+                    "author"
+                ],
+                "hidden": true
             },
             {
                 "route": "admin/bin/form-builder/index",

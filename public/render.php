@@ -76,15 +76,12 @@ function fb_render_field_html(array $f, string $slug, string $instance, bool $un
         <?php if (!empty($f['help_text'])): ?><div class="fb-help"><?= fb_h($f['help_text']) ?></div><?php endif; ?>
       <?php elseif ($type === 'country'): ?>
         <label class="fb-label" for="<?= fb_h($id) ?>"><?= fb_h($label) ?> <?= $req ? '<span class="req">*</span>' : '' ?></label>
-        <div class="fb-country-picker">
-          <input type="search" class="fb-country-search" data-fb-country-search="<?= fb_h($id) ?>" placeholder="<?= fb_h(fb_message($publicSettings, 'country_search')) ?>" aria-label="<?= fb_h(fb_message($publicSettings, 'country_search')) ?>" autocomplete="off">
-          <select id="<?= fb_h($id) ?>" name="<?= fb_h($key) ?>" data-fb-country <?= $req ? 'required' : '' ?>>
-            <option value=""><?= fb_h($f['placeholder'] ?: fb_message($publicSettings, 'country_placeholder')) ?></option>
-            <?php foreach (fb_country_catalog() as $countryCode => $country): ?>
-            <option value="<?= fb_h($countryCode) ?>" data-dial="<?= fb_h($country['dial']) ?>"><?= fb_h($country['name']) ?></option>
-            <?php endforeach; ?>
-          </select>
-        </div>
+        <select id="<?= fb_h($id) ?>" name="<?= fb_h($key) ?>" data-fb-country <?= $req ? 'required' : '' ?>>
+          <option value=""><?= fb_h($f['placeholder'] ?: fb_message($publicSettings, 'country_placeholder')) ?></option>
+          <?php foreach (fb_country_catalog() as $countryCode => $country): ?>
+          <option value="<?= fb_h($countryCode) ?>" data-dial="<?= fb_h($country['dial']) ?>"><?= fb_h($country['name']) ?></option>
+          <?php endforeach; ?>
+        </select>
         <?php if (!empty($f['help_text'])): ?><div class="fb-help"><?= fb_h($f['help_text']) ?></div><?php endif; ?>
       <?php elseif ($type === 'intl_phone'):
         $countryField = (string)($fsA['country_field'] ?? ''); ?>
@@ -203,8 +200,6 @@ function fb_render_form(PDO $pdo, array $form): string {
 }
 .fb-field textarea { min-height: 110px; resize: vertical; }
 .fb-field select { cursor: pointer; }
-.fb-country-picker { display: grid; gap: .45rem; }
-.fb-country-search { appearance: none; }
 .fb-intl-phone { display: flex; align-items: stretch; }
 .fb-intl-phone .fb-dial { display: inline-flex; align-items: center; min-width: 4.5rem; padding: .7rem .8rem; color: var(--fb-muted); background: var(--fb-bg); border: 1.5px solid var(--fb-border); border-right: 0; border-radius: var(--fb-radius) 0 0 var(--fb-radius); font-variant-numeric: tabular-nums; }
 .fb-intl-phone input[type=tel] { border-radius: 0 var(--fb-radius) var(--fb-radius) 0; }
@@ -362,18 +357,7 @@ function fb_render_form(PDO $pdo, array $form): string {
   form.addEventListener('change', recalc);
   recalc();
 
-  // ---- Searchable countries and linked international phone prefixes ----
-  root.querySelectorAll('[data-fb-country-search]').forEach(function (search) {
-    var select = document.getElementById(search.getAttribute('data-fb-country-search'));
-    if (!select) return;
-    search.addEventListener('input', function () {
-      var query = search.value.trim().toLowerCase();
-      Array.prototype.forEach.call(select.options, function (option, index) {
-        if (index === 0) return;
-        option.hidden = query !== '' && (option.textContent + ' ' + option.value + ' +' + (option.getAttribute('data-dial') || '')).toLowerCase().indexOf(query) === -1;
-      });
-    });
-  });
+  // ---- Linked international phone prefixes ----
   function syncPhone(phone) {
     var country = form.elements[phone.getAttribute('data-country-field')];
     var option = country && country.options ? country.options[country.selectedIndex] : null;

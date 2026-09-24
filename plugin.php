@@ -13,6 +13,8 @@ if (function_exists('register_frontend_route')) {
     // Builder AJAX endpoint (admin-authenticated, JSON). Frontend route keeps
     // output clean of theme markup.
     register_frontend_route('fb-builder', PLUGIN_PATH . '/form-builder/admin/ajax.php', ['match' => 'exact', 'methods' => ['POST']]);
+    register_frontend_route('fb-visual-builder', PLUGIN_PATH . '/form-builder/admin/visual-ajax.php', ['match' => 'exact', 'methods' => ['POST']]);
+    register_frontend_route('fb-visual-preview', PLUGIN_PATH . '/form-builder/admin/visual-preview.php', ['match' => 'exact', 'methods' => ['GET']]);
 }
 
 const FB_SECRET_KEY = 'form_builder_secret';
@@ -38,7 +40,28 @@ function fb_assert_schema(PDO $pdo): void {
     $st = $pdo->query("SELECT reference_code, workflow_status, updated_at FROM fb_submissions LIMIT 0");
     if (!$st) throw new RuntimeException('Form Builder migrations are incomplete.');
     if (!$pdo->query('SELECT definition_id FROM fb_import_ledger LIMIT 0') || !$pdo->query('SELECT source_namespace FROM fb_submission_imports LIMIT 0')) throw new RuntimeException('Form Builder import migrations are incomplete.');
+    if (!$pdo->query('SELECT form_id, revision, published_sha256 FROM fb_builder_drafts LIMIT 0')) throw new RuntimeException('Form Builder visual draft migration is incomplete.');
     $checked[$key] = true;
+}
+
+function fb_acquire_form_mutation_lock(PDO $pdo, int $formId, int $timeoutSeconds = 5): string {
+    if ($formId < 1) throw new InvalidArgumentException('Invalid form lock.');
+    $database = (string)$pdo->query('SELECT DATABASE()')->fetchColumn();
+    if ($database === '') throw new RuntimeException('No selected database for form lock.');
+    $name = 'fb:' . substr(hash('sha256', $database), 0, 20) . ':form:' . $formId;
+    $statement = $pdo->prepare('SELECT GET_LOCK(?, ?)');
+    $statement->execute([$name, max(0, min(30, $timeoutSeconds))]);
+    if ((int)$statement->fetchColumn() !== 1) throw new UnexpectedValueException('This form is being changed in another session.');
+    return $name;
+}
+
+function fb_release_form_mutation_lock(PDO $pdo, string $name): void {
+    try {
+        $statement = $pdo->prepare('SELECT RELEASE_LOCK(?)');
+        $statement->execute([$name]);
+    } catch (Throwable $error) {
+        error_log('[form-builder] unable to release form lock: ' . $error->getMessage());
+    }
 }
 
 /** @deprecated Runtime schema mutation was removed in 1.6.0. */
@@ -360,44 +383,97 @@ function fb_accessible_forms(PDO $pdo, string $statusFilter = "status != 'archiv
 // Move a form to the Bin. Slug is suffixed so it can be reused and restored later.
 function fb_trash_form(PDO $pdo, array $form): void {
     $fid = (int)$form['id'];
-    $trashedSlug = substr((string)$form['slug'], 0, 60) . '--trash-' . $fid;
-    $pdo->prepare('UPDATE `fb_forms` SET deleted_at = NOW(), slug = ? WHERE id = ?')->execute([$trashedSlug, $fid]);
+    $mutationLock = fb_acquire_form_mutation_lock($pdo, $fid);
+    try {
+        $current = fb_get_form($pdo, $fid);
+        if ($current === null || !empty($current['deleted_at'])) throw new UnexpectedValueException('Form changed before it could be moved to the Bin.');
+        $trashedSlug = substr((string)$current['slug'], 0, 60) . '--trash-' . $fid;
+        $update = $pdo->prepare('UPDATE `fb_forms` SET deleted_at = NOW(), slug = ? WHERE id = ? AND deleted_at IS NULL');
+        $update->execute([$trashedSlug, $fid]);
+        if ($update->rowCount() !== 1) throw new UnexpectedValueException('Form changed before it could be moved to the Bin.');
+    } finally {
+        fb_release_form_mutation_lock($pdo, $mutationLock);
+    }
 }
 
 // Restore a trashed form. Original slug is recovered if still free.
 function fb_restore_form(PDO $pdo, array $form): void {
     $fid = (int)$form['id'];
-    $base = (string)preg_replace('/--trash-\d+$/', '', (string)$form['slug']);
-    if ($base === '') $base = 'form-' . $fid;
-    $slug = $base;
-    $i = 2;
-    $chk = $pdo->prepare('SELECT id FROM `fb_forms` WHERE slug = ? AND id != ? LIMIT 1');
-    while (true) {
-        $chk->execute([$slug, $fid]);
-        if ($chk->fetchColumn() === false) break;
-        $slug = $base . '-' . $i++;
+    $mutationLock = fb_acquire_form_mutation_lock($pdo, $fid);
+    try {
+        $current = fb_get_form($pdo, $fid);
+        if ($current === null || empty($current['deleted_at'])) throw new UnexpectedValueException('Form changed before it could be restored.');
+        $base = (string)preg_replace('/--trash-\d+$/', '', (string)$current['slug']);
+        if ($base === '') $base = 'form-' . $fid;
+        $slug = $base;
+        $i = 2;
+        $chk = $pdo->prepare('SELECT id FROM `fb_forms` WHERE slug = ? AND id != ? LIMIT 1');
+        while (true) {
+            $chk->execute([$slug, $fid]);
+            if ($chk->fetchColumn() === false) break;
+            $slug = $base . '-' . $i++;
+        }
+        $update = $pdo->prepare('UPDATE `fb_forms` SET deleted_at = NULL, slug = ?, updated_at = NOW() WHERE id = ? AND deleted_at IS NOT NULL');
+        $update->execute([$slug, $fid]);
+        if ($update->rowCount() !== 1) throw new UnexpectedValueException('Form changed before it could be restored.');
+    } finally {
+        fb_release_form_mutation_lock($pdo, $mutationLock);
     }
-    $pdo->prepare('UPDATE `fb_forms` SET deleted_at = NULL, slug = ?, updated_at = NOW() WHERE id = ?')->execute([$slug, $fid]);
 }
 
-// Hard delete a form: submissions, uploaded files, fields, the form itself.
+// Hard delete a form: submissions, uploaded files, visual draft, fields, and the form itself.
 function fb_hard_delete_form(PDO $pdo, array $form): void {
     $fid = (int)$form['id'];
-    $subs = $pdo->prepare('SELECT files_json FROM `fb_submissions` WHERE form_id = ?');
-    $subs->execute([$fid]);
-    $root = fb_files_base_dir($form);
-    while ($r = $subs->fetch(PDO::FETCH_ASSOC)) {
-        $fj = json_decode((string)($r['files_json'] ?? ''), true);
-        if (is_array($fj)) foreach ($fj as $info) {
-            $rel = (string)($info['stored'] ?? '');
-            $path = function_exists('fb_contained_path') ? fb_contained_path($root, $rel, true) : null;
-            if ($rel !== '' && $path === null) throw new RuntimeException('Refusing unsafe private attachment path.');
-            if ($path !== null && is_file($path) && !unlink($path)) throw new RuntimeException('Unable to remove private attachment.');
+    $mutationLock = fb_acquire_form_mutation_lock($pdo, $fid);
+    try {
+        $current = fb_get_form($pdo, $fid);
+        if ($current === null || (!empty($current['deleted_at'])) !== (!empty($form['deleted_at']))) throw new UnexpectedValueException('Form changed before it could be deleted.');
+        $subs = $pdo->prepare('SELECT files_json FROM `fb_submissions` WHERE form_id = ?');
+        $subs->execute([$fid]);
+        $root = fb_files_base_dir($current);
+        while ($r = $subs->fetch(PDO::FETCH_ASSOC)) {
+            $fj = json_decode((string)($r['files_json'] ?? ''), true);
+            if (is_array($fj)) foreach ($fj as $info) {
+                $rel = (string)($info['stored'] ?? '');
+                $path = function_exists('fb_contained_path') ? fb_contained_path($root, $rel, true) : null;
+                if ($rel !== '' && ($path === null || !str_starts_with($rel, $fid . '/'))) throw new RuntimeException('Refusing unsafe private attachment path.');
+            }
         }
+        $pendingStorage = null;
+        $formStorage = $root . '/' . $fid;
+        if (is_dir($formStorage)) {
+            if (is_link($formStorage) || realpath($formStorage) !== $formStorage) throw new RuntimeException('Refusing unsafe form storage directory.');
+            $trash = fb_ensure_storage_directory($root, ['.trash']);
+            $pendingStorage = $trash . '/pending-' . $fid . '-' . bin2hex(random_bytes(8));
+            if (!rename($formStorage, $pendingStorage)) throw new RuntimeException('Unable to stage Form Builder storage cleanup.');
+        }
+        $pdo->beginTransaction();
+        try {
+            $pdo->prepare('DELETE FROM `fb_submissions` WHERE form_id = ?')->execute([$fid]);
+            $pdo->prepare('DELETE FROM `fb_builder_drafts` WHERE form_id = ?')->execute([$fid]);
+            $pdo->prepare('DELETE FROM `fb_fields` WHERE form_id = ?')->execute([$fid]);
+            $pdo->prepare('DELETE FROM `fb_forms` WHERE id = ?')->execute([$fid]);
+            $pdo->commit();
+        } catch (Throwable $error) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            if ($pendingStorage !== null && is_dir($pendingStorage) && !file_exists($formStorage) && !rename($pendingStorage, $formStorage)) {
+                error_log('[form-builder] unable to restore pending form storage after rollback: ' . $pendingStorage);
+            }
+            throw $error;
+        }
+        if ($pendingStorage !== null && is_dir($pendingStorage)) {
+            $readyStorage = dirname($pendingStorage) . '/ready-' . $fid . '-' . substr($pendingStorage, -16);
+            if (!rename($pendingStorage, $readyStorage)) {
+                error_log('[form-builder] storage cleanup remains pending: ' . $pendingStorage);
+            } else try {
+                fb_remove_storage_tree($readyStorage);
+            } catch (Throwable $error) {
+                error_log('[form-builder] deferred storage cleanup failed: ' . $error->getMessage());
+            }
+        }
+    } finally {
+        fb_release_form_mutation_lock($pdo, $mutationLock);
     }
-    $pdo->prepare('DELETE FROM `fb_submissions` WHERE form_id = ?')->execute([$fid]);
-    $pdo->prepare('DELETE FROM `fb_fields` WHERE form_id = ?')->execute([$fid]);
-    $pdo->prepare('DELETE FROM `fb_forms` WHERE id = ?')->execute([$fid]);
 }
 
 // ---------------- Pricing ----------------
@@ -692,6 +768,75 @@ function fb_ensure_storage_directory(string $base, array $segments): string {
     return $path;
 }
 
+function fb_remove_storage_tree(string $path): void {
+    if (is_link($path)) throw new RuntimeException('Refusing symlink in Form Builder storage.');
+    if (is_dir($path)) {
+        foreach (new FilesystemIterator($path) as $entry) fb_remove_storage_tree($entry->getPathname());
+        if (!rmdir($path)) throw new RuntimeException('Unable to remove Form Builder storage directory.');
+    } elseif (is_file($path) && !unlink($path)) {
+        throw new RuntimeException('Unable to remove Form Builder private file.');
+    }
+}
+
+function fb_merge_storage_tree(string $source, string $destination): void {
+    if (!is_dir($source) || is_link($source) || is_link($destination)) throw new RuntimeException('Unsafe Form Builder recovery directory.');
+    if (!is_dir($destination) && !mkdir($destination, 0750)) throw new RuntimeException('Unable to create Form Builder recovery directory.');
+    foreach (new FilesystemIterator($source) as $entry) {
+        if ($entry->isLink()) throw new RuntimeException('Refusing symlink during Form Builder storage recovery.');
+        $target = $destination . '/' . $entry->getFilename();
+        if ($entry->isDir()) {
+            fb_merge_storage_tree($entry->getPathname(), $target);
+        } elseif (!file_exists($target)) {
+            if (!rename($entry->getPathname(), $target)) throw new RuntimeException('Unable to recover Form Builder private file.');
+        } elseif (!is_file($target) || !hash_equals((string)hash_file('sha256', $entry->getPathname()), (string)hash_file('sha256', $target)) || !unlink($entry->getPathname())) {
+            throw new RuntimeException('Conflicting Form Builder private file during recovery.');
+        }
+    }
+    if (!rmdir($source)) throw new RuntimeException('Unable to finish Form Builder storage recovery.');
+}
+
+function fb_recover_storage_trash(PDO $pdo, string $base, int $limit = 5, ?int $onlyFormId = null, bool $formLockHeld = false): void {
+    $root = fb_normalize_storage_base($base);
+    $trash = $root . '/.trash';
+    if (!is_dir($trash) || is_link($trash)) return;
+    $processed = 0;
+    foreach (new FilesystemIterator($trash) as $entry) {
+        if (!$entry->isDir() || $entry->isLink()) continue;
+        $name = $entry->getFilename();
+        if (preg_match('/\A(pending|ready)-(\d+)-[a-f0-9]{16}\z/', $name, $match) !== 1) continue;
+        if ($onlyFormId !== null && (int)$match[2] !== $onlyFormId) continue;
+        if ($processed++ >= max(1, $limit)) break;
+        $path = $entry->getPathname();
+        if ($match[1] === 'pending') {
+            $formId = (int)$match[2];
+            $mutationLock = $formLockHeld && $onlyFormId === $formId ? null : fb_acquire_form_mutation_lock($pdo, $formId, 1);
+            try {
+                $check = $pdo->prepare('SELECT 1 FROM fb_forms WHERE id = ? LIMIT 1');
+                $check->execute([$formId]);
+                if ($check->fetchColumn() !== false) {
+                    $destination = $root . '/' . $match[2];
+                    if (!file_exists($destination)) {
+                        if (!rename($path, $destination)) throw new RuntimeException('Unable to restore pending Form Builder storage.');
+                    } else {
+                        fb_merge_storage_tree($path, $destination);
+                    }
+                    continue;
+                }
+                $ready = $trash . '/ready-' . $match[2] . '-' . substr($name, -16);
+                if (!rename($path, $ready)) throw new RuntimeException('Unable to finalize pending Form Builder storage cleanup.');
+                $path = $ready;
+            } finally {
+                if ($mutationLock !== null) fb_release_form_mutation_lock($pdo, $mutationLock);
+            }
+        }
+        try {
+            fb_remove_storage_tree($path);
+        } catch (Throwable $error) {
+            error_log('[form-builder] deferred storage cleanup failed: ' . $error->getMessage());
+        }
+    }
+}
+
 // ---------------- reCAPTCHA (global keys, per-form toggle) ----------------
 function fb_recaptcha_keys(PDO $pdo): array {
     return [
@@ -728,6 +873,11 @@ add_action('admin_init', function (): void {
     if (!($pdo instanceof PDO)) return;
     fb_get_secret($pdo);
     fb_assert_schema($pdo);
+    try {
+        fb_recover_storage_trash($pdo, fb_files_base_dir([]));
+    } catch (Throwable $error) {
+        error_log('[form-builder] storage recovery failed: ' . $error->getMessage());
+    }
 });
 
 // ---------------- Bin integration (soft-deleted fields/elements) ----------------
@@ -781,6 +931,7 @@ add_action('plugin_uninstall', function (string $name): void {
         };
         $remove($root);
     }
+    $pdo->exec('DROP TABLE IF EXISTS `fb_builder_drafts`');
     $pdo->exec('DROP TABLE IF EXISTS `fb_import_ledger`');
     $pdo->exec('DROP TABLE IF EXISTS `fb_submission_imports`');
     $pdo->exec('DROP TABLE IF EXISTS `fb_rate_limits`');
@@ -794,6 +945,7 @@ add_action('plugin_uninstall', function (string $name): void {
 
 // ---------------- Shortcode: [form slug="..."] ----------------
 require_once __DIR__ . '/includes/definitions.php';
+require_once __DIR__ . '/includes/visual-drafts.php';
 require_once __DIR__ . '/includes/submission-import.php';
 require_once __DIR__ . '/includes/submission-export.php';
 require_once __DIR__ . '/public/render.php';

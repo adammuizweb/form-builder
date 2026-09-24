@@ -230,8 +230,12 @@ function fb_upsert_form_definition(PDO $pdo, string|array $input, ?int $actorId 
     $settings['unsafe_code_enabled'] = $allowUnsafeCode && $hasUnsafeCode;
     $hash = hash('sha256', fb_json_encode($definition));
     $definitionId = (string)($definition['definition_id'] ?? hash('sha256', 'form-builder:' . $form['slug']));
-    $pdo->beginTransaction();
+    $lockLookup = $pdo->prepare('SELECT id FROM fb_forms WHERE slug = ? LIMIT 1');
+    $lockLookup->execute([$form['slug']]);
+    $lockFormId = $lockLookup->fetchColumn();
+    $mutationLock = $lockFormId !== false ? fb_acquire_form_mutation_lock($pdo, (int)$lockFormId) : null;
     try {
+        $pdo->beginTransaction();
         $existing = $pdo->prepare('SELECT * FROM fb_forms WHERE slug = ? FOR UPDATE'); $existing->execute([$form['slug']]); $row = $existing->fetch(PDO::FETCH_ASSOC);
         $css = $allowUnsafeCode && $form['css'] !== '' ? $form['css'] : null; $js = $allowUnsafeCode && $form['js'] !== '' ? $form['js'] : null;
         if ($row) {
@@ -257,6 +261,7 @@ function fb_upsert_form_definition(PDO $pdo, string|array $input, ?int $actorId 
         $pdo->prepare('INSERT INTO fb_import_ledger (definition_id,form_slug,schema_version,definition_sha256,form_id,imported_by) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE definition_sha256=VALUES(definition_sha256),form_id=VALUES(form_id),imported_by=VALUES(imported_by),created_at=NOW()')->execute([$definitionId,$form['slug'],FB_DEFINITION_SCHEMA,$hash,$formId,$actorId]);
         $pdo->commit(); return ['form_id'=>$formId,'slug'=>$form['slug'],'sha256'=>$hash];
     } catch (Throwable $error) { if ($pdo->inTransaction()) $pdo->rollBack(); throw $error; }
+    finally { if ($mutationLock !== null) fb_release_form_mutation_lock($pdo, $mutationLock); }
 }
 
 function fb_normalize_locale(string $locale): ?string {
