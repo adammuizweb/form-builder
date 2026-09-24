@@ -47,7 +47,12 @@ $check(fb_project_root() === realpath($sandbox)
     && fb_files_base_dir([]) === $preparedBase
     && is_writable($preparedBase),
     'storage safely provisions a writable PROJECT_ROOT/private_files/form-builder namespace');
-$check(($GLOBALS['_routes']['form-submit']['match'] ?? null) === 'exact' && ($GLOBALS['_routes']['form-submit']['methods'] ?? null) === ['POST'] && ($GLOBALS['_routes']['fb-builder']['methods'] ?? null) === ['POST'], 'runtime route registration is exact and method-aware');
+$check(($GLOBALS['_routes']['form-submit']['match'] ?? null) === 'exact'
+    && ($GLOBALS['_routes']['form-submit']['methods'] ?? null) === ['POST']
+    && ($GLOBALS['_routes']['fb-builder']['methods'] ?? null) === ['POST']
+    && ($GLOBALS['_routes']['fb-visual-builder']['match'] ?? null) === 'exact'
+    && ($GLOBALS['_routes']['fb-visual-builder']['methods'] ?? null) === ['POST'],
+    'runtime route registration is exact and method-aware');
 $formAccess = ['created_by'=>1,'access_json'=>fb_json_encode(['owner'=>1,'roles'=>['international-editor'],'users'=>[2],'submissions'=>['roles'=>['international-reviewer'],'users'=>[3]]])];
 $GLOBALS['_actors'] = [1=>['admin'],2=>['author'],3=>['author'],4=>['international-reviewer'],5=>['author'],6=>['admin']];
 foreach ([1,2,3,4,5,6] as $accessUid) $GLOBALS['_permissions'][$accessUid]['plugin.form-builder.workspace.access'] = true;
@@ -93,7 +98,7 @@ $check($context === ['csrf'=>'core-stateless-token','ip'=>'203.0.113.10'] && fb_
 $token = fb_started_token(new PDO('sqlite::memory:'), 7, 'fr-ca');
 $check(fb_started_check(new PDO('sqlite::memory:'), 7, $token, 0, 'fr-ca') && !fb_started_check(new PDO('sqlite::memory:'), 7, $token, 0, 'ja'), 'signed start token binds any valid rendered locale');
 $migrations = plugin_migrations_discover($sandbox . '/plugins/form-builder');
-$check(array_keys($migrations) === ['0001-baseline.sql','0002-submission-workflow.php'], 'Core discovers the final append-only migration filenames');
+$check(array_keys($migrations) === ['0001-baseline.sql','0002-submission-workflow.php','0003-visual-builder-drafts.php'], 'Core discovers the final append-only migration filenames');
 
 $pathBase = fb_files_base_dir([]); mkdir($pathBase . '/1', 0750); file_put_contents($pathBase . '/1/test.pdf', '%PDF-contract');
 $check(fb_contained_path($pathBase, '1/test.pdf', true) === $pathBase . '/1/test.pdf' && fb_contained_path($pathBase, '../private_files/secret', false) === null && fb_contained_path($pathBase, '/etc/passwd', true) === null, 'private path containment accepts only contained regular paths');

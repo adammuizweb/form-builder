@@ -22,12 +22,20 @@ $check(($adminPages['admin/tools/form-builder/editor']['file'] ?? null) === 'adm
     && ($adminPages['admin/tools/form-builder/editor']['permission'] ?? null) === 'plugin.form-builder.workspace.access'
     && ($adminPages['admin/tools/form-builder/editor']['hidden'] ?? false) === true,
     'Visual Builder has a hidden permission-bound dashboard route');
-$check(is_file($root . '/migrations/0001-baseline.sql') && is_file($root . '/migrations/0002-submission-workflow.php') && count(glob($root . '/migrations/*') ?: []) === 2, 'only final append-only migration names ship');
+$check(is_file($root . '/migrations/0001-baseline.sql') && is_file($root . '/migrations/0002-submission-workflow.php') && is_file($root . '/migrations/0003-visual-builder-drafts.php') && count(glob($root . '/migrations/*') ?: []) === 3, 'only final append-only migration names ship');
 $builder = (string)file_get_contents($root . '/tools/build-package.php');
 $check(!str_contains($builder, "'form-builder/' .") && str_contains($builder, "str_replace(DIRECTORY_SEPARATOR, '/', \$relative)"), 'package builder writes plugin.json at the archive root');
 $check(str_contains($builder, "str_starts_with(\$relative, 'tests/')"), 'release package excludes environment-specific test files');
 $ajax = (string)file_get_contents($root . '/admin/ajax.php');
 $check(!str_contains($ajax, "'Server error: ' . \$e->getMessage()") && str_contains($ajax, 'error_log('), 'admin AJAX logs detail and returns no raw exception');
+$visualAjax = (string)file_get_contents($root . '/admin/visual-ajax.php');
+$check(str_contains($visualAjax, "user_can(\$pdo, \$uid, 'plugin.form-builder.workspace.access')")
+    && str_contains($visualAjax, 'csrf_check(')
+    && str_contains($visualAjax, 'fb_can_access_form($pdo, $form, $uid)')
+    && str_contains($visualAjax, "user_can(\$pdo, \$uid, 'plugin.form-builder.unsafe-code.manage')")
+    && str_contains($visualAjax, 'UnexpectedValueException')
+    && str_contains($visualAjax, 'error_log('),
+    'Visual draft API requires workspace, CSRF, form scope, unsafe-code capability, and safe conflict handling');
 $submit = (string)file_get_contents($root . '/public/submit.php');
 $check(!preg_match('/(?<!jy_)mail\s*\(/', $submit) && strpos($submit, '$pdo->commit()') < strpos($submit, 'jy_mail_send'), 'Core mail executes only after persistence');
 $check(!str_contains($submit, 'HTTP_X_FORWARDED_FOR') && str_contains($submit, 'do_action_isolated'), 'submission path retains trusted IP and isolated observer contracts');
@@ -55,8 +63,19 @@ $check(str_contains($visualBuilder, "adiwira_require_permission(\$pdo, 'plugin.f
     && str_contains($visualBuilder, 'class="fbv-preview" inert')
     && str_contains($visualBuilder, 'data-device="desktop"')
     && str_contains($visualBuilder, 'data-device="mobile"')
+    && str_contains($visualBuilder, "const ENDPOINT = '/fb-visual-builder/'")
+    && str_contains($visualBuilder, "window.addEventListener('fbv:draft-change'")
     && str_contains($visualBuilder, 'Open Classic Builder'),
-    'Visual Builder foundation is authorized, canonical-rendered, inert, responsive, and Classic-compatible');
+    'Visual Builder is authorized, canonical-rendered, inert, responsive, autosave-ready, and Classic-compatible');
+$draftHelpers = (string)file_get_contents($root . '/includes/visual-drafts.php');
+$check(str_contains($draftHelpers, 'FOR UPDATE')
+    && str_contains($draftHelpers, 'revision = ?')
+    && str_contains($draftHelpers, 'hash_equals(')
+    && str_contains($draftHelpers, 'fb_visual_merge_protected_code('),
+    'Visual drafts use row locks, optimistic revisions, canonical hashes, and protected-code merging');
+$check(str_contains($visualBuilder, 'saveInFlight') && str_contains($visualBuilder, 'pendingDefinition')
+    && str_contains($plugin, "DELETE FROM `fb_builder_drafts` WHERE form_id = ?"),
+    'autosaves are serialized and hard deletion removes persisted drafts');
 $check(str_contains($plugin, 'function fb_normalize_slug(')
     && str_contains($plugin, 'function fb_unique_form_slug(')
     && substr_count($adminIndex, 'fb_unique_form_slug(') === 2

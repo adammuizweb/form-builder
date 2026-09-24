@@ -28,6 +28,7 @@ $statusClass = ['active' => 'active', 'draft' => 'draft', 'archived' => 'arch'][
 $classicUrl = fb_url(['view' => 'builder', 'id' => $formId]);
 $settingsUrl = fb_url(['view' => 'settings', 'id' => $formId]);
 $formsUrl = fb_url(['view' => 'forms', 'id' => null]);
+$csrf = function_exists('csrf_token') ? csrf_token() : '';
 
 fb_admin_css();
 ?>
@@ -40,6 +41,8 @@ fb_admin_css();
 .fbv-title span { color: var(--adam-muted); font-size: .73rem; }
 .fbv-status { display: inline-flex; align-items: center; gap: .4rem; color: var(--adam-muted); font-size: .76rem; }
 .fbv-status::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #2b7a4a; box-shadow: 0 0 0 4px rgba(43 122 74 / .12); }
+.fbv-status[data-state="loading"]::before, .fbv-status[data-state="saving"]::before { background: #ca8a04; box-shadow: 0 0 0 4px rgba(202 138 4 / .14); }
+.fbv-status[data-state="error"]::before, .fbv-status[data-state="conflict"]::before { background: #dc2626; box-shadow: 0 0 0 4px rgba(220 38 38 / .12); }
 .fbv-workspace { display: grid; grid-template-columns: 224px minmax(360px, 1fr) 288px; min-height: calc(100vh - 150px); margin: 0 -1rem -1rem; background: var(--adam-bg); }
 .fbv-sidebar { padding: 1rem; background: var(--adam-card); }
 .fbv-sidebar.left { border-right: 1px solid var(--adam-border); }
@@ -90,7 +93,7 @@ fb_admin_css();
       <span><?= htmlspecialchars((string)$form['slug'], ENT_QUOTES) ?> &middot; Visual Builder</span>
     </div>
     <span class="fba-badge <?= $statusClass ?>"><?= htmlspecialchars((string)$form['status'], ENT_QUOTES) ?></span>
-    <div class="fbv-status">Current published structure</div>
+    <div class="fbv-status" id="fbvDraftStatus" data-state="loading" role="status">Loading draft...</div>
     <a class="fba-btn" href="<?= htmlspecialchars($settingsUrl, ENT_QUOTES) ?>">Settings</a>
     <a class="fba-btn" href="<?= htmlspecialchars($classicUrl, ENT_QUOTES) ?>">Classic</a>
     <button class="fba-btn primary" type="button" disabled title="Draft publishing arrives with the next foundation slice">Publish</button>
@@ -113,8 +116,8 @@ fb_admin_css();
 
     <main class="fbv-stage">
       <div class="fbv-notice" role="status">
-        <strong>Foundation preview.</strong>
-        <span>This canvas uses the canonical public form renderer, so it represents the current live structure accurately. Editing, draft autosave, undo, and transactional publish will be added without changing Classic Builder data.</span>
+        <strong>Draft workspace.</strong>
+        <span>Your visual draft is stored separately from the published form with revision-safe autosave. This preview remains read-only and shows the current canonical structure until visual field editing is connected.</span>
       </div>
       <div class="fbv-canvas-tools">
         <div class="fbv-devices" aria-label="Preview width">
@@ -145,8 +148,81 @@ fb_admin_css();
 
 <script>
 (() => {
+  const ENDPOINT = '/fb-visual-builder/';
+  const FORM_ID = <?= $formId ?>;
+  const CSRF = <?= json_encode($csrf, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
   const canvas = document.getElementById('fbvCanvas');
+  const status = document.getElementById('fbvDraftStatus');
   const devices = document.querySelectorAll('.fbv-device');
+  let draft = null;
+  let saveTimer = 0;
+  let saveInFlight = false;
+  let pendingDefinition = null;
+
+  const setStatus = (message, state = 'ready') => {
+    status.textContent = message;
+    status.dataset.state = state;
+  };
+  const request = async (action, values = {}) => {
+    const body = new URLSearchParams({ fb_action: action, form_id: String(FORM_ID), csrf_token: CSRF, ...values });
+    const response = await fetch(ENDPOINT, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' }, body });
+    const payload = await response.json().catch(() => ({ ok: false, error: 'Invalid server response' }));
+    if (!response.ok || !payload.ok) {
+      const error = new Error(payload.error || 'Draft request failed');
+      error.conflict = response.status === 409 || payload.conflict === true;
+      throw error;
+    }
+    return payload.draft;
+  };
+  const showDraftState = () => {
+    if (draft.published_changed) setStatus('Draft ready - Classic changed since draft start', 'conflict');
+    else if (draft.unsafe_content_protected) setStatus(`Draft ready - revision ${draft.revision} - protected code preserved`);
+    else setStatus(`Draft ready - revision ${draft.revision}`);
+  };
+  const save = async (definition) => {
+    if (!draft) throw new Error('Draft is not ready');
+    if (saveInFlight) {
+      pendingDefinition = definition;
+      return;
+    }
+    saveInFlight = true;
+    setStatus('Saving draft...', 'saving');
+    try {
+      draft = await request('save', { revision: String(draft.revision), definition: JSON.stringify(definition) });
+      showDraftState();
+      window.dispatchEvent(new CustomEvent('fbv:draft-saved', { detail: draft }));
+    } catch (error) {
+      pendingDefinition = null;
+      setStatus(error.conflict ? 'Autosave conflict - reload required' : 'Autosave failed', error.conflict ? 'conflict' : 'error');
+      window.dispatchEvent(new CustomEvent('fbv:draft-error', { detail: error }));
+      throw error;
+    } finally {
+      saveInFlight = false;
+      if (pendingDefinition) {
+        const nextDefinition = pendingDefinition;
+        pendingDefinition = null;
+        save(nextDefinition).catch(() => {});
+      }
+    }
+  };
+  const queueSave = (definition) => {
+    window.clearTimeout(saveTimer);
+    pendingDefinition = definition;
+    setStatus('Unsaved changes', 'saving');
+    saveTimer = window.setTimeout(() => {
+      const nextDefinition = pendingDefinition;
+      pendingDefinition = null;
+      if (nextDefinition) save(nextDefinition).catch(() => {});
+    }, 700);
+  };
+
+  window.fbVisualDraft = { get current() { return draft; }, save, queueSave };
+  window.addEventListener('fbv:draft-change', (event) => {
+    if (event.detail?.definition) queueSave(event.detail.definition);
+  });
+  request('load').then((loaded) => { draft = loaded; showDraftState(); })
+    .catch(() => setStatus('Draft unavailable', 'error'));
+
   devices.forEach((button) => button.addEventListener('click', () => {
     devices.forEach((candidate) => {
       const active = candidate === button;

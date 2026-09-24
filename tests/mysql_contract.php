@@ -55,6 +55,8 @@ try {
     $check($rows === 2 && $cols === 4 && $groups['a'] === $groups['b'] && $groups['c'] === $groups['d'] && $groups['a'] !== $groups['c'], 'upgrade preserves exact 1.5.2 grouping-by-width layout');
     $migration($pdo);
     $check((int)$pdo->query("SELECT COUNT(*) FROM fb_fields WHERE form_id={$formId} AND type IN ('row','col')")->fetchColumn() === 6, 'upgrade data conversion is idempotent on rerun');
+    $draftMigration = $load(dirname(__DIR__) . '/migrations/0003-visual-builder-drafts.php'); $draftMigration($pdo); $draftMigration($pdo);
+    $check((int)$pdo->query("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='fb_builder_drafts'")->fetchColumn() === 1, 'visual draft migration is append-only and idempotent');
     $check((int)$pdo->query("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('fb_import_ledger','fb_submission_imports')")->fetchColumn() === 2, 'definition and submission import ledgers are separate');
     $definitionJson = (string)file_get_contents(__DIR__ . '/fixtures/generic.form.json');
     $definitionFirst = fb_upsert_form_definition($pdo, $definitionJson, null, false);
@@ -62,6 +64,34 @@ try {
     $definitionFieldCount = (int)$pdo->query('SELECT COUNT(*) FROM fb_fields WHERE form_id = ' . (int)$definitionFirst['form_id'])->fetchColumn();
     $definitionStatus = $pdo->query('SELECT status FROM fb_forms WHERE id = ' . (int)$definitionFirst['form_id'])->fetchColumn();
     $check($definitionFirst['form_id'] === $definitionRepeat['form_id'] && $definitionFieldCount === 5 && $definitionStatus === 'draft', 'generic definition installs deterministically by slug and remains draft');
+
+    $draft = fb_visual_load_draft($pdo, $formId, 11, true);
+    $draft['definition']['form']['title'] = 'Visual draft title';
+    $savedDraft = fb_visual_save_draft($pdo, $formId, $draft['definition'], $draft['revision'], 11, true);
+    $canonicalTitle = (string)$pdo->query("SELECT title FROM fb_forms WHERE id={$formId}")->fetchColumn();
+    $check($draft['revision'] === 1 && $savedDraft['revision'] === 2 && $canonicalTitle === 'Legacy', 'visual autosave increments its revision without mutating canonical form data');
+    try { fb_visual_save_draft($pdo, $formId, $draft['definition'], 1, 12, true); $draftConflict = false; } catch (UnexpectedValueException) { $draftConflict = true; }
+    $check($draftConflict, 'stale visual autosave revisions fail closed');
+    $pdo->prepare('UPDATE fb_forms SET description = ? WHERE id = ?')->execute(['Changed in Classic', $formId]);
+    $changedDraft = fb_visual_load_draft($pdo, $formId, 11, true);
+    $check($changedDraft['published_changed'] === true, 'visual draft detects canonical changes made after its baseline');
+    $changedDraft['definition']['form']['css'] = '.protected { color: red; }';
+    $draftColumn = array_values(array_filter($changedDraft['definition']['form']['fields'], static fn(array $field): bool => $field['type'] === 'col'))[0]['key'];
+    $changedDraft['definition']['form']['fields'][] = ['key'=>'protected_block','parent'=>$draftColumn,'type'=>'raw_html','label'=>'','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>20,'hidden'=>false,'options'=>[],'validation'=>[],'settings'=>['html'=>'<strong>Protected</strong>']];
+    $unsafeDraft = fb_visual_save_draft($pdo, $formId, $changedDraft['definition'], $changedDraft['revision'], 11, true);
+    $redactedDraft = fb_visual_load_draft($pdo, $formId, 12, false);
+    $redactedDraft['definition']['form']['title'] = 'Safe editor title';
+    $safeSave = fb_visual_save_draft($pdo, $formId, $redactedDraft['definition'], $redactedDraft['revision'], 12, false);
+    $storedDraft = json_decode((string)$pdo->query("SELECT definition_json FROM fb_builder_drafts WHERE form_id={$formId}")->fetchColumn(), true, 64, JSON_THROW_ON_ERROR);
+    $storedProtectedField = array_values(array_filter($storedDraft['form']['fields'], static fn(array $field): bool => $field['key'] === 'protected_block'))[0] ?? [];
+    $check($unsafeDraft['revision'] === 3 && $redactedDraft['unsafe_content_protected'] === true && $redactedDraft['definition']['form']['css'] === '' && $safeSave['revision'] === 4 && $storedDraft['form']['css'] === '.protected { color: red; }' && ($storedProtectedField['settings']['html'] ?? '') === '<strong>Protected</strong>', 'editors without unsafe-code permission receive redacted drafts and preserve protected source on save');
+    $removedProtectedField = $safeSave['definition'];
+    $removedProtectedField['form']['fields'] = array_values(array_filter($removedProtectedField['form']['fields'], static fn(array $field): bool => $field['key'] !== 'protected_block'));
+    try { fb_visual_save_draft($pdo, $formId, $removedProtectedField, $safeSave['revision'], 12, false); $unsafeRemovalRejected = false; } catch (InvalidArgumentException) { $unsafeRemovalRejected = true; }
+    $newProtectedField = $safeSave['definition'];
+    $newProtectedField['form']['fields'][] = ['key'=>'protected_copy','parent'=>$draftColumn,'type'=>'raw_html','label'=>'','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>30,'hidden'=>false,'options'=>[],'validation'=>[],'settings'=>[]];
+    try { fb_visual_save_draft($pdo, $formId, $newProtectedField, $safeSave['revision'], 12, false); $unsafeAdditionRejected = false; } catch (InvalidArgumentException) { $unsafeAdditionRejected = true; }
+    $check($unsafeRemovalRejected && $unsafeAdditionRejected, 'editors without unsafe-code permission cannot add, remove, or change protected field types');
 
     $form = fb_get_form($pdo, $formId); $fields = fb_flat_fields(fb_get_fields($pdo, $formId));
     $record = ['schema'=>1,'reference_code'=>'LEGACY-MYSQL-1','workflow_status'=>'reviewing','created_at'=>'2025-01-02 03:04:05','updated_at'=>'2025-01-03 04:05:06','notes'=>[['at'=>'2025-01-03 04:05:06','actor'=>null,'text'=>'Imported note']],'history'=>[['at'=>'2025-01-02 03:04:05','actor'=>null,'from'=>null,'to'=>'submitted','source'=>'legacy']],'source'=>['system'=>'contract'],'data'=>['a'=>'one','b'=>'two'],'files'=>[],'totals'=>[],'ip'=>null,'is_read'=>false,'is_deleted'=>false];
@@ -71,6 +101,10 @@ try {
     $record['data']['a'] = 'changed';
     try { fb_import_legacy_submission($pdo, $formId, 'contract', 'record-1', $record); $divergent = false; } catch (DomainException) { $divergent = true; }
     $check($divergent && (int)$pdo->query('SELECT COUNT(*) FROM fb_submissions')->fetchColumn() === 1, 'divergent legacy import repeat fails closed without duplication');
+    $deleteForm = fb_get_form($pdo, (int)$definitionFirst['form_id']);
+    fb_visual_load_draft($pdo, (int)$definitionFirst['form_id'], 11, true);
+    fb_hard_delete_form($pdo, $deleteForm);
+    $check((int)$pdo->query('SELECT COUNT(*) FROM fb_builder_drafts WHERE form_id = ' . (int)$definitionFirst['form_id'])->fetchColumn() === 0, 'hard deletion removes the associated visual draft');
 } finally {
     $pdo = null;
     if (str_starts_with($database, 'fb_contract_')) $server->exec('DROP DATABASE IF EXISTS `' . $database . '`');

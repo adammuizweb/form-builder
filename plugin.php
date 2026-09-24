@@ -13,6 +13,7 @@ if (function_exists('register_frontend_route')) {
     // Builder AJAX endpoint (admin-authenticated, JSON). Frontend route keeps
     // output clean of theme markup.
     register_frontend_route('fb-builder', PLUGIN_PATH . '/form-builder/admin/ajax.php', ['match' => 'exact', 'methods' => ['POST']]);
+    register_frontend_route('fb-visual-builder', PLUGIN_PATH . '/form-builder/admin/visual-ajax.php', ['match' => 'exact', 'methods' => ['POST']]);
 }
 
 const FB_SECRET_KEY = 'form_builder_secret';
@@ -38,6 +39,7 @@ function fb_assert_schema(PDO $pdo): void {
     $st = $pdo->query("SELECT reference_code, workflow_status, updated_at FROM fb_submissions LIMIT 0");
     if (!$st) throw new RuntimeException('Form Builder migrations are incomplete.');
     if (!$pdo->query('SELECT definition_id FROM fb_import_ledger LIMIT 0') || !$pdo->query('SELECT source_namespace FROM fb_submission_imports LIMIT 0')) throw new RuntimeException('Form Builder import migrations are incomplete.');
+    if (!$pdo->query('SELECT form_id, revision, published_sha256 FROM fb_builder_drafts LIMIT 0')) throw new RuntimeException('Form Builder visual draft migration is incomplete.');
     $checked[$key] = true;
 }
 
@@ -380,7 +382,7 @@ function fb_restore_form(PDO $pdo, array $form): void {
     $pdo->prepare('UPDATE `fb_forms` SET deleted_at = NULL, slug = ?, updated_at = NOW() WHERE id = ?')->execute([$slug, $fid]);
 }
 
-// Hard delete a form: submissions, uploaded files, fields, the form itself.
+// Hard delete a form: submissions, uploaded files, visual draft, fields, and the form itself.
 function fb_hard_delete_form(PDO $pdo, array $form): void {
     $fid = (int)$form['id'];
     $subs = $pdo->prepare('SELECT files_json FROM `fb_submissions` WHERE form_id = ?');
@@ -396,6 +398,7 @@ function fb_hard_delete_form(PDO $pdo, array $form): void {
         }
     }
     $pdo->prepare('DELETE FROM `fb_submissions` WHERE form_id = ?')->execute([$fid]);
+    $pdo->prepare('DELETE FROM `fb_builder_drafts` WHERE form_id = ?')->execute([$fid]);
     $pdo->prepare('DELETE FROM `fb_fields` WHERE form_id = ?')->execute([$fid]);
     $pdo->prepare('DELETE FROM `fb_forms` WHERE id = ?')->execute([$fid]);
 }
@@ -781,6 +784,7 @@ add_action('plugin_uninstall', function (string $name): void {
         };
         $remove($root);
     }
+    $pdo->exec('DROP TABLE IF EXISTS `fb_builder_drafts`');
     $pdo->exec('DROP TABLE IF EXISTS `fb_import_ledger`');
     $pdo->exec('DROP TABLE IF EXISTS `fb_submission_imports`');
     $pdo->exec('DROP TABLE IF EXISTS `fb_rate_limits`');
@@ -794,6 +798,7 @@ add_action('plugin_uninstall', function (string $name): void {
 
 // ---------------- Shortcode: [form slug="..."] ----------------
 require_once __DIR__ . '/includes/definitions.php';
+require_once __DIR__ . '/includes/visual-drafts.php';
 require_once __DIR__ . '/includes/submission-import.php';
 require_once __DIR__ . '/includes/submission-export.php';
 require_once __DIR__ . '/public/render.php';
