@@ -118,9 +118,9 @@ function fb_visual_render_preview(array $definition): string {
         $columns = array_values(array_filter($byParent[$row['key']] ?? [], static fn(array $field): bool => ($field['type'] ?? null) === 'col'));
         $span = intdiv(12, min(4, max(1, count($columns))));
         $colClass = ['12'=>'','6'=>' c6','4'=>' c4','3'=>' c3'][(string)$span] ?? ''; ?>
-      <div class="fb-row">
+      <div class="fb-row" data-fbv-row="<?= fb_h((string)$row['key']) ?>">
         <?php foreach ($columns as $column): ?>
-        <div class="fb-col<?= $colClass ?>">
+        <div class="fb-col<?= $colClass ?>" data-fbv-col="<?= fb_h((string)$column['key']) ?>">
           <?php foreach ($byParent[$column['key']] ?? [] as $field) {
               if (in_array($field['type'] ?? null, ['row', 'col'], true)) continue;
               $rowData = fb_localized_field(fb_visual_definition_field_row($field), $settings);

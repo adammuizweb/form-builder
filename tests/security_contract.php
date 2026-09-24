@@ -125,6 +125,21 @@ $check(str_contains($visualBuilder, 'data-fbv-type=')
     && str_contains($visualBuilder, 'data-fbv-delete')
     && str_contains($visualBuilder, 'preview.removeAttribute(\'inert\')'),
     'Visual Builder exposes draft-only add, select, inspect, and delete interactions after initialization');
+$check(str_contains($draftHelpers, 'data-fbv-row=')
+    && str_contains($draftHelpers, 'data-fbv-col=')
+    && str_contains($visualBuilder, 'id="fbvAddRow"')
+    && str_contains($visualBuilder, 'const setRowColumns = (rowKey, columnCount)')
+    && str_contains($visualBuilder, 'const moveRow = (rowKey, delta)')
+    && str_contains($visualBuilder, 'const moveField = (fieldKey, parentKey, beforeKey = null)')
+    && str_contains($visualBuilder, "preview.addEventListener('dragstart'")
+    && str_contains($visualBuilder, 'data-field-move="up"'),
+    'Visual layout supports row/column management, pointer drag-and-drop, and accessible field reordering');
+$check(str_contains($visualBuilder, 'pendingDefinition = pendingDefinition || workingDefinition')
+    && str_contains($visualBuilder, 'let retryTimer = 0')
+    && str_contains($visualBuilder, 'column${count === 1 ? \'\' : \'s\'}${count < 1 || count > 4 ? \' (advanced)\' : \'\'}')
+    && str_contains($visualBuilder, 'Convert this ${existingCount}-column advanced row')
+    && !str_contains($visualBuilder, '.fbv-status { display: none; }'),
+    'failed autosaves retain queued edits while legacy layouts and mobile status remain explicit');
 $check(str_contains($visualBuilder, 'let workingDefinition = null')
     && str_contains($visualBuilder, 'workingDefinition === definition')
     && substr_count($visualBuilder, 'definition !== workingDefinition') === 2

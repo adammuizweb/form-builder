@@ -61,6 +61,13 @@ fb_admin_css();
 .fbv-library button { display: flex; align-items: center; gap: .55rem; width: 100%; padding: .55rem .65rem; border: 1px solid var(--adam-border); border-radius: 10px; background: var(--adam-bg); color: var(--adam-text); font: inherit; font-size: .78rem; font-weight: 600; text-align: left; cursor: pointer; }
 .fbv-library button:hover:not(:disabled) { border-color: var(--adam-accent); background: color-mix(in srgb, var(--adam-accent) 6%, var(--adam-card)); }
 .fbv-library button:disabled { cursor: not-allowed; opacity: .45; }
+.fbv-layout-add { display: grid; grid-template-columns: 1fr auto; gap: .4rem; margin-top: .5rem; }
+.fbv-layout-list { display: grid; gap: .4rem; margin-top: .65rem; }
+.fbv-layout-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .35rem; align-items: center; padding: .45rem; border: 1px solid var(--adam-border); border-radius: 10px; background: var(--adam-bg); }
+.fbv-layout-row strong { display: block; font-size: .72rem; }
+.fbv-layout-row select { width: 100%; margin-top: .25rem; font-size: .7rem; }
+.fbv-layout-actions { display: grid; grid-template-columns: repeat(2, 25px); gap: .2rem; }
+.fbv-layout-actions button { width: 25px; height: 25px; padding: 0; border: 1px solid var(--adam-border); border-radius: 7px; background: var(--adam-card); color: var(--adam-text); cursor: pointer; }
 .fbv-library button::before { content: '+'; display: grid; place-items: center; width: 21px; height: 21px; border-radius: 7px; background: color-mix(in srgb, var(--adam-accent) 12%, transparent); color: var(--adam-accent); }
 .fbv-stage { min-width: 0; padding: 1rem clamp(1rem, 3vw, 2.5rem) 3rem; overflow: auto; }
 .fbv-notice { display: flex; gap: .65rem; align-items: flex-start; max-width: 860px; margin: 0 auto 1rem; padding: .7rem .85rem; border: 1px solid color-mix(in srgb, var(--adam-accent) 28%, var(--adam-border)); border-radius: 12px; background: color-mix(in srgb, var(--adam-accent) 6%, var(--adam-card)); font-size: .78rem; line-height: 1.5; }
@@ -76,6 +83,10 @@ fb_admin_css();
 .fbv-preview .fb-wrap { margin: 0; box-shadow: 0 10px 35px rgba(26 55 37 / .09); }
 .fbv-preview button, .fbv-preview input, .fbv-preview textarea, .fbv-preview select { pointer-events: none; }
 .fbv-preview .fb-field { position: relative; border-radius: 10px; cursor: pointer; outline: 2px solid transparent; outline-offset: 6px; transition: outline-color .15s, background .15s; }
+.fbv-preview .fb-field[draggable="true"] { cursor: grab; }
+.fbv-preview .fb-field.is-dragging { opacity: .35; }
+.fbv-preview .fb-col { min-height: 42px; border-radius: 10px; transition: background .15s, outline-color .15s; }
+.fbv-preview .fb-col.is-drop-target, .fbv-preview .fb-field.is-drop-target { outline: 2px dashed var(--adam-accent); outline-offset: 5px; background: color-mix(in srgb, var(--adam-accent) 8%, transparent); }
 .fbv-preview .fb-field:hover { outline-color: color-mix(in srgb, var(--adam-accent) 36%, transparent); }
 .fbv-preview .fb-field.is-selected { outline-color: var(--adam-accent); background: color-mix(in srgb, var(--adam-accent) 5%, transparent); }
 .fbv-inspector-empty { padding: 1.1rem; border: 1px dashed var(--adam-border); border-radius: 12px; background: var(--adam-bg); color: var(--adam-muted); font-size: .78rem; line-height: 1.55; }
@@ -84,6 +95,7 @@ fb_admin_css();
 .fbv-field-picker { width: 100%; margin-bottom: .85rem; }
 .fbv-inspector textarea { resize: vertical; }
 .fbv-inspector-actions { display: flex; justify-content: space-between; gap: .5rem; margin-top: 1rem; padding-top: .8rem; border-top: 1px solid var(--adam-border); }
+.fbv-position-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; }
 .fbv-inspector-key { font-family: ui-monospace, monospace; font-size: .72rem; }
 .fbv-mode-card { margin-top: 1rem; padding: .85rem; border: 1px solid var(--adam-border); border-radius: 12px; }
 .fbv-mode-card strong { display: block; margin-bottom: .25rem; font-size: .78rem; }
@@ -94,7 +106,7 @@ fb_admin_css();
 }
 @media (max-width: 760px) {
   .fbv-topbar { flex-wrap: wrap; }
-  .fbv-status { display: none; }
+  .fbv-status { order: 10; width: 100%; padding-left: .2rem; font-size: .7rem; }
   .fbv-workspace { display: block; }
   .fbv-sidebar.left { border: 0; border-bottom: 1px solid var(--adam-border); }
   .fbv-library { display: flex; overflow-x: auto; padding-bottom: .25rem; }
@@ -132,6 +144,12 @@ fb_admin_css();
           <?php endforeach; ?>
         </div>
       <?php endforeach; ?>
+      <div class="fbv-library-title">Layout</div>
+      <div class="fbv-layout-add">
+        <select id="fbvNewRowColumns" aria-label="Columns in new row"><option value="1">1 column</option><option value="2" selected>2 columns</option><option value="3">3 columns</option><option value="4">4 columns</option></select>
+        <button class="fba-btn sm" id="fbvAddRow" type="button" disabled>Add row</button>
+      </div>
+      <div class="fbv-layout-list" id="fbvLayoutList"></div>
     </aside>
 
     <main class="fbv-stage">
@@ -188,6 +206,9 @@ fb_admin_css();
   const status = document.getElementById('fbvDraftStatus');
   const devices = document.querySelectorAll('.fbv-device');
   const libraryButtons = document.querySelectorAll('[data-fbv-type]');
+  const addRowButton = document.getElementById('fbvAddRow');
+  const newRowColumns = document.getElementById('fbvNewRowColumns');
+  const layoutList = document.getElementById('fbvLayoutList');
   let draft = null;
   let workingDefinition = null;
   let selectedKey = null;
@@ -195,6 +216,8 @@ fb_admin_css();
   let saveInFlight = false;
   let pendingDefinition = null;
   let hasUnsavedChanges = false;
+  let draggedFieldKey = null;
+  let retryTimer = 0;
 
   const setStatus = (message, state = 'ready') => {
     status.textContent = message;
@@ -206,6 +229,7 @@ fb_admin_css();
     publishButton.title = draft?.published_changed ? 'Reload the Classic version before publishing' : publishButton.disabled ? '' : 'Publish this draft';
     resetButton.hidden = !draft?.published_changed;
     resetButton.disabled = saveInFlight;
+    addRowButton.disabled = !draft || saveInFlight;
   };
   const request = async (action, values = {}) => {
     const body = new URLSearchParams({ fb_action: action, form_id: String(FORM_ID), csrf_token: CSRF, ...values });
@@ -213,6 +237,7 @@ fb_admin_css();
     const payload = await response.json().catch(() => ({ ok: false, error: 'Invalid server response' }));
     if (!response.ok || !payload.ok) {
       const error = new Error(payload.error || 'Draft request failed');
+      error.status = response.status;
       error.conflict = response.status === 409 || payload.conflict === true;
       error.canonicalConflict = payload.canonical_conflict === true;
       throw error;
@@ -237,6 +262,12 @@ fb_admin_css();
   };
   const currentFields = () => workingDefinition?.form?.fields || [];
   const currentField = () => currentFields().find((field) => field.key === selectedKey) || null;
+  const ordered = (fields) => [...fields].sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0) || a.key.localeCompare(b.key));
+  const layoutRows = () => ordered(currentFields().filter((field) => field.type === 'row'));
+  const layoutColumns = () => layoutRows().flatMap((row, rowIndex) => ordered(currentFields().filter((field) => field.type === 'col' && field.parent === row.key)).map((column, columnIndex) => ({ row, column, rowIndex, columnIndex })));
+  const normalizeOrders = (fields, parent) => {
+    ordered(fields.filter((field) => field.parent === parent)).forEach((field, index) => { field.order = (index + 1) * 10; });
+  };
   const updateFieldCount = () => {
     const count = currentFields().filter((field) => !['row', 'col'].includes(field.type)).length;
     fieldCount.textContent = `${count} field${count === 1 ? '' : 's'}`;
@@ -249,6 +280,15 @@ fb_admin_css();
     fieldPicker.innerHTML = `<option value="">Select a field (${fields.length})</option>` + fields.map((field) => `<option value="${escapeHtml(field.key)}"${field.key === selectedKey ? ' selected' : ''}>${escapeHtml(field.label || TYPES[field.type]?.label || field.key)}${field.hidden ? ' (hidden)' : ''}</option>`).join('');
     fieldPicker.disabled = !draft || fields.length === 0;
   };
+  const renderLayout = () => {
+    const rows = layoutRows();
+    layoutList.innerHTML = rows.map((row, index) => {
+      const columns = currentFields().filter((field) => field.type === 'col' && field.parent === row.key).length;
+      const columnChoices = [1,2,3,4];
+      if (!columnChoices.includes(columns)) columnChoices.unshift(columns);
+      return `<div class="fbv-layout-row" data-layout-row="${escapeHtml(row.key)}"><div><strong>Row ${index + 1}</strong><select data-row-columns aria-label="Columns in row ${index + 1}">${columnChoices.map((count) => `<option value="${count}"${count === columns ? ' selected' : ''}>${count} column${count === 1 ? '' : 's'}${count < 1 || count > 4 ? ' (advanced)' : ''}</option>`).join('')}</select></div><div class="fbv-layout-actions"><button type="button" data-row-move="up" title="Move row up"${index === 0 ? ' disabled' : ''}>&uarr;</button><button type="button" data-row-move="down" title="Move row down"${index === rows.length - 1 ? ' disabled' : ''}>&darr;</button><button type="button" data-row-delete title="Delete empty row">&times;</button></div></div>`;
+    }).join('');
+  };
   const applyPreview = (html) => {
     if (!html) return;
     const template = document.createElement('template');
@@ -257,9 +297,11 @@ fb_admin_css();
     const existing = preview.querySelector('.fb-wrap');
     if (fresh && existing) existing.replaceWith(fresh);
     preview.querySelectorAll('input, textarea, select, button').forEach((control) => control.tabIndex = -1);
+    preview.querySelectorAll('.fb-field[data-key]').forEach((field) => field.draggable = true);
     markSelection();
     updateFieldCount();
     renderFieldPicker();
+    renderLayout();
   };
   const renderInspector = () => {
     const field = currentField();
@@ -275,8 +317,11 @@ fb_admin_css();
     const labelControl = field.type === 'divider' ? '' : `<div class="fba-field"><label>${field.type === 'paragraph' ? 'Text' : 'Label'}</label>${field.type === 'paragraph' ? `<textarea data-field-prop="label" rows="4" maxlength="1000">${escapeHtml(field.label)}</textarea>` : `<input data-field-prop="label" type="text" maxlength="1000" value="${escapeHtml(field.label)}">`}</div>`;
     const headingControl = field.type === 'heading' ? `<div class="fba-field"><label>Heading level</label><select data-setting-prop="level">${['h1','h2','h3','h4','h5','h6'].map((level) => `<option value="${level}"${(field.settings?.level || 'h2') === level ? ' selected' : ''}>${level.toUpperCase()}</option>`).join('')}</select></div>` : '';
     const inputControls = isInput ? `<div class="fba-field"><label>Field key</label><input class="fbv-inspector-key" type="text" value="${escapeHtml(field.key)}" readonly></div><div class="fba-field"><label>Placeholder</label><input data-field-prop="placeholder" type="text" maxlength="1000" value="${escapeHtml(field.placeholder || '')}"></div><div class="fba-field"><label>Help text</label><input data-field-prop="help" type="text" maxlength="2000" value="${escapeHtml(field.help || '')}"></div>${isChoice ? `<div class="fba-field"><label>Options <span class="fba-hint">value|Label|price, use \\| for a literal pipe</span></label><textarea data-field-options rows="6">${escapeHtml(options)}</textarea></div>` : ''}<div class="fba-checks"><label class="fba-check"><input data-field-prop="required" type="checkbox"${field.required ? ' checked' : ''}> Required</label><label class="fba-check"><input data-field-prop="hidden" type="checkbox"${field.hidden ? ' checked' : ''}> Hidden</label></div>` : '';
+    const siblings = ordered(currentFields().filter((candidate) => candidate.parent === field.parent && !['row', 'col'].includes(candidate.type)));
+    const siblingIndex = siblings.findIndex((candidate) => candidate.key === field.key);
+    const positionControls = `<div class="fba-field"><label>Column</label><select data-field-parent>${layoutColumns().map(({ row, column, rowIndex, columnIndex }) => `<option value="${escapeHtml(column.key)}"${column.key === field.parent ? ' selected' : ''}>Row ${rowIndex + 1}, column ${columnIndex + 1}</option>`).join('')}</select></div><div class="fbv-position-actions"><button class="fba-btn sm" type="button" data-field-move="up"${siblingIndex <= 0 ? ' disabled' : ''}>Move up</button><button class="fba-btn sm" type="button" data-field-move="down"${siblingIndex < 0 || siblingIndex >= siblings.length - 1 ? ' disabled' : ''}>Move down</button></div>`;
     const protectedType = ['richtext', 'raw_html'].includes(field.type) && !CAN_UNSAFE;
-    inspector.innerHTML = `<span class="fbv-inspector-type">${escapeHtml(meta.label)}</span>${labelControl}${headingControl}${inputControls}<div class="fbv-inspector-actions"><span class="fba-hint">Autosaved draft</span><button class="fba-btn danger sm" type="button" data-fbv-delete${protectedType ? ' disabled title="Unsafe-code permission required"' : ''}>Delete</button></div>`;
+    inspector.innerHTML = `<span class="fbv-inspector-type">${escapeHtml(meta.label)}</span>${labelControl}${headingControl}${inputControls}${positionControls}<div class="fbv-inspector-actions"><span class="fba-hint">Autosaved draft</span><button class="fba-btn danger sm" type="button" data-fbv-delete${protectedType ? ' disabled title="Unsafe-code permission required"' : ''}>Delete</button></div>`;
   };
   const mutateDefinition = (callback, refreshInspector = false) => {
     if (!draft) return;
@@ -286,11 +331,12 @@ fb_admin_css();
     if (refreshInspector) renderInspector();
     updateFieldCount();
     renderFieldPicker();
+    renderLayout();
     queueSave(definition);
   };
-  const uniqueKey = (base) => {
+  const uniqueKey = (base, fields = currentFields()) => {
     const stem = String(base || 'field').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'field';
-    const used = new Set(currentFields().map((field) => field.key));
+    const used = new Set(fields.map((field) => field.key));
     let key = stem.slice(0, 80);
     let suffix = 2;
     while (used.has(key)) {
@@ -300,10 +346,115 @@ fb_admin_css();
     return key;
   };
   const newNode = (key, parent, type, label, order) => ({ key, parent, type, label, placeholder: '', help: '', required: false, width: 12, order, hidden: false, options: [], validation: {}, settings: {} });
+  const moveField = (fieldKey, parentKey, beforeKey = null) => {
+    if (!fieldKey || !parentKey || fieldKey === beforeKey) return;
+    mutateDefinition((definition) => {
+      const fields = definition.form.fields;
+      const field = fields.find((candidate) => candidate.key === fieldKey && !['row', 'col'].includes(candidate.type));
+      const parent = fields.find((candidate) => candidate.key === parentKey && candidate.type === 'col');
+      if (!field || !parent) return;
+      const sourceParent = field.parent;
+      const destination = ordered(fields.filter((candidate) => candidate.parent === parentKey && !['row', 'col'].includes(candidate.type) && candidate.key !== fieldKey));
+      const beforeIndex = beforeKey ? destination.findIndex((candidate) => candidate.key === beforeKey) : -1;
+      destination.splice(beforeIndex >= 0 ? beforeIndex : destination.length, 0, field);
+      field.parent = parentKey;
+      destination.forEach((candidate, index) => { candidate.order = (index + 1) * 10; });
+      if (sourceParent !== parentKey) normalizeOrders(fields, sourceParent);
+      selectedKey = fieldKey;
+    }, true);
+  };
+  const reorderField = (fieldKey, delta) => {
+    mutateDefinition((definition) => {
+      const fields = definition.form.fields;
+      const field = fields.find((candidate) => candidate.key === fieldKey);
+      if (!field) return;
+      const siblings = ordered(fields.filter((candidate) => candidate.parent === field.parent && !['row', 'col'].includes(candidate.type)));
+      const index = siblings.findIndex((candidate) => candidate.key === fieldKey);
+      const target = index + delta;
+      if (index < 0 || target < 0 || target >= siblings.length) return;
+      [siblings[index], siblings[target]] = [siblings[target], siblings[index]];
+      siblings.forEach((candidate, position) => { candidate.order = (position + 1) * 10; });
+    }, true);
+  };
+  const addRow = (columnCount) => {
+    columnCount = Math.max(1, Math.min(4, Number(columnCount) || 1));
+    if (currentFields().length + columnCount + 1 > 300) {
+      setStatus('This form has reached the 300-field limit', 'error');
+      return;
+    }
+    mutateDefinition((definition) => {
+      const fields = definition.form.fields;
+      const rowOrder = Math.max(0, ...fields.filter((field) => field.type === 'row').map((field) => Number(field.order) || 0)) + 10;
+      const rowKey = uniqueKey('row_visual', fields);
+      fields.push(newNode(rowKey, null, 'row', '', rowOrder));
+      for (let index = 0; index < columnCount; index++) {
+        const columnKey = uniqueKey('col_visual', fields);
+        fields.push(newNode(columnKey, rowKey, 'col', '', (index + 1) * 10));
+      }
+    }, true);
+  };
+  const setRowColumns = (rowKey, columnCount) => {
+    columnCount = Math.max(1, Math.min(4, Number(columnCount) || 1));
+    const existingCount = currentFields().filter((field) => field.type === 'col' && field.parent === rowKey).length;
+    if ((existingCount < 1 || existingCount > 4) && columnCount !== existingCount && !window.confirm(`Convert this ${existingCount}-column advanced row to ${columnCount} columns?`)) {
+      renderLayout();
+      return;
+    }
+    if (columnCount > existingCount && currentFields().length + columnCount - existingCount > 300) {
+      setStatus('This form has reached the 300-field limit', 'error');
+      renderLayout();
+      return;
+    }
+    mutateDefinition((definition) => {
+      const fields = definition.form.fields;
+      const columns = ordered(fields.filter((field) => field.type === 'col' && field.parent === rowKey));
+      if (columnCount > columns.length) {
+        for (let index = columns.length; index < columnCount; index++) {
+          const key = uniqueKey('col_visual', fields);
+          const column = newNode(key, rowKey, 'col', '', (index + 1) * 10);
+          fields.push(column);
+          columns.push(column);
+        }
+      } else if (columnCount < columns.length) {
+        const kept = columns.slice(0, columnCount);
+        const removed = columns.slice(columnCount);
+        const destination = kept.at(-1);
+        let nextOrder = Math.max(0, ...fields.filter((field) => field.parent === destination.key).map((field) => Number(field.order) || 0));
+        removed.forEach((column) => {
+          ordered(fields.filter((field) => field.parent === column.key)).forEach((field) => { field.parent = destination.key; field.order = nextOrder += 10; });
+        });
+        const removedKeys = new Set(removed.map((column) => column.key));
+        definition.form.fields = fields.filter((field) => !removedKeys.has(field.key));
+      }
+      normalizeOrders(definition.form.fields, rowKey);
+    }, true);
+  };
+  const moveRow = (rowKey, delta) => {
+    mutateDefinition((definition) => {
+      const rows = ordered(definition.form.fields.filter((field) => field.type === 'row'));
+      const index = rows.findIndex((row) => row.key === rowKey);
+      const target = index + delta;
+      if (index < 0 || target < 0 || target >= rows.length) return;
+      [rows[index], rows[target]] = [rows[target], rows[index]];
+      rows.forEach((row, position) => { row.order = (position + 1) * 10; });
+    }, true);
+  };
+  const deleteEmptyRow = (rowKey) => {
+    const columns = currentFields().filter((field) => field.type === 'col' && field.parent === rowKey);
+    const columnKeys = new Set(columns.map((column) => column.key));
+    if (currentFields().some((field) => columnKeys.has(field.parent) && !['row', 'col'].includes(field.type))) {
+      setStatus('Move or delete the fields before removing this row', 'error');
+      return;
+    }
+    mutateDefinition((definition) => {
+      definition.form.fields = definition.form.fields.filter((field) => field.key !== rowKey && !columnKeys.has(field.key));
+      normalizeOrders(definition.form.fields, null);
+    }, true);
+  };
   const addField = (type) => {
     const meta = TYPES[type];
     if (!meta || meta.container || (['richtext', 'raw_html'].includes(type) && !CAN_UNSAFE)) return;
-    const existingRows = currentFields().filter((field) => field.type === 'row');
+    const existingRows = ordered(currentFields().filter((field) => field.type === 'row'));
     const finalRow = existingRows.at(-1);
     const finalRowHasColumn = finalRow && currentFields().some((field) => field.type === 'col' && field.parent === finalRow.key);
     const nodesNeeded = 1 + (existingRows.length ? (finalRowHasColumn ? 0 : 1) : 2);
@@ -318,22 +469,22 @@ fb_admin_css();
     }
     mutateDefinition((definition) => {
       const fields = definition.form.fields;
-      let rows = fields.filter((field) => field.type === 'row');
+      let rows = ordered(fields.filter((field) => field.type === 'row'));
       if (!rows.length) {
-        const rowKey = uniqueKey('row_visual');
+        const rowKey = uniqueKey('row_visual', fields);
         fields.push(newNode(rowKey, null, 'row', '', 10));
-        rows = fields.filter((field) => field.type === 'row');
+        rows = ordered(fields.filter((field) => field.type === 'row'));
       }
       const row = rows.at(-1);
-      let columns = fields.filter((field) => field.type === 'col' && field.parent === row.key);
+      let columns = ordered(fields.filter((field) => field.type === 'col' && field.parent === row.key));
       if (!columns.length) {
-        const columnKey = uniqueKey('col_visual');
+        const columnKey = uniqueKey('col_visual', fields);
         fields.push(newNode(columnKey, row.key, 'col', '', 10));
-        columns = fields.filter((field) => field.type === 'col' && field.parent === row.key);
+        columns = ordered(fields.filter((field) => field.type === 'col' && field.parent === row.key));
       }
       const column = columns.at(-1);
       const siblings = fields.filter((field) => field.parent === column.key);
-      const key = uniqueKey(meta.label || type);
+      const key = uniqueKey(meta.label || type, fields);
       const field = newNode(key, column.key, type, meta.label || type, Math.max(0, ...siblings.map((item) => Number(item.order) || 0)) + 10);
       if (meta.options) field.options = [{ value: 'option_1', label: 'Option 1', price: 0 }];
       if (type === 'heading') field.settings.level = 'h2';
@@ -356,6 +507,7 @@ fb_admin_css();
       return;
     }
     saveInFlight = true;
+    let saveFailed = false;
     setStatus('Saving draft...', 'saving');
     updateActions();
     try {
@@ -368,14 +520,24 @@ fb_admin_css();
       showDraftState();
       window.dispatchEvent(new CustomEvent('fbv:draft-saved', { detail: draft }));
     } catch (error) {
-      pendingDefinition = null;
+      saveFailed = true;
+      pendingDefinition = pendingDefinition || workingDefinition;
       hasUnsavedChanges = true;
       setStatus(error.conflict ? 'Autosave conflict - reload required' : error.message, error.conflict ? 'conflict' : 'error');
       window.dispatchEvent(new CustomEvent('fbv:draft-error', { detail: error }));
+      if (!error.conflict && (!error.status || error.status >= 500)) {
+        window.clearTimeout(retryTimer);
+        retryTimer = window.setTimeout(() => {
+          if (saveInFlight || !pendingDefinition) return;
+          const retryDefinition = pendingDefinition;
+          pendingDefinition = null;
+          save(retryDefinition).catch(() => {});
+        }, 2000);
+      }
       throw error;
     } finally {
       saveInFlight = false;
-      if (pendingDefinition) {
+      if (!saveFailed && pendingDefinition) {
         const nextDefinition = pendingDefinition;
         pendingDefinition = null;
         save(nextDefinition).catch(() => {});
@@ -392,6 +554,7 @@ fb_admin_css();
     }
     definition = workingDefinition;
     window.clearTimeout(saveTimer);
+    window.clearTimeout(retryTimer);
     pendingDefinition = definition;
     hasUnsavedChanges = true;
     setStatus('Unsaved changes', 'saving');
@@ -421,6 +584,20 @@ fb_admin_css();
     .catch(() => setStatus('Draft unavailable', 'error'));
 
   libraryButtons.forEach((button) => button.addEventListener('click', () => addField(button.dataset.fbvType)));
+  addRowButton.addEventListener('click', () => addRow(newRowColumns.value));
+  layoutList.addEventListener('change', (event) => {
+    if (!event.target.matches('[data-row-columns]')) return;
+    const row = event.target.closest('[data-layout-row]');
+    if (row) setRowColumns(row.dataset.layoutRow, event.target.value);
+  });
+  layoutList.addEventListener('click', (event) => {
+    const row = event.target.closest('[data-layout-row]');
+    if (!row) return;
+    const move = event.target.closest('[data-row-move]');
+    if (move && !move.disabled) moveRow(row.dataset.layoutRow, move.dataset.rowMove === 'up' ? -1 : 1);
+    const remove = event.target.closest('[data-row-delete]');
+    if (remove) deleteEmptyRow(row.dataset.layoutRow);
+  });
   preview.addEventListener('click', (event) => {
     const field = event.target.closest('.fb-field[data-key]');
     if (!field || !preview.contains(field)) return;
@@ -428,6 +605,38 @@ fb_admin_css();
     markSelection();
     renderInspector();
     renderFieldPicker();
+  });
+  const clearDropTargets = () => preview.querySelectorAll('.is-drop-target, .is-dragging').forEach((element) => element.classList.remove('is-drop-target', 'is-dragging'));
+  preview.addEventListener('dragstart', (event) => {
+    const field = event.target.closest('.fb-field[data-key]');
+    if (!field) return;
+    draggedFieldKey = field.dataset.key;
+    field.classList.add('is-dragging');
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', draggedFieldKey);
+  });
+  preview.addEventListener('dragover', (event) => {
+    if (!draggedFieldKey) return;
+    const field = event.target.closest('.fb-field[data-key]');
+    const column = event.target.closest('.fb-col[data-fbv-col]');
+    if (!column) return;
+    event.preventDefault();
+    preview.querySelectorAll('.is-drop-target').forEach((element) => element.classList.remove('is-drop-target'));
+    (field && field.dataset.key !== draggedFieldKey ? field : column).classList.add('is-drop-target');
+    event.dataTransfer.dropEffect = 'move';
+  });
+  preview.addEventListener('drop', (event) => {
+    if (!draggedFieldKey) return;
+    const field = event.target.closest('.fb-field[data-key]');
+    const column = event.target.closest('.fb-col[data-fbv-col]');
+    event.preventDefault();
+    if (column) moveField(draggedFieldKey, column.dataset.fbvCol, field?.dataset.key || null);
+    draggedFieldKey = null;
+    clearDropTargets();
+  });
+  preview.addEventListener('dragend', () => {
+    draggedFieldKey = null;
+    clearDropTargets();
   });
   fieldPicker.addEventListener('change', () => {
     selectedKey = fieldPicker.value || null;
@@ -480,6 +689,10 @@ fb_admin_css();
     }
   });
   inspector.addEventListener('input', (event) => {
+    if (event.target.matches('[data-field-parent]')) {
+      moveField(selectedKey, event.target.value);
+      return;
+    }
     const property = event.target.dataset.fieldProp;
     const setting = event.target.dataset.settingProp;
     if (!property && !setting && !event.target.matches('[data-field-options]')) return;
@@ -544,6 +757,11 @@ fb_admin_css();
     });
   });
   inspector.addEventListener('click', (event) => {
+    const move = event.target.closest('[data-field-move]');
+    if (move && !move.disabled) {
+      reorderField(selectedKey, move.dataset.fieldMove === 'up' ? -1 : 1);
+      return;
+    }
     const button = event.target.closest('[data-fbv-delete]');
     if (!button || button.disabled) return;
     const field = currentField();

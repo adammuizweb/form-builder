@@ -126,6 +126,8 @@ $previewDefinition['form']['fields'][] = ['key'=>'unsafe_block','parent'=>'col_m
 $previewDefinition['form']['fields'][] = ['key'=>'rich_block','parent'=>'col_main','type'=>'richtext','label'=>'Rich','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>50,'hidden'=>false,'options'=>[],'validation'=>[],'settings'=>['html'=>'<a href="javascript:window.draftRichHtml=true">Unsafe link</a>']];
 $previewHtml = fb_visual_render_preview($previewDefinition);
 $check(str_contains($previewHtml, 'data-fbv-draft-preview')
+    && str_contains($previewHtml, 'data-fbv-row="row_main"')
+    && str_contains($previewHtml, 'data-fbv-col="col_main"')
     && str_contains($previewHtml, 'data-key="country"')
     && str_contains($previewHtml, 'type="button" class="fb-submit"')
     && !str_contains($previewHtml, 'draft-unsafe-css')
@@ -133,7 +135,7 @@ $check(str_contains($previewHtml, 'data-fbv-draft-preview')
     && !str_contains($previewHtml, 'draftRawHtml')
     && !str_contains($previewHtml, 'draftRichHtml')
     && !str_contains($previewHtml, '/form-submit/'),
-    'draft preview reuses public field markup without executable custom code or submission controls');
+    'draft preview exposes safe layout identities and public field markup without executable custom code or submission controls');
 $checkbox = ['type'=>'checkbox','field_key'=>'consent','label'=>'Consent','required'=>1,'is_hidden'=>0,'options_json'=>fb_json_encode([['value'=>'yes','label'=>'I agree','price'=>0]]),'validation_json'=>null,'settings_json'=>null];
 $checkboxHtml = fb_render_field_html($checkbox, 'contract', 'i1', false, fb_default_settings());
 $check(str_contains($checkboxHtml, 'name="consent[]"') && str_contains($checkboxHtml, 'required'), 'single-option required checkboxes render without undefined state');
