@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.1 - 2026-10-02
+
+- Link authorized `[form slug="..."]` references in Core 2.3.167+ CodeMirror editors directly to their Visual Builder.
+- Prioritize forms referenced by the current content, bound editor metadata to the active actor, and reuse one bounded authorization context while enumerating accessible forms.
+
 ## 2.0.0 - 2026-09-24
 
 - Add a persisted Visual Builder with revision-safe autosave, safe draft previews, field inspection, and Classic Builder fallback.

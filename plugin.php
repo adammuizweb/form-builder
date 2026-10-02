@@ -298,17 +298,25 @@ function fb_user_role_slugs(PDO $pdo, int $uid): array {
     return is_string($legacy) && $legacy !== '' ? [$legacy] : [];
 }
 
+function fb_form_access_granted(array $form, int $uid, bool $canManageAny, array $roleSlugs): bool {
+    if ($uid <= 0) return false;
+    if ($canManageAny) return true;
+    $access = fb_form_access($form);
+    if ($access['owner'] > 0 && $access['owner'] === $uid) return true;
+    if (array_intersect($roleSlugs, $access['roles']) !== []) return true;
+    return in_array($uid, $access['users'], true);
+}
+
 function fb_can_access_form(PDO $pdo, array $form, ?int $uid = null): bool {
     $uid = $uid ?? (function_exists('current_user_id') ? (int)current_user_id() : 0);
     if ($uid <= 0 || !function_exists('user_can')
         || !user_can($pdo, $uid, 'plugin.form-builder.workspace.access')) return false;
-    if (user_can($pdo, $uid, 'plugin.form-builder.forms.manage-any')) return true;
-    $roles = fb_user_role_slugs($pdo, $uid);
-    $acc = fb_form_access($form);
-    if ($acc['owner'] > 0 && $acc['owner'] === $uid) return true;
-    if (array_intersect($roles, $acc['roles']) !== []) return true;
-    if (in_array($uid, $acc['users'], true)) return true;
-    return false;
+    return fb_form_access_granted(
+        $form,
+        $uid,
+        user_can($pdo, $uid, 'plugin.form-builder.forms.manage-any'),
+        fb_user_role_slugs($pdo, $uid)
+    );
 }
 
 function fb_can_view_submissions(PDO $pdo, array $form, ?int $uid = null): bool {
@@ -949,6 +957,96 @@ require_once __DIR__ . '/includes/visual-drafts.php';
 require_once __DIR__ . '/includes/submission-import.php';
 require_once __DIR__ . '/includes/submission-export.php';
 require_once __DIR__ . '/public/render.php';
+
+if (function_exists('register_editor_reference_provider')) {
+    register_editor_reference_provider('form-builder', static function (PDO $pdo, array $context): ?array {
+        $surface = (string)($context['surface'] ?? '');
+        if (!in_array($surface, ['content', 'theme_content'], true)
+            || ($surface === 'content' && ($context['can_update'] ?? false) !== true)) return null;
+
+        $uid = function_exists('current_user_id') ? (int)current_user_id() : 0;
+        $contextActor = filter_var($context['actor_id'] ?? $uid, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if ($uid < 1 || $contextActor === false || $contextActor !== $uid
+            || !function_exists('user_can')
+            || !user_can($pdo, $uid, 'plugin.form-builder.workspace.access')) return null;
+
+        $adminBase = '/' . trim((string)($context['admin_base_path'] ?? ''), '/');
+        if ($adminBase === '/') return null;
+        $canManageAny = user_can($pdo, $uid, 'plugin.form-builder.forms.manage-any');
+        $roleSlugs = $canManageAny ? [] : fb_user_role_slugs($pdo, $uid);
+        $columns = 'id, title, slug, status, created_by, access_json';
+        $referencedSlugs = [];
+        $content = (string)($context['content'] ?? '');
+        $offset = 0;
+        while (count($referencedSlugs) < 1000
+            && preg_match('/\[form\s+slug=["\']([^"\']+)["\']\s*\]/', $content, $match, PREG_OFFSET_CAPTURE, $offset) === 1) {
+            $matchedText = (string)$match[0][0];
+            $offset = (int)$match[0][1] + max(1, strlen($matchedText));
+            $slug = (string)$match[1][0];
+            if (preg_match('/\A[a-z0-9][a-z0-9_-]{0,79}\z/', $slug) === 1) $referencedSlugs[$slug] = true;
+        }
+
+        $formsBySlug = [];
+        foreach (array_chunk(array_keys($referencedSlugs), 200) as $slugChunk) {
+            $placeholders = implode(',', array_fill(0, count($slugChunk), '?'));
+            $statement = $pdo->prepare("SELECT {$columns} FROM `fb_forms` WHERE deleted_at IS NULL AND slug IN ({$placeholders})");
+            $statement->execute($slugChunk);
+            foreach ($statement->fetchAll(PDO::FETCH_ASSOC) ?: [] as $form) {
+                $formsBySlug[(string)$form['slug']] = $form;
+            }
+        }
+
+        $entries = [];
+        $appendEntry = static function (array $form) use (&$entries, $uid, $canManageAny, $roleSlugs, $adminBase): void {
+            if (count($entries) >= 1000 || !fb_form_access_granted($form, $uid, $canManageAny, $roleSlugs)) return;
+            $slug = (string)($form['slug'] ?? '');
+            if (isset($entries[$slug]) || preg_match('/\A[a-z0-9][a-z0-9_-]{0,79}\z/', $slug) !== 1) return;
+            $title = trim((string)($form['title'] ?? ''));
+            $entries[$slug] = [
+                'title' => $title !== '' ? $title : $slug,
+                'source' => 'Form Builder',
+                'action_label' => function_exists('__') ? __('Open editor') : 'Open editor',
+                'url' => $adminBase . '/?' . http_build_query([
+                    'page' => 'admin/tools/form-builder/editor',
+                    'id' => (int)$form['id'],
+                ]),
+            ];
+        };
+        foreach (array_keys($referencedSlugs) as $slug) {
+            if (isset($formsBySlug[$slug])) $appendEntry($formsBySlug[$slug]);
+        }
+
+        if (count($entries) < 1000) {
+            $beforeId = PHP_INT_MAX;
+            $scanned = 0;
+            while (count($entries) < 1000 && $scanned < 5000) {
+                $batchSize = min(250, 5000 - $scanned);
+                $statement = $pdo->prepare("SELECT {$columns} FROM `fb_forms` WHERE deleted_at IS NULL AND id < ? ORDER BY id DESC LIMIT {$batchSize}");
+                $statement->execute([$beforeId]);
+                $batch = $statement->fetchAll(PDO::FETCH_ASSOC) ?: [];
+                if ($batch === []) break;
+                $scanned += count($batch);
+                foreach ($batch as $form) {
+                    $appendEntry($form);
+                    $beforeId = min($beforeId, (int)$form['id']);
+                }
+            }
+        }
+        if ($entries === []) return null;
+
+        return [
+            'syntax' => 'shortcode',
+            'shortcode' => 'form',
+            'attribute' => 'slug',
+            'label' => 'Form Builder',
+            'value_pattern' => '^[a-z0-9][a-z0-9_-]{0,79}$',
+            'normalize' => 'exact',
+            'trim' => false,
+            'max_bytes' => 80,
+            'entries' => $entries,
+        ];
+    });
+}
 
 if (function_exists('register_theme_section')) {
     register_theme_section('form-builder', [

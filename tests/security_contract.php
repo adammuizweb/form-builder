@@ -8,7 +8,7 @@ $permissions = array_column($manifest['permissions'] ?? [], null, 'key');
 $composer = json_decode((string)file_get_contents($root . '/composer.json'), true, 32, JSON_THROW_ON_ERROR);
 $lock = json_decode((string)file_get_contents($root . '/composer.lock'), true, 64, JSON_THROW_ON_ERROR);
 $lockedPackages = array_column($lock['packages'] ?? [], 'version', 'name');
-$check(($manifest['version'] ?? null) === '2.0.0' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.122' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
+$check(($manifest['version'] ?? null) === '2.0.1' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.122' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
 $check(($composer['require']['php'] ?? null) === '>=8.1' && ($composer['require']['phpoffice/phpspreadsheet'] ?? null) === '~5.8.1'
     && ($composer['config']['platform']['php'] ?? null) === '8.1.0'
     && ($lockedPackages['phpoffice/phpspreadsheet'] ?? null) === '5.8.1'
@@ -56,6 +56,28 @@ $visualBuilder = (string)file_get_contents($root . '/admin/visual-builder.php');
 $visualPreview = (string)file_get_contents($root . '/admin/visual-preview.php');
 $classicBuilder = (string)file_get_contents($root . '/admin/builder.php');
 $adminUi = (string)file_get_contents($root . '/admin/_ui.php');
+$referenceProviderAt = strpos($plugin, "register_editor_reference_provider('form-builder'");
+$referenceProviderEnd = strpos($plugin, "if (function_exists('register_theme_section'))", $referenceProviderAt ?: 0);
+$referenceProviderSource = $referenceProviderAt !== false && $referenceProviderEnd !== false
+    ? substr($plugin, $referenceProviderAt, $referenceProviderEnd - $referenceProviderAt)
+    : '';
+$check(str_contains($plugin, "register_editor_reference_provider('form-builder'")
+    && str_contains($plugin, "'syntax' => 'shortcode'")
+    && str_contains($plugin, "'shortcode' => 'form'")
+    && str_contains($plugin, "'attribute' => 'slug'")
+    && str_contains($plugin, 'fb_can_access_form($pdo, $form, $uid)')
+    && str_contains($plugin, "'page' => 'admin/tools/form-builder/editor'"),
+    'Form shortcode references are permission-filtered and target the authorized Visual Builder route');
+$check($referenceProviderSource !== ''
+    && str_contains($referenceProviderSource, "\$columns = 'id, title, slug, status, created_by, access_json'")
+    && !str_contains($referenceProviderSource, 'SELECT *')
+    && str_contains($referenceProviderSource, 'array_chunk(array_keys($referencedSlugs), 200)')
+    && str_contains($referenceProviderSource, '$scanned < 5000')
+    && str_contains($referenceProviderSource, 'LIMIT {$batchSize}')
+    && str_contains($referenceProviderSource, 'fb_form_access_granted(')
+    && str_contains($referenceProviderSource, "'normalize' => 'exact'")
+    && str_contains($referenceProviderSource, "'trim' => false"),
+    'Form references prioritize current content, select bounded metadata, and reuse one runtime-equivalent ACL context');
 $check(str_contains($adminUi, 'function fb_visual_builder_url(')
     && str_contains($adminIndex, 'fb_js_redirect(fb_visual_builder_url($newId))')
     && str_contains($adminIndex, '>Visual Builder</a>')

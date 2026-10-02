@@ -11,12 +11,13 @@ function add_action(string $name, callable $callback, int $priority = 10): void 
 function add_filter(string $name, callable $callback, int $priority = 10): void { $GLOBALS['_hooks']['filters'][$name][$priority][] = $callback; }
 function apply_filters(string $name, mixed $value, mixed ...$args): mixed { foreach ($GLOBALS['_hooks']['filters'][$name] ?? [] as $callbacks) foreach ($callbacks as $callback) $value = $callback($value, ...$args); return $value; }
 function register_frontend_route(string $path, callable|string $handler, array $options = []): bool { $GLOBALS['_routes'][$path] = $options; return true; }
+function register_editor_reference_provider(string $id, callable $provider): bool { $GLOBALS['_editor_reference_providers'][$id] = $provider; return true; }
 function settings_get(PDO $pdo, string $key, ?string $default = null): ?string { return $GLOBALS['_settings'][$key] ?? $default; }
 function settings_set(PDO $pdo, string $key, ?string $value, int $autoload = 1): bool { $GLOBALS['_settings'][$key] = $value; return true; }
 function stateless_csrf_token(): string { return 'core-stateless-token'; }
 function stateless_csrf_check(?string $token, int $ttl = 300): bool { return $token === 'core-stateless-token'; }
 function current_user_id(): int { return (int)($GLOBALS['_uid'] ?? 0); }
-function user_can(PDO $pdo, int $uid, string $permission): bool { return !empty($GLOBALS['_permissions'][$uid][$permission]); }
+function user_can(PDO $pdo, int $uid, string $permission): bool { $GLOBALS['_user_can_calls'] = (int)($GLOBALS['_user_can_calls'] ?? 0) + 1; return !empty($GLOBALS['_permissions'][$uid][$permission]); }
 function authorization_actor(PDO $pdo, int $uid): ?array {
     if (!isset($GLOBALS['_actors'][$uid])) return null;
     return ['roles' => array_map(static fn(string $slug): array => ['slug' => $slug], $GLOBALS['_actors'][$uid])];
@@ -80,7 +81,80 @@ $insertEmbed = $embedPdo->prepare('INSERT INTO fb_forms (id,title,slug,status,de
 $insertEmbed->execute([1, '<Draft Form>', 'draft-form', 'draft', null, 1, fb_json_encode(['owner'=>1])]);
 $insertEmbed->execute([2, 'Archived Form', 'archived-form', 'archived', null, 1, fb_json_encode(['owner'=>1])]);
 $insertEmbed->execute([3, 'Trashed Form', 'trashed-form', 'active', '2026-09-19 10:00:00', 1, fb_json_encode(['owner'=>1])]);
+$embedPdo->beginTransaction();
+for ($formId = 100; $formId <= 1100; $formId++) {
+    $insertEmbed->execute([$formId, 'Inaccessible ' . $formId, 'inaccessible-' . $formId, 'active', null, 99, fb_json_encode(['owner'=>99])]);
+}
+$embedPdo->commit();
 $GLOBALS['_uid'] = 1;
+$GLOBALS['_user_can_calls'] = 0;
+$referenceProvider = $GLOBALS['_editor_reference_providers']['form-builder'] ?? null;
+$referenceConfig = is_callable($referenceProvider) ? $referenceProvider($embedPdo, [
+    'surface' => 'content',
+    'actor_id' => 1,
+    'admin_base_path' => '/dashboard',
+    'can_update' => true,
+    'content' => '[form slug="draft-form"]',
+]) : null;
+$referenceAuthorizationCalls = (int)$GLOBALS['_user_can_calls'];
+$mismatchedActorReference = is_callable($referenceProvider) ? $referenceProvider($embedPdo, [
+    'surface' => 'content',
+    'actor_id' => 2,
+    'admin_base_path' => '/dashboard',
+    'can_update' => true,
+]) : null;
+$readOnlyReference = is_callable($referenceProvider) ? $referenceProvider($embedPdo, [
+    'surface' => 'content',
+    'actor_id' => 1,
+    'admin_base_path' => '/dashboard',
+    'can_update' => false,
+]) : null;
+$unsupportedReference = is_callable($referenceProvider) ? $referenceProvider($embedPdo, [
+    'surface' => 'custom',
+    'actor_id' => 1,
+    'admin_base_path' => '/dashboard',
+    'can_update' => true,
+]) : null;
+$themeReference = is_callable($referenceProvider) ? $referenceProvider($embedPdo, [
+    'surface' => 'theme_content',
+    'admin_base_path' => '/dashboard',
+    'can_edit_executable' => true,
+    'content' => '[form slug="draft-form"]',
+]) : null;
+$GLOBALS['_uid'] = 3;
+$inaccessibleReference = is_callable($referenceProvider) ? $referenceProvider($embedPdo, [
+    'surface' => 'content',
+    'actor_id' => 3,
+    'admin_base_path' => '/dashboard',
+    'can_update' => true,
+]) : null;
+$GLOBALS['_uid'] = 7;
+$missingWorkspaceReference = is_callable($referenceProvider) ? $referenceProvider($embedPdo, [
+    'surface' => 'content',
+    'actor_id' => 7,
+    'admin_base_path' => '/dashboard',
+    'can_update' => true,
+]) : null;
+$GLOBALS['_uid'] = 1;
+$draftReference = $referenceConfig['entries']['draft-form'] ?? [];
+$check(($referenceConfig['syntax'] ?? null) === 'shortcode'
+    && ($referenceConfig['shortcode'] ?? null) === 'form'
+    && ($referenceConfig['attribute'] ?? null) === 'slug'
+    && ($referenceConfig['normalize'] ?? null) === 'exact'
+    && ($referenceConfig['trim'] ?? null) === false
+    && array_key_first($referenceConfig['entries'] ?? []) === 'draft-form'
+    && ($draftReference['title'] ?? null) === '<Draft Form>'
+    && str_contains((string)($draftReference['url'] ?? ''), 'page=admin%2Ftools%2Fform-builder%2Feditor')
+    && str_contains((string)($draftReference['url'] ?? ''), 'id=1')
+    && !isset($referenceConfig['entries']['trashed-form'])
+    && $referenceAuthorizationCalls === 2
+    && $mismatchedActorReference === null
+    && $readOnlyReference === null
+    && $unsupportedReference === null
+    && isset($themeReference['entries']['draft-form'])
+    && $inaccessibleReference === null
+    && $missingWorkspaceReference === null,
+    'authorized referenced forms are prioritized with bounded authorization while denied surfaces and actors expose nothing');
 $draftEmbed = fb_render_embed($embedPdo, 'draft-form');
 $archivedEmbed = fb_render_embed($embedPdo, 'archived-form');
 $trashedEmbed = fb_render_embed($embedPdo, 'trashed-form');
