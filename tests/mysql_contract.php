@@ -57,6 +57,8 @@ try {
     $check((int)$pdo->query("SELECT COUNT(*) FROM fb_fields WHERE form_id={$formId} AND type IN ('row','col')")->fetchColumn() === 6, 'upgrade data conversion is idempotent on rerun');
     $draftMigration = $load(dirname(__DIR__) . '/migrations/0003-visual-builder-drafts.php'); $draftMigration($pdo); $draftMigration($pdo);
     $check((int)$pdo->query("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='fb_builder_drafts'")->fetchColumn() === 1, 'visual draft migration is append-only and idempotent');
+    $capacityMigration = $load(dirname(__DIR__) . '/migrations/0004-option-capacity.php'); $capacityMigration($pdo); $capacityMigration($pdo);
+    $check((int)$pdo->query("SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='fb_submissions' AND INDEX_NAME='idx_fb_submission_capacity'")->fetchColumn() === 2, 'capacity migration adds one idempotent composite index');
     $check((int)$pdo->query("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('fb_import_ledger','fb_submission_imports')")->fetchColumn() === 2, 'definition and submission import ledgers are separate');
     $definitionJson = (string)file_get_contents(__DIR__ . '/fixtures/generic.form.json');
     $definitionFirst = fb_upsert_form_definition($pdo, $definitionJson, null, false);
@@ -64,6 +66,52 @@ try {
     $definitionFieldCount = (int)$pdo->query('SELECT COUNT(*) FROM fb_fields WHERE form_id = ' . (int)$definitionFirst['form_id'])->fetchColumn();
     $definitionStatus = $pdo->query('SELECT status FROM fb_forms WHERE id = ' . (int)$definitionFirst['form_id'])->fetchColumn();
     $check($definitionFirst['form_id'] === $definitionRepeat['form_id'] && $definitionFieldCount === 5 && $definitionStatus === 'draft', 'generic definition installs deterministically by slug and remains draft');
+
+    $capacityDefinition = json_decode($definitionJson, true, 64, JSON_THROW_ON_ERROR);
+    $capacityDefinition['definition_id'] = hash('sha256', 'form-builder:capacity-contract');
+    $capacityDefinition['form']['slug'] = 'capacity-contract';
+    $capacityDefinition['form']['title'] = 'Capacity contract';
+    $capacityDefinition['form']['fields'][] = ['key'=>'trial_class','parent'=>'col_main','type'=>'select','label'=>'Trial class','placeholder'=>'','help'=>'','required'=>true,'width'=>12,'order'=>40,'hidden'=>false,'options'=>[['value'=>'biomedis','label'=>'Dart Mutation','price'=>0,'capacity'=>3]],'validation'=>[],'settings'=>[]];
+    $capacityResult = fb_upsert_form_definition($pdo, $capacityDefinition, null, false);
+    $capacityFormId = (int)$capacityResult['form_id'];
+    $capacityFields = fb_flat_fields(fb_get_fields($pdo, $capacityFormId));
+    $capacityInsert = $pdo->prepare('INSERT INTO fb_submissions (form_id,reference_code,workflow_status,data_json,is_deleted) VALUES (?,?,?,?,?)');
+    foreach ([1,2,3] as $slot) $capacityInsert->execute([$capacityFormId,'CAP-3-' . $slot,'submitted',fb_json_encode(['trial_class'=>'biomedis']),0]);
+    $check(fb_select_capacity_errors($pdo, $capacityFormId, $capacityFields, [['trial_class'=>'biomedis']], fb_default_settings()) !== [], 'capacity 3 rejects the fourth live submission');
+    $pdo->prepare('UPDATE fb_submissions SET is_deleted=1 WHERE form_id=? AND reference_code=?')->execute([$capacityFormId,'CAP-3-1']);
+    $check(fb_select_capacity_errors($pdo, $capacityFormId, $capacityFields, [['trial_class'=>'biomedis']], fb_default_settings()) === [], 'trashing a submission releases one capacity slot');
+    $capacityOptions = [['value'=>'biomedis','label'=>'Dart Mutation','price'=>0,'capacity'=>2]];
+    $pdo->prepare("UPDATE fb_fields SET options_json=? WHERE form_id=? AND field_key='trial_class'")->execute([fb_json_encode($capacityOptions),$capacityFormId]);
+    $capacityFields = fb_flat_fields(fb_get_fields($pdo, $capacityFormId));
+    $check(fb_select_capacity_errors($pdo, $capacityFormId, $capacityFields, [['trial_class'=>'biomedis']], fb_default_settings()) !== [], 'capacity 2 rejects a new submission while two live slots are occupied');
+    $pdo->prepare('DELETE FROM fb_submissions WHERE form_id=? AND reference_code=?')->execute([$capacityFormId,'CAP-3-2']);
+    $check(fb_select_capacity_errors($pdo, $capacityFormId, $capacityFields, [['trial_class'=>'biomedis']], fb_default_settings()) === []
+        && fb_select_capacity_errors($pdo, $capacityFormId, $capacityFields, [['trial_class'=>'biomedis'],['trial_class'=>'biomedis']], fb_default_settings()) !== [],
+        'permanent deletion releases capacity and a batch restore cannot overfill the remaining slot');
+    $concurrentPdo = new PDO($dsn . ';dbname=' . $database, $user, $password, [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_EMULATE_PREPARES=>false]);
+    $capacityLock = fb_acquire_form_mutation_lock($pdo, $capacityFormId);
+    try { fb_acquire_form_mutation_lock($concurrentPdo, $capacityFormId, 0); $concurrentBlocked = false; } catch (UnexpectedValueException) { $concurrentBlocked = true; }
+    fb_release_form_mutation_lock($pdo, $capacityLock);
+    $check($concurrentBlocked, 'form-scoped advisory locking serializes concurrent capacity-increasing mutations');
+    $capacityFields = fb_flat_fields(fb_get_fields($pdo, $capacityFormId));
+    $renamedFields = $capacityFields;
+    foreach ($renamedFields as &$candidate) if ($candidate['field_key'] === 'trial_class') $candidate['field_key'] = 'renamed_trial_class';
+    unset($candidate);
+    try { fb_assert_capacity_configuration($pdo, $capacityFormId, $capacityFields, $renamedFields); $capacityRenameRejected = false; } catch (UnexpectedValueException) { $capacityRenameRejected = true; }
+    $renamedOptions = $capacityFields;
+    foreach ($renamedOptions as &$candidate) if ($candidate['field_key'] === 'trial_class') $candidate['options_json'] = fb_json_encode([['value'=>'renamed','label'=>'Dart Mutation','price'=>0,'capacity'=>2]]);
+    unset($candidate);
+    try { fb_assert_capacity_configuration($pdo, $capacityFormId, $capacityFields, $renamedOptions); $optionRenameRejected = false; } catch (UnexpectedValueException) { $optionRenameRejected = true; }
+    $capacityInsert->execute([$capacityFormId,'CAP-2-2','submitted',fb_json_encode(['trial_class'=>'biomedis']),0]);
+    $loweredFields = $capacityFields;
+    foreach ($loweredFields as &$candidate) if ($candidate['field_key'] === 'trial_class') $candidate['options_json'] = fb_json_encode([['value'=>'biomedis','label'=>'Dart Mutation','price'=>0,'capacity'=>1]]);
+    unset($candidate);
+    try { fb_assert_capacity_configuration($pdo, $capacityFormId, $capacityFields, $loweredFields); $capacityLowerRejected = false; } catch (UnexpectedValueException) { $capacityLowerRejected = true; }
+    $unlimitedFields = $capacityFields;
+    foreach ($unlimitedFields as &$candidate) if ($candidate['field_key'] === 'trial_class') $candidate['options_json'] = fb_json_encode([['value'=>'biomedis','label'=>'Dart Mutation','price'=>0]]);
+    unset($candidate);
+    try { fb_assert_capacity_configuration($pdo, $capacityFormId, $capacityFields, $unlimitedFields); $unlimitedAccepted = true; } catch (UnexpectedValueException) { $unlimitedAccepted = false; }
+    $check($capacityRenameRejected && $optionRenameRejected && $capacityLowerRejected && $unlimitedAccepted, 'live capacity identities cannot be renamed or lowered, while the same option may become unlimited');
 
     $draft = fb_visual_load_draft($pdo, $formId, 11, true);
     $draft['definition']['form']['title'] = 'Visual draft title';
@@ -103,7 +151,7 @@ try {
     $check($first['reconciled'] === false && $repeat['reconciled'] === true && $first['submission_id'] === $repeat['submission_id'], 'identical legacy import repeats reconcile transactionally');
     $record['data']['a'] = 'changed';
     try { fb_import_legacy_submission($pdo, $formId, 'contract', 'record-1', $record); $divergent = false; } catch (DomainException) { $divergent = true; }
-    $check($divergent && (int)$pdo->query('SELECT COUNT(*) FROM fb_submissions')->fetchColumn() === 1, 'divergent legacy import repeat fails closed without duplication');
+    $check($divergent && (int)$pdo->query('SELECT COUNT(*) FROM fb_submissions WHERE form_id=' . $formId)->fetchColumn() === 1, 'divergent legacy import repeat fails closed without duplication');
     $publishFormId = (int)$definitionFirst['form_id'];
     $unsafeSettings = fb_form_settings(fb_get_form($pdo, $publishFormId));
     $unsafeSettings['unsafe_code_enabled'] = true;

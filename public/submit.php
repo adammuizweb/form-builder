@@ -113,6 +113,9 @@ try {
     $currentToken = fb_visual_definition_hash(fb_visual_canonical_definition($pdo, (int)$formId));
     if (!hash_equals($canonicalToken, $currentToken)) throw new UnexpectedValueException('Form schema changed during submission.');
     $pdo->beginTransaction();
+    $lockedForm = $pdo->prepare('SELECT id FROM fb_forms WHERE id = ? AND deleted_at IS NULL FOR UPDATE');
+    $lockedForm->execute([$formId]);
+    if ($lockedForm->fetchColumn() === false) throw new UnexpectedValueException('Form changed during submission.');
     $rate = fb_rate_limit_check($pdo, $ctx['ip'], 'submit_f' . $formId, (int)$settings['rate_window'], (int)$settings['rate_max']);
     if (!$rate['allowed']) {
         $pdo->rollBack(); $cleanup(array_column($staged, 'path'), $stageDir);
@@ -124,6 +127,14 @@ try {
     if (is_string($existingRef) && $existingRef !== '') {
         $pdo->commit(); $cleanup(array_column($staged, 'path'), $stageDir);
         fb_redirect($return, ['fb_status'=>'ok','fb_form'=>(string)$form['slug'],'fb_ref'=>$existingRef]);
+    }
+    $capacityErrors = fb_select_capacity_errors($pdo, $formId, $localizedFields, [$data], $settings);
+    if ($capacityErrors !== []) {
+        $pdo->rollBack();
+        $cleanup(array_column($staged, 'path'), $stageDir);
+        fb_release_form_mutation_lock($pdo, $submissionMutationLock);
+        $submissionMutationLock = null;
+        $fail(implode(' | ', array_slice($capacityErrors, 0, 3)));
     }
 
     $files = []; $finalPaths = [];

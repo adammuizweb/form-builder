@@ -174,7 +174,7 @@ $check($context === ['csrf'=>'core-stateless-token','ip'=>'203.0.113.10'] && fb_
 $token = fb_started_token(new PDO('sqlite::memory:'), 7, 'fr-ca');
 $check(fb_started_check(new PDO('sqlite::memory:'), 7, $token, 0, 'fr-ca') && !fb_started_check(new PDO('sqlite::memory:'), 7, $token, 0, 'ja'), 'signed start token binds any valid rendered locale');
 $migrations = plugin_migrations_discover($sandbox . '/plugins/form-builder');
-$check(array_keys($migrations) === ['0001-baseline.sql','0002-submission-workflow.php','0003-visual-builder-drafts.php'], 'Core discovers the final append-only migration filenames');
+$check(array_keys($migrations) === ['0001-baseline.sql','0002-submission-workflow.php','0003-visual-builder-drafts.php','0004-option-capacity.php'], 'Core discovers the final append-only migration filenames');
 
 $pathBase = fb_files_base_dir([]); mkdir($pathBase . '/1', 0750); file_put_contents($pathBase . '/1/test.pdf', '%PDF-contract');
 $check(fb_contained_path($pathBase, '1/test.pdf', true) === $pathBase . '/1/test.pdf' && fb_contained_path($pathBase, '../private_files/secret', false) === null && fb_contained_path($pathBase, '/etc/passwd', true) === null, 'private path containment accepts only contained regular paths');
@@ -237,9 +237,29 @@ $check($contactErrors !== [], 'international phone validation rejects a calling 
 $invalid = $definition; $invalid['form']['fields'][3]['validation']['unknown_rule'] = true;
 $check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects unknown nested keys');
 $selectDefinition = $definition;
-$selectDefinition['form']['fields'][] = ['key'=>'choice','parent'=>'col_main','type'=>'select','label'=>'Choice','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>40,'hidden'=>false,'options'=>[['value'=>'one','label'=>'One','price'=>0]],'validation'=>[],'settings'=>[]];
+$selectDefinition['form']['fields'][] = ['key'=>'choice','parent'=>'col_main','type'=>'select','label'=>'Choice','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>40,'hidden'=>false,'options'=>[['value'=>'one','label'=>'One','price'=>0,'capacity'=>3]],'validation'=>[],'settings'=>[]];
+$decodedCapacity = fb_definition_decode($selectDefinition);
+$capacityField = ['type'=>'select','field_key'=>'choice','label'=>'Choice','required'=>1,'is_hidden'=>0,'placeholder'=>'','help_text'=>'','options_json'=>fb_json_encode($decodedCapacity['form']['fields'][5]['options']),'validation_json'=>null,'settings_json'=>null];
+$capacityOptions = fb_field_options($capacityField);
+$fullOptionHtml = fb_render_field_html($capacityField, 'contract', 'i1', false, fb_default_settings(), ['choice'=>['one'=>3]]);
+$availableOptionHtml = fb_render_field_html($capacityField, 'contract', 'i2', false, fb_default_settings(), ['choice'=>['one'=>2]]);
+$check(($capacityOptions[0]['capacity'] ?? null) === 3
+    && str_contains($fullOptionHtml, 'value="one" disabled aria-disabled="true"')
+    && str_contains($fullOptionHtml, 'One — Full')
+    && !str_contains($availableOptionHtml, 'value="one" disabled'),
+    'select capacity round-trips through definitions and disables only a full public option');
+$parsedCapacity = fb_parse_option_lines("biomedis|Dart Mutation|0|16\nunlimited|Other|0|", 'select');
+$longOptionValue = str_repeat('a', 120);
+$longParsed = fb_parse_option_lines($longOptionValue . '|Long value|0|16', 'select');
+$check(($parsedCapacity[0]['capacity'] ?? null) === 16 && !array_key_exists('capacity', $parsedCapacity[1])
+    && ($longParsed[0]['value'] ?? '') === $longOptionValue,
+    'Builder option syntax preserves optional select capacity and existing 200-character value compatibility');
 $invalid = $selectDefinition; $invalid['form']['fields'][5]['options'][0]['price'] = 'free';
 $check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects malformed option prices');
+$invalid = $selectDefinition; $invalid['form']['fields'][5]['options'][0]['capacity'] = 0;
+$check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects zero select capacity');
+$invalid = $selectDefinition; $invalid['form']['fields'][5]['type'] = 'radio';
+$check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects capacity on non-select options');
 $invalid = $definition; $invalid['form']['fields'][3]['parent'] = 'row_main';
 $check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects non-container parent relationships');
 $invalid = $definition; $invalid['form']['fields'][] = ['key'=>'date','parent'=>'col_main','type'=>'date','label'=>'Date','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>40,'hidden'=>false,'options'=>[],'validation'=>['before_field'=>'email'],'settings'=>[]];

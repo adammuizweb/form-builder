@@ -119,12 +119,15 @@ function fb_import_legacy_submission(PDO $pdo, string|int $form, string $sourceN
     if (preg_match('/\A[a-z][a-z0-9._-]{0,79}\z/', $sourceNamespace) !== 1 || preg_match('/\A[\x21-\x7E]{1,191}\z/', $sourceKey) !== 1) throw new InvalidArgumentException('Invalid import source identity.');
     $formRow = is_int($form) ? fb_get_form($pdo, $form) : fb_get_form_by_slug($pdo, $form);
     if ($formRow === null || $formRow['deleted_at'] !== null) throw new InvalidArgumentException('Import form not found.');
-    $fields = fb_flat_fields(fb_get_fields($pdo, (int)$formRow['id']));
-    $normalized = fb_normalize_legacy_submission($record, $formRow, $fields, true);
-    $payloadHash = hash('sha256', fb_json_encode(fb_import_canonicalize($normalized)));
     $formId = (int)$formRow['id'];
-    $pdo->beginTransaction();
+    $mutationLock = fb_acquire_form_mutation_lock($pdo, $formId);
     try {
+        $formRow = fb_get_form($pdo, $formId);
+        if ($formRow === null || $formRow['deleted_at'] !== null) throw new InvalidArgumentException('Import form not found.');
+        $fields = fb_flat_fields(fb_get_fields($pdo, $formId));
+        $normalized = fb_normalize_legacy_submission($record, $formRow, $fields, true);
+        $payloadHash = hash('sha256', fb_json_encode(fb_import_canonicalize($normalized)));
+        $pdo->beginTransaction();
         $lockForm = $pdo->prepare('SELECT id FROM fb_forms WHERE id = ? AND deleted_at IS NULL FOR UPDATE'); $lockForm->execute([$formId]);
         if ($lockForm->fetchColumn() === false) throw new RuntimeException('Import form changed.');
         $ledger = $pdo->prepare('SELECT payload_sha256,form_id,submission_id,reference_code FROM fb_submission_imports WHERE source_namespace = ? AND source_key = ? FOR UPDATE');
@@ -138,6 +141,10 @@ function fb_import_legacy_submission(PDO $pdo, string|int $form, string $sourceN
         $reference = $pdo->prepare('SELECT id FROM fb_submissions WHERE form_id = ? AND reference_code = ? FOR UPDATE'); $reference->execute([$formId,$normalized['reference_code']]);
         if ($reference->fetchColumn() !== false) throw new DomainException('Imported reference already exists without this source identity.');
         $search = fb_search_blob($fields, $normalized['data']);
+        if (!$normalized['is_deleted']) {
+            $capacityErrors = fb_select_capacity_errors($pdo, $formId, $fields, [$normalized['data']], fb_form_settings($formRow));
+            if ($capacityErrors !== []) throw new DomainException(implode(' | ', array_slice($capacityErrors, 0, 3)));
+        }
         $persistedSource = $normalized['source'];
         $persistedSource['_form_builder_import'] = ['namespace'=>$sourceNamespace,'key'=>$sourceKey];
         $insert = $pdo->prepare('INSERT INTO fb_submissions (form_id,reference_code,workflow_status,notes_json,history_json,source_json,idempotency_key,data_json,files_json,totals_json,search_blob,ip,is_read,is_deleted,created_at,updated_at) VALUES (?,?,?,?,?,?,NULL,?,?,?,?,?,?,?,?,?)');
@@ -146,4 +153,5 @@ function fb_import_legacy_submission(PDO $pdo, string|int $form, string $sourceN
         $pdo->prepare('INSERT INTO fb_submission_imports (source_namespace,source_key,payload_sha256,form_id,submission_id,reference_code) VALUES (?,?,?,?,?,?)')->execute([$sourceNamespace,$sourceKey,$payloadHash,$formId,$submissionId,$normalized['reference_code']]);
         $pdo->commit(); return ['submission_id'=>$submissionId,'reference_code'=>$normalized['reference_code'],'reconciled'=>false,'sha256'=>$payloadHash];
     } catch (Throwable $error) { if ($pdo->inTransaction()) $pdo->rollBack(); throw $error; }
+    finally { fb_release_form_mutation_lock($pdo, $mutationLock); }
 }

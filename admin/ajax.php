@@ -195,6 +195,9 @@ try {
                 if (isset($deleting[(int)$field['id']]) || $field['type'] !== 'intl_phone') continue;
                 if (in_array(fb_field_settings($field)['country_field'] ?? '', $countryKeys, true)) fb_json(['ok'=>false,'error'=>'Delete the linked international phone field first'], 422);
             }
+            $currentFields = fb_get_fields($pdo, $formId);
+            $nextFields = array_values(array_filter($currentFields, static fn(array $field): bool => !isset($deleting[(int)$field['id']])));
+            fb_assert_capacity_configuration($pdo, $formId, $currentFields, $nextFields);
             $trashSubtree = static function (int $rootId) use ($pdo, $formId, &$trashSubtree): void {
                 $st = $pdo->prepare('SELECT id, type FROM `fb_fields` WHERE form_id = ? AND parent_id = ?');
                 $st->execute([$formId, $rootId]);
@@ -237,14 +240,7 @@ try {
             }
             $options = [];
             if (!empty($types[$type]['options'])) {
-                foreach (preg_split('/\r?\n/', (string)($_POST['options'] ?? '')) as $line) {
-                    $line = trim($line);
-                    if ($line === '') continue;
-                    $parts = array_map('trim', explode('|', $line));
-                    $val = fb_normalize_key($parts[0] ?? '');
-                    if ($val === '') continue;
-                    $options[] = ['value' => $val, 'label' => ($parts[1] ?? '') !== '' ? $parts[1] : ($parts[0] ?? $val), 'price' => (int)preg_replace('/[^\d\-]/', '', (string)($parts[2] ?? '0'))];
-                }
+                $options = fb_parse_option_lines((string)($_POST['options'] ?? ''), $type);
             }
             $validation = [];
             if ($type === 'number') {
@@ -291,6 +287,13 @@ try {
                 if ($hidden && $dependants !== []) fb_json(['ok'=>false,'error'=>'A linked international phone requires this country field to remain visible'], 422);
                 foreach ($dependants as $dependant) if (!empty($dependant['required']) && !$required) fb_json(['ok'=>false,'error'=>'A required international phone requires this country field'], 422);
             }
+            $nextField = $n;
+            $nextField['field_key'] = $key;
+            $nextField['is_hidden'] = $hidden ? 1 : 0;
+            $nextField['options_json'] = $options ? fb_json_encode($options) : null;
+            $currentFields = fb_get_fields($pdo, $formId);
+            $nextFields = array_map(static fn(array $field): array => (int)$field['id'] === $id ? $nextField : $field, $currentFields);
+            fb_assert_capacity_configuration($pdo, $formId, $currentFields, $nextFields);
             $pdo->beginTransaction();
             try {
                 $pdo->prepare('UPDATE `fb_fields` SET label = ?, field_key = ?, placeholder = ?, help_text = ?, required = ?, is_hidden = ?, options_json = ?, validation_json = ?, settings_json = ? WHERE id = ? AND form_id = ?')
@@ -310,6 +313,8 @@ try {
         default:
             fb_json(['ok' => false, 'error' => 'Unknown action'], 422);
     }
+} catch (InvalidArgumentException $e) {
+    fb_json(['ok' => false, 'error' => $e->getMessage()], 422);
 } catch (UnexpectedValueException $e) {
     fb_json(['ok' => false, 'error' => $e->getMessage(), 'conflict' => true], 409);
 } catch (Throwable $e) {

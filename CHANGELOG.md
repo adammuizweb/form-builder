@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.0 - 2026-10-04
+
+- Add optional per-option capacity limits for Select fields in Classic Builder, Visual Builder, and definition imports.
+- Disable full options publicly and enforce capacity transactionally across public submissions, restores, and legacy imports.
+- Derive occupancy from non-trashed submissions so trash and permanent deletion immediately release slots without counter drift.
+
 ## 2.0.1 - 2026-10-02
 
 - Link authorized `[form slug="..."]` references in Core 2.3.167+ CodeMirror editors directly to their Visual Builder.

@@ -108,6 +108,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 } else {
                     $parentId = (int)$col['id'];
                 }
+                $currentFields = fb_get_fields($pdo, $formId);
+                fb_assert_capacity_configuration($pdo, $formId, $currentFields, array_merge($currentFields, [$f]));
                 $maxInCol = (int)$pdo->query("SELECT COALESCE(MAX(sort_order), 0) FROM `fb_fields` WHERE parent_id = {$parentId} AND deleted_at IS NULL")->fetchColumn();
                 $restore = $pdo->prepare('UPDATE `fb_fields` SET deleted_at = NULL, parent_id = ?, sort_order = ? WHERE id = ? AND deleted_at IS NOT NULL');
                 $restore->execute([$parentId, $maxInCol + 10, (int)$f['id']]);

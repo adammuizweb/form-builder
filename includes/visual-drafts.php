@@ -228,6 +228,7 @@ function fb_visual_replace_canonical(PDO $pdo, int $formId, array $definition): 
     $conflict = $pdo->prepare('SELECT id FROM fb_forms WHERE slug = ? AND id <> ? LIMIT 1 FOR UPDATE');
     $conflict->execute([$form['slug'], $formId]);
     if ($conflict->fetchColumn() !== false) throw new InvalidArgumentException('The draft slug is already in use.');
+    fb_assert_capacity_configuration($pdo, $formId, fb_flat_fields(fb_get_fields($pdo, $formId)), $form['fields']);
     $settings = array_merge(fb_default_settings(), fb_definition_safe_settings($form['settings'] ?? []));
     $pdo->prepare('UPDATE fb_forms SET slug=?,title=?,description=?,status=?,settings_json=?,css=?,js=?,updated_at=NOW() WHERE id=?')
         ->execute([$form['slug'],trim($form['title']),trim($form['description']) ?: null,'active',fb_json_encode($settings),$form['css'] !== '' ? $form['css'] : null,$form['js'] !== '' ? $form['js'] : null,$formId]);

@@ -20,6 +20,8 @@ if (function_exists('register_frontend_route')) {
 const FB_SECRET_KEY = 'form_builder_secret';
 const FB_RECAPTCHA_SITEKEY_KEY = 'form_builder_recaptcha_sitekey';
 const FB_RECAPTCHA_SECRET_KEY = 'form_builder_recaptcha_secret';
+const FB_OPTION_CAPACITY_MAX = 1000000;
+const FB_TRACKED_CAPACITY_OPTIONS_MAX = 500;
 
 require_once __DIR__ . '/includes/countries.php';
 
@@ -220,13 +222,154 @@ function fb_field_options(array $field): array {
         if (!is_array($o)) continue;
         $value = (string)($o['value'] ?? '');
         if ($value === '') continue;
-        $out[] = [
+        $option = [
             'value' => $value,
             'label' => (string)($o['label'] ?? $value),
             'price' => (int)($o['price'] ?? 0),
         ];
+        if (is_int($o['capacity'] ?? null) && $o['capacity'] >= 1 && $o['capacity'] <= FB_OPTION_CAPACITY_MAX) $option['capacity'] = $o['capacity'];
+        $out[] = $option;
     }
     return $out;
+}
+
+function fb_parse_option_lines(string $source, string $type): array {
+    $options = [];
+    $values = [];
+    foreach (preg_split('/\r?\n/', $source) ?: [] as $line) {
+        if (trim($line) === '') continue;
+        $parts = [''];
+        $escaped = false;
+        foreach (mb_str_split($line) as $character) {
+            if ($escaped) {
+                $parts[array_key_last($parts)] .= $character === 'n' ? "\n" : ($character === 'r' ? "\r" : $character);
+                $escaped = false;
+            } elseif ($character === '\\') {
+                $escaped = true;
+            } elseif ($character === '|') {
+                $parts[] = '';
+            } else {
+                $parts[array_key_last($parts)] .= $character;
+            }
+        }
+        if ($escaped) $parts[array_key_last($parts)] .= '\\';
+        if (count($parts) < 2 || count($parts) > ($type === 'select' ? 4 : 3)) throw new InvalidArgumentException('Invalid option format.');
+
+        $rawValue = trim((string)$parts[0]);
+        $value = fb_normalize_key($rawValue);
+        $label = trim((string)$parts[1]);
+        $priceText = trim((string)($parts[2] ?? '0'));
+        if ($rawValue === '' || mb_strlen($value) > 200 || $label === '' || mb_strlen($label) > 500 || isset($values[$value]) || preg_match('/\A-?\d+\z/', $priceText === '' ? '0' : $priceText) !== 1) {
+            throw new InvalidArgumentException('Options require unique values, labels, and integer prices.');
+        }
+        $price = (int)($priceText === '' ? '0' : $priceText);
+        if (abs($price) > 1000000000000) throw new InvalidArgumentException('Option price is out of range.');
+        $option = ['value'=>$value, 'label'=>$label, 'price'=>$price];
+        if ($type === 'select' && array_key_exists(3, $parts) && trim((string)$parts[3]) !== '') {
+            $capacityText = trim((string)$parts[3]);
+            if (preg_match('/\A\d+\z/', $capacityText) !== 1) throw new InvalidArgumentException('Option capacity must be a positive integer.');
+            $capacity = (int)$capacityText;
+            if ($capacity < 1 || $capacity > FB_OPTION_CAPACITY_MAX) throw new InvalidArgumentException('Option capacity is out of range.');
+            $option['capacity'] = $capacity;
+        }
+        $options[] = $option;
+        $values[$value] = true;
+        if (count($options) > 200) throw new InvalidArgumentException('Too many options.');
+    }
+    return $options;
+}
+
+function fb_select_capacity_limits(array $fields): array {
+    $limits = [];
+    foreach ($fields as $field) {
+        if (($field['type'] ?? '') !== 'select' || !empty($field['is_hidden'] ?? $field['hidden'] ?? false)) continue;
+        $key = (string)($field['field_key'] ?? $field['key'] ?? '');
+        if (preg_match('/\A[a-z0-9][a-z0-9_]{0,79}\z/', $key) !== 1) continue;
+        $options = array_key_exists('options_json', $field) ? fb_field_options($field) : (is_array($field['options'] ?? null) ? $field['options'] : []);
+        foreach ($options as $option) {
+            if (!is_array($option) || !is_string($option['value'] ?? null) || !is_string($option['label'] ?? null)) continue;
+            if (!isset($option['capacity'])) continue;
+            $capacity = is_int($option['capacity']) ? $option['capacity'] : 0;
+            if ($capacity < 1 || $capacity > FB_OPTION_CAPACITY_MAX) continue;
+            $limits[$key]['label'] = (string)(($field['label'] ?? '') ?: $key);
+            $limits[$key]['options'][$option['value']] = ['label'=>$option['label'], 'capacity'=>$capacity];
+        }
+    }
+    $tracked = array_sum(array_map(static fn(array $field): int => count($field['options'] ?? []), $limits));
+    if ($tracked > FB_TRACKED_CAPACITY_OPTIONS_MAX) throw new UnexpectedValueException('Too many capacity-limited options.');
+    return $limits;
+}
+
+function fb_select_option_identities(array $fields): array {
+    $identities = [];
+    foreach ($fields as $field) {
+        if (($field['type'] ?? '') !== 'select') continue;
+        $key = (string)($field['field_key'] ?? $field['key'] ?? '');
+        if (preg_match('/\A[a-z0-9][a-z0-9_]{0,79}\z/', $key) !== 1) continue;
+        $options = array_key_exists('options_json', $field) ? fb_field_options($field) : (is_array($field['options'] ?? null) ? $field['options'] : []);
+        foreach ($options as $option) if (is_array($option) && is_string($option['value'] ?? null)) $identities[$key][$option['value']] = true;
+    }
+    return $identities;
+}
+
+function fb_select_capacity_usage(PDO $pdo, int $formId, array $fields): array {
+    $limits = fb_select_capacity_limits($fields);
+    if ($limits === []) return [];
+    $expressions = [];
+    $aliases = [];
+    $index = 0;
+    foreach ($limits as $fieldKey => $field) foreach (array_keys($field['options']) as $value) {
+        $alias = 'capacity_' . $index++;
+        $path = '$."' . $fieldKey . '"';
+        $expressions[] = 'COALESCE(SUM(JSON_UNQUOTE(JSON_EXTRACT(data_json, ' . $pdo->quote($path) . ')) = ' . $pdo->quote($value) . '),0) AS `' . $alias . '`';
+        $aliases[$alias] = [$fieldKey, $value];
+    }
+    $statement = $pdo->prepare('SELECT ' . implode(',', $expressions) . ' FROM fb_submissions WHERE form_id = ? AND is_deleted = 0 AND data_json IS NOT NULL AND JSON_VALID(data_json)');
+    $statement->execute([$formId]);
+    $row = $statement->fetch(PDO::FETCH_ASSOC) ?: [];
+    $usage = [];
+    foreach ($aliases as $alias => [$fieldKey, $value]) $usage[$fieldKey][$value] = (int)($row[$alias] ?? 0);
+    return $usage;
+}
+
+function fb_assert_capacity_configuration(PDO $pdo, int $formId, array $currentFields, array $nextFields): void {
+    $current = fb_select_capacity_limits($currentFields);
+    $next = fb_select_capacity_limits($nextFields);
+    if ($current === [] && $next === []) return;
+    $usage = fb_select_capacity_usage($pdo, $formId, array_merge($currentFields, $nextFields));
+    $nextIdentities = fb_select_option_identities($nextFields);
+    foreach ($current as $fieldKey => $field) foreach ($field['options'] as $value => $option) {
+        if (($usage[$fieldKey][$value] ?? 0) > 0 && !isset($nextIdentities[$fieldKey][$value])) {
+            throw new UnexpectedValueException('Capacity-limited field keys and option values cannot change while live submissions use them.');
+        }
+    }
+    foreach ($next as $fieldKey => $field) foreach ($field['options'] as $value => $option) {
+        if (($usage[$fieldKey][$value] ?? 0) > $option['capacity']) {
+            throw new UnexpectedValueException('Option capacity cannot be lower than its current live submission count.');
+        }
+    }
+}
+
+function fb_select_capacity_errors(PDO $pdo, int $formId, array $fields, array $submissions, array $settings = []): array {
+    $limits = fb_select_capacity_limits($fields);
+    if ($limits === []) return [];
+    $requested = [];
+    foreach ($submissions as $data) {
+        if (!is_array($data)) continue;
+        foreach ($limits as $fieldKey => $fieldLimit) {
+            $value = $data[$fieldKey] ?? null;
+            if (is_string($value) && isset($fieldLimit['options'][$value])) $requested[$fieldKey][$value] = ($requested[$fieldKey][$value] ?? 0) + 1;
+        }
+    }
+    if ($requested === []) return [];
+    $usage = fb_select_capacity_usage($pdo, $formId, $fields);
+    $errors = [];
+    foreach ($requested as $fieldKey => $options) foreach ($options as $value => $count) {
+        $option = $limits[$fieldKey]['options'][$value];
+        if (($usage[$fieldKey][$value] ?? 0) + $count <= $option['capacity']) continue;
+        $errors[] = fb_message($settings, 'option_full', ['field'=>$limits[$fieldKey]['label'], 'option'=>$option['label']]);
+    }
+    return $errors;
 }
 
 function fb_field_validation(array $field): array {

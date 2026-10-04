@@ -337,10 +337,12 @@ fb_admin_css();
     const isInput = meta.input === true;
     const isChoice = meta.options === true;
     const encodeOptionPart = (value) => String(value ?? '').replace(/\\/g, '\\\\').replace(/\r/g, '\\r').replace(/\n/g, '\\n').replace(/\|/g, '\\|');
-    const options = (field.options || []).map((option) => `${encodeOptionPart(option.value)}|${encodeOptionPart(option.label)}|${option.price || 0}`).join('\n');
+    const options = (field.options || []).map((option) => `${encodeOptionPart(option.value)}|${encodeOptionPart(option.label)}|${option.price || 0}${field.type === 'select' && option.capacity ? `|${option.capacity}` : ''}`).join('\n');
     const labelControl = field.type === 'divider' ? '' : `<div class="fba-field"><label>${field.type === 'paragraph' ? 'Text' : 'Label'}</label>${field.type === 'paragraph' ? `<textarea data-field-prop="label" rows="4" maxlength="1000">${escapeHtml(field.label)}</textarea>` : `<input data-field-prop="label" type="text" maxlength="1000" value="${escapeHtml(field.label)}">`}</div>`;
     const headingControl = field.type === 'heading' ? `<div class="fba-field"><label>Heading level</label><select data-setting-prop="level">${['h1','h2','h3','h4','h5','h6'].map((level) => `<option value="${level}"${(field.settings?.level || 'h2') === level ? ' selected' : ''}>${level.toUpperCase()}</option>`).join('')}</select></div>` : '';
-    const inputControls = isInput ? `<div class="fba-field"><label>Field key</label><input class="fbv-inspector-key" type="text" value="${escapeHtml(field.key)}" readonly></div><div class="fba-field"><label>Placeholder</label><input data-field-prop="placeholder" type="text" maxlength="1000" value="${escapeHtml(field.placeholder || '')}"></div><div class="fba-field"><label>Help text</label><input data-field-prop="help" type="text" maxlength="2000" value="${escapeHtml(field.help || '')}"></div>${isChoice ? `<div class="fba-field"><label>Options <span class="fba-hint">value|Label|price, use \\| for a literal pipe</span></label><textarea data-field-options rows="6">${escapeHtml(options)}</textarea></div>` : ''}<div class="fba-checks"><label class="fba-check"><input data-field-prop="required" type="checkbox"${field.required ? ' checked' : ''}> Required</label><label class="fba-check"><input data-field-prop="hidden" type="checkbox"${field.hidden ? ' checked' : ''}> Hidden</label></div>` : '';
+    const optionFormat = field.type === 'select' ? 'value|Label|price|capacity' : 'value|Label|price';
+    const capacityHint = field.type === 'select' ? ' Capacity is optional; blank means unlimited.' : '';
+    const inputControls = isInput ? `<div class="fba-field"><label>Field key</label><input class="fbv-inspector-key" type="text" value="${escapeHtml(field.key)}" readonly></div><div class="fba-field"><label>Placeholder</label><input data-field-prop="placeholder" type="text" maxlength="1000" value="${escapeHtml(field.placeholder || '')}"></div><div class="fba-field"><label>Help text</label><input data-field-prop="help" type="text" maxlength="2000" value="${escapeHtml(field.help || '')}"></div>${isChoice ? `<div class="fba-field"><label>Options <span class="fba-hint">${optionFormat}, use \\| for a literal pipe.${capacityHint}</span></label><textarea data-field-options rows="6">${escapeHtml(options)}</textarea></div>` : ''}<div class="fba-checks"><label class="fba-check"><input data-field-prop="required" type="checkbox"${field.required ? ' checked' : ''}> Required</label><label class="fba-check"><input data-field-prop="hidden" type="checkbox"${field.hidden ? ' checked' : ''}> Hidden</label></div>` : '';
     const siblings = ordered(currentFields().filter((candidate) => candidate.parent === field.parent && !['row', 'col'].includes(candidate.type)));
     const siblingIndex = siblings.findIndex((candidate) => candidate.key === field.key);
     const positionControls = `<div class="fba-field"><label>Column</label><select data-field-parent>${layoutColumns().map(({ row, column, rowIndex, columnIndex }) => `<option value="${escapeHtml(column.key)}"${column.key === field.parent ? ' selected' : ''}>Row ${rowIndex + 1}, column ${columnIndex + 1}</option>`).join('')}</select></div><div class="fbv-position-actions"><button class="fba-btn sm" type="button" data-field-move="up"${siblingIndex <= 0 ? ' disabled' : ''}>Move up</button><button class="fba-btn sm" type="button" data-field-move="down"${siblingIndex < 0 || siblingIndex >= siblings.length - 1 ? ' disabled' : ''}>Move down</button></div>`;
@@ -736,6 +738,8 @@ fb_admin_css();
     const setting = event.target.dataset.settingProp;
     if (!property && !setting && !event.target.matches('[data-field-options]')) return;
     if (event.target.matches('[data-field-options]')) {
+      const field = currentField();
+      if (!field) return;
       const parseOptionLine = (line) => {
         const parts = [''];
         let escaped = false;
@@ -752,10 +756,15 @@ fb_admin_css();
       };
       const lines = event.target.value.split(/\r?\n/).filter((line) => line.trim() !== '');
       const parsed = lines.map(parseOptionLine);
-      const options = parsed.map(([value = '', label = '', price = '0']) => ({ value, label, price: Number(price) }));
+      const options = parsed.map(([value = '', label = '', price = '0', capacity = '']) => {
+        const option = { value, label, price: Number(price || 0) };
+        if (field.type === 'select' && capacity.trim() !== '') option.capacity = Number(capacity);
+        return option;
+      });
       const optionValues = options.map((option) => option.value);
-      if (!options.length || options.length > 200 || parsed.some((parts) => parts.length < 2 || parts.length > 3) || new Set(optionValues).size !== optionValues.length || options.some((option) => option.value.trim() === '' || option.label.trim() === '' || /[\x00-\x1f\x7f]/.test(option.value) || !Number.isSafeInteger(option.price) || Math.abs(option.price) > 1000000000000)) {
-        setStatus('Options need unique value|Label|integer price entries', 'error');
+      const invalidCapacity = options.some((option) => option.capacity !== undefined && (!Number.isSafeInteger(option.capacity) || option.capacity < 1 || option.capacity > <?= FB_OPTION_CAPACITY_MAX ?>));
+      if (!options.length || options.length > 200 || parsed.some((parts) => parts.length < 2 || parts.length > (field.type === 'select' ? 4 : 3)) || new Set(optionValues).size !== optionValues.length || invalidCapacity || options.some((option) => option.value.trim() === '' || option.label.trim() === '' || /[\x00-\x1f\x7f]/.test(option.value) || !Number.isSafeInteger(option.price) || Math.abs(option.price) > 1000000000000)) {
+        setStatus(`Options need unique ${field.type === 'select' ? 'value|Label|integer price|optional capacity' : 'value|Label|integer price'} entries`, 'error');
         return;
       }
       mutateDefinition((definition) => {

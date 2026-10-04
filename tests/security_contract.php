@@ -8,7 +8,7 @@ $permissions = array_column($manifest['permissions'] ?? [], null, 'key');
 $composer = json_decode((string)file_get_contents($root . '/composer.json'), true, 32, JSON_THROW_ON_ERROR);
 $lock = json_decode((string)file_get_contents($root . '/composer.lock'), true, 64, JSON_THROW_ON_ERROR);
 $lockedPackages = array_column($lock['packages'] ?? [], 'version', 'name');
-$check(($manifest['version'] ?? null) === '2.0.1' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.122' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
+$check(($manifest['version'] ?? null) === '2.1.0' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.122' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
 $check(($composer['require']['php'] ?? null) === '>=8.1' && ($composer['require']['phpoffice/phpspreadsheet'] ?? null) === '~5.8.1'
     && ($composer['config']['platform']['php'] ?? null) === '8.1.0'
     && ($lockedPackages['phpoffice/phpspreadsheet'] ?? null) === '5.8.1'
@@ -22,7 +22,7 @@ $check(($adminPages['admin/tools/form-builder/editor']['file'] ?? null) === 'adm
     && ($adminPages['admin/tools/form-builder/editor']['permission'] ?? null) === 'plugin.form-builder.workspace.access'
     && ($adminPages['admin/tools/form-builder/editor']['hidden'] ?? false) === true,
     'Visual Builder has a hidden permission-bound dashboard route');
-$check(is_file($root . '/migrations/0001-baseline.sql') && is_file($root . '/migrations/0002-submission-workflow.php') && is_file($root . '/migrations/0003-visual-builder-drafts.php') && count(glob($root . '/migrations/*') ?: []) === 3, 'only final append-only migration names ship');
+$check(is_file($root . '/migrations/0001-baseline.sql') && is_file($root . '/migrations/0002-submission-workflow.php') && is_file($root . '/migrations/0003-visual-builder-drafts.php') && is_file($root . '/migrations/0004-option-capacity.php') && count(glob($root . '/migrations/*') ?: []) === 4, 'only final append-only migration names ship');
 $builder = (string)file_get_contents($root . '/tools/build-package.php');
 $check(!str_contains($builder, "'form-builder/' .") && str_contains($builder, "str_replace(DIRECTORY_SEPARATOR, '/', \$relative)"), 'package builder writes plugin.json at the archive root');
 $check(str_contains($builder, "str_starts_with(\$relative, 'tests/')"), 'release package excludes environment-specific test files');
@@ -42,15 +42,30 @@ $check(str_contains($visualAjax, "\$action === 'publish' || \$action === 'reset'
     && str_contains($ajax, "['add_row', 'set_cols', 'add_field', 'move', 'delete', 'save_field']"),
     'Visual publish/reset and every Classic field mutation share a form-scoped lock');
 $submit = (string)file_get_contents($root . '/public/submit.php');
+$plugin = (string)file_get_contents($root . '/plugin.php');
 $check(!preg_match('/(?<!jy_)mail\s*\(/', $submit) && strpos($submit, '$pdo->commit()') < strpos($submit, 'jy_mail_send'), 'Core mail executes only after persistence');
 $check(!str_contains($submit, 'HTTP_X_FORWARDED_FOR') && str_contains($submit, 'do_action_isolated'), 'submission path retains trusted IP and isolated observer contracts');
 $check(str_contains($submit, 'if ($uploadFields !== [])')
     && str_contains($submit, 'fb_prepare_files_base_dir($form)')
     && str_contains($submit, 'chmod($path, 0640)'),
     'public submission provisions scoped private storage only when validated uploads are present');
+$check(str_contains($submit, 'fb_select_capacity_errors($pdo, $formId, $localizedFields, [$data], $settings)')
+    && strpos($submit, 'idempotency_key = ? FOR UPDATE') < strpos($submit, 'fb_select_capacity_errors(')
+    && str_contains($plugin, 'function fb_select_capacity_usage(')
+    && str_contains($plugin, 'is_deleted = 0')
+    && str_contains($plugin, 'function fb_parse_option_lines('),
+    'capacity is derived from live submissions and enforced after idempotency under the public form lock');
+$capacityUsageStart = strpos($plugin, 'function fb_select_capacity_usage(');
+$capacityUsageEnd = strpos($plugin, 'function fb_assert_capacity_configuration(', $capacityUsageStart ?: 0);
+$capacityUsageSource = $capacityUsageStart !== false && $capacityUsageEnd !== false ? substr($plugin, $capacityUsageStart, $capacityUsageEnd - $capacityUsageStart) : '';
+$check($capacityUsageSource !== '' && substr_count($capacityUsageSource, '$pdo->prepare(') === 1
+    && str_contains($capacityUsageSource, 'COALESCE(SUM(')
+    && !str_contains($capacityUsageSource, 'while ($row')
+    && str_contains($plugin, 'function fb_assert_capacity_configuration(')
+    && substr_count($ajax, 'fb_assert_capacity_configuration($pdo, $formId, $currentFields, $nextFields)') >= 2,
+    'capacity rendering uses one live-submission query and canonical edits preserve occupied field identities');
 $check(!str_contains((string)file_get_contents($root . '/plugin.php'), 'CREATE TABLE') && !str_contains((string)file_get_contents($root . '/plugin.php'), 'ALTER TABLE'), 'runtime entrypoint contains no DDL');
 $adminIndex = (string)file_get_contents($root . '/admin/index.php');
-$plugin = (string)file_get_contents($root . '/plugin.php');
 $settings = (string)file_get_contents($root . '/admin/settings.php');
 $visualBuilder = (string)file_get_contents($root . '/admin/visual-builder.php');
 $visualPreview = (string)file_get_contents($root . '/admin/visual-preview.php');
@@ -163,6 +178,9 @@ $check(str_contains($visualBuilder, 'data-fbv-type=')
     && str_contains($visualBuilder, 'previewFrame.contentDocument')
     && str_contains($visualBuilder, 'element.inert = true'),
     'Visual Builder exposes draft-only add, select, inspect, and delete interactions after initialization');
+$check(str_contains($visualBuilder, "if (event.target.matches('[data-field-options]')) {\n      const field = currentField();")
+    && str_contains($visualBuilder, "field.type === 'select' ? 4 : 3"),
+    'Visual Builder resolves the selected field before parsing optional capacity values');
 $check(str_contains($visualBuilder, 'id="fbvToggleLeft"')
     && str_contains($visualBuilder, 'id="fbvToggleRight"')
     && str_contains($visualBuilder, 'aria-controls="fbvQuestionLibrary"')
@@ -234,6 +252,13 @@ $submissions = (string)file_get_contents($root . '/admin/submissions.php');
 $check(str_contains($submissions, 'if (!$canManageSubmissions)')
     && str_contains($submissions, 'if ($canManageSubmissions):'),
     'scoped submission viewers cannot invoke or see destructive controls');
+$importSource = (string)file_get_contents($root . '/includes/submission-import.php');
+$check(str_contains($submissions, "case 'restore':")
+    && str_contains($submissions, 'fb_acquire_form_mutation_lock($pdo, $formId)')
+    && str_contains($submissions, 'fb_select_capacity_errors($pdo, $formId, $restoreFields, $restoreData, $restoreSettings)')
+    && str_contains($importSource, 'fb_acquire_form_mutation_lock($pdo, $formId)')
+    && str_contains($importSource, 'fb_select_capacity_errors($pdo, $formId, $fields'),
+    'restore and legacy import share transactional capacity enforcement while trash and delete release derived usage');
 $check(str_contains($adminIndex, "\$_POST['fb_action'] ?? '') === 'export'")
     && str_contains($submissions, "['xlsx', 'csv']")
     && str_contains($submissions, 'csrf_check((string)($_POST')

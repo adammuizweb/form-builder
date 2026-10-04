@@ -220,7 +220,38 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             case 'read':    $pdo->prepare("UPDATE `fb_submissions` SET is_read = 1 WHERE id IN ({$in}) AND form_id = ?")->execute($args); break;
             case 'unread':  $pdo->prepare("UPDATE `fb_submissions` SET is_read = 0 WHERE id IN ({$in}) AND form_id = ?")->execute($args); break;
             case 'trash':   $pdo->prepare("UPDATE `fb_submissions` SET is_deleted = 1 WHERE id IN ({$in}) AND form_id = ?")->execute($args); break;
-            case 'restore': $pdo->prepare("UPDATE `fb_submissions` SET is_deleted = 0 WHERE id IN ({$in}) AND form_id = ?")->execute($args); break;
+            case 'restore':
+                $mutationLock = fb_acquire_form_mutation_lock($pdo, $formId);
+                try {
+                    $pdo->beginTransaction();
+                    $lockForm = $pdo->prepare('SELECT * FROM fb_forms WHERE id = ? AND deleted_at IS NULL FOR UPDATE');
+                    $lockForm->execute([$formId]);
+                    $restoreForm = $lockForm->fetch(PDO::FETCH_ASSOC);
+                    if (!is_array($restoreForm)) throw new UnexpectedValueException('Form changed before submissions could be restored.');
+                    $restoreFields = fb_flat_fields(fb_get_fields($pdo, $formId));
+                    $restoreSettings = fb_form_settings($restoreForm);
+                    $restoreRows = $pdo->prepare("SELECT data_json FROM fb_submissions WHERE id IN ({$in}) AND form_id = ? AND is_deleted = 1 FOR UPDATE");
+                    $restoreRows->execute($args);
+                    $restoreData = [];
+                    foreach ($restoreRows->fetchAll(PDO::FETCH_ASSOC) ?: [] as $restoreRow) {
+                        $decoded = json_decode((string)($restoreRow['data_json'] ?? ''), true);
+                        if (is_array($decoded)) $restoreData[] = $decoded;
+                    }
+                    $capacityErrors = fb_select_capacity_errors($pdo, $formId, $restoreFields, $restoreData, $restoreSettings);
+                    if ($capacityErrors !== []) throw new DomainException(implode(' | ', array_slice($capacityErrors, 0, 3)));
+                    $pdo->prepare("UPDATE `fb_submissions` SET is_deleted = 0 WHERE id IN ({$in}) AND form_id = ? AND is_deleted = 1")->execute($args);
+                    $pdo->commit();
+                } catch (DomainException $error) {
+                    if ($pdo->inTransaction()) $pdo->rollBack();
+                    echo '<div class="fba-empty">' . htmlspecialchars($error->getMessage(), ENT_QUOTES, 'UTF-8') . '</div>';
+                    return;
+                } catch (Throwable $error) {
+                    if ($pdo->inTransaction()) $pdo->rollBack();
+                    throw $error;
+                } finally {
+                    fb_release_form_mutation_lock($pdo, $mutationLock);
+                }
+                break;
             case 'delete':
                 $st = $pdo->prepare("SELECT files_json FROM `fb_submissions` WHERE id IN ({$in}) AND form_id = ?");
                 $st->execute($args);

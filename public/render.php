@@ -9,7 +9,7 @@ function fb_h(?string $v): string {
 }
 
 // Render a single (non-container) field. Returns '' for hidden/unknown types.
-function fb_render_field_html(array $f, string $slug, string $instance, bool $unsafeCode, array $publicSettings): string {
+function fb_render_field_html(array $f, string $slug, string $instance, bool $unsafeCode, array $publicSettings, array $capacityUsage = []): string {
     $types = fb_field_types();
     $type = (string)$f['type'];
     $meta = $types[$type] ?? null;
@@ -99,8 +99,11 @@ function fb_render_field_html(array $f, string $slug, string $instance, bool $un
         <label class="fb-label" for="<?= fb_h($id) ?>"><?= fb_h($label) ?> <?= $req ? '<span class="req">*</span>' : '' ?></label>
         <select id="<?= fb_h($id) ?>" name="<?= fb_h($key) ?>" <?= $req ? 'required' : '' ?>>
           <option value="" disabled selected><?= fb_h($f['placeholder'] ?: fb_message($publicSettings, 'select_placeholder')) ?></option>
-          <?php $choiceOptions = fb_field_options($f); foreach ($choiceOptions as $choiceIndex => $o): ?>
-          <option value="<?= fb_h($o['value']) ?>"><?= fb_h($o['label'] . ($o['price'] > 0 ? ' (+' . fb_format_currency($o['price'], (string)$publicSettings['currency_code']) . ')' : '')) ?></option>
+          <?php $choiceOptions = fb_field_options($f); foreach ($choiceOptions as $choiceIndex => $o):
+            $optionFull = isset($o['capacity']) && ($capacityUsage[$key][$o['value']] ?? 0) >= $o['capacity'];
+            $optionLabel = $o['label'] . ($o['price'] > 0 ? ' (+' . fb_format_currency($o['price'], (string)$publicSettings['currency_code']) . ')' : '');
+            if ($optionFull) $optionLabel .= ' — ' . fb_message($publicSettings, 'option_full_suffix'); ?>
+          <option value="<?= fb_h($o['value']) ?>"<?= $optionFull ? ' disabled aria-disabled="true"' : '' ?>><?= fb_h($optionLabel) ?></option>
           <?php endforeach; ?>
         </select>
         <?php if (!empty($f['help_text'])): ?><div class="fb-help"><?= fb_h($f['help_text']) ?></div><?php endif; ?>
@@ -158,6 +161,7 @@ function fb_render_form(PDO $pdo, array $form): string {
     unset($localizedField);
     foreach ($tree as &$treeRow) foreach ($treeRow['cols'] as &$treeCol) foreach ($treeCol['fields'] as &$treeField) $treeField = fb_localized_field($treeField, $settings);
     unset($treeRow, $treeCol, $treeField);
+    $capacityUsage = fb_select_capacity_usage($pdo, $formId, $allFields);
     foreach ($allFields as $f) {
         if (!in_array($f['type'], ['select', 'radio', 'checkbox'], true)) continue;
         foreach (fb_field_options($f) as $o) {
@@ -200,6 +204,7 @@ function fb_render_form(PDO $pdo, array $form): string {
 }
 .fb-field textarea { min-height: 110px; resize: vertical; }
 .fb-field select { cursor: pointer; }
+.fb-field select option:disabled { color: var(--fb-muted); }
 .fb-intl-phone { display: flex; align-items: stretch; }
 .fb-intl-phone .fb-dial { display: inline-flex; align-items: center; min-width: 4.5rem; padding: .7rem .8rem; color: var(--fb-muted); background: var(--fb-bg); border: 1.5px solid var(--fb-border); border-right: 0; border-radius: var(--fb-radius) 0 0 var(--fb-radius); font-variant-numeric: tabular-nums; }
 .fb-intl-phone input[type=tel] { border-radius: 0 var(--fb-radius) var(--fb-radius) 0; }
@@ -303,7 +308,7 @@ function fb_render_form(PDO $pdo, array $form): string {
       <div class="fb-row">
         <?php foreach ($row['cols'] as $col): ?>
         <div class="fb-col<?= $colCls ?>">
-          <?php foreach ($col['fields'] as $f) echo fb_render_field_html($f, $slug, $instance, $unsafeCode, $settings); ?>
+          <?php foreach ($col['fields'] as $f) echo fb_render_field_html($f, $slug, $instance, $unsafeCode, $settings, $capacityUsage); ?>
         </div>
         <?php endforeach; ?>
       </div>

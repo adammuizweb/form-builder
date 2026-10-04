@@ -70,7 +70,13 @@ function fb_render_field_form(array $f, array $countryFields = []): string {
     $isInput = !empty($meta['input']);
     $editor = (string)($meta['editor'] ?? '');
     $optLines = [];
-    foreach (fb_field_options($f) as $o) $optLines[] = $o['value'] . '|' . $o['label'] . ($o['price'] !== 0 ? '|' . $o['price'] : '');
+    $encodeOptionPart = static fn(string $value): string => str_replace(["\\", "\r", "\n", '|'], ["\\\\", '\\r', '\\n', '\\|'], $value);
+    foreach (fb_field_options($f) as $o) {
+        $line = $encodeOptionPart($o['value']) . '|' . $encodeOptionPart($o['label']);
+        if ($o['price'] !== 0 || isset($o['capacity'])) $line .= '|' . $o['price'];
+        if (isset($o['capacity'])) $line .= '|' . $o['capacity'];
+        $optLines[] = $line;
+    }
     ob_start(); ?>
     <form id="fbcFieldForm" data-type="<?= $type ?>" data-editor="<?= $editor ?>">
       <input type="hidden" name="field_id" value="<?= $fid ?>">
@@ -138,8 +144,9 @@ function fb_render_field_form(array $f, array $countryFields = []): string {
       </div>
       <?php endif; ?>
       <?php if (!empty($meta['options'])): ?>
-      <div class="fba-field"><label>Options — one per line: <span class="fba-mono">value|Label|price</span></label>
-        <textarea name="options" rows="5" placeholder="standard|Standard|100"><?= htmlspecialchars(implode("\n", $optLines), ENT_QUOTES) ?></textarea>
+      <div class="fba-field"><label>Options — one per line: <span class="fba-mono"><?= $type === 'select' ? 'value|Label|price|capacity' : 'value|Label|price' ?></span></label>
+        <textarea name="options" rows="5" placeholder="<?= $type === 'select' ? 'standard|Standard|0|16' : 'standard|Standard|100' ?>"><?= htmlspecialchars(implode("\n", $optLines), ENT_QUOTES) ?></textarea>
+        <?php if ($type === 'select'): ?><div class="fba-hint">Capacity is optional. Leave it blank for an unlimited option.</div><?php endif; ?>
       </div>
       <?php endif; ?>
       <?php if ($type === 'number'): ?>
