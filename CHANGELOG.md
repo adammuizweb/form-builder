@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.3 - 2026-10-04
+
+- Add configurable custom success notifications with localized visitor-facing values retrieved through short-lived signed success tokens.
+- Add optional browser-generated PNG or multi-page PDF submission proofs without storing or transmitting another copy of submission data.
+- Render sanitized rich or legacy plain upload guidance directly below the field label and keep upload-description sanitization idempotent.
+
 ## 2.2.2 - 2026-10-04
 
 - Mount Visual Builder upload descriptions only after Core editor dependencies are ready and preserve mounted editors across back-forward cache navigation.

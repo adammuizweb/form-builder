@@ -159,14 +159,20 @@ try {
     $publishDraft = fb_visual_load_draft($pdo, $publishFormId, 11, true);
     $publishDraft['definition']['form']['title'] = 'Published visual form';
     $publishDraft['definition']['form']['css'] = '.published-unsafe{color:blue}';
+    $publishDraft['definition']['form']['settings']['submission_proof_enabled'] = '1';
+    $publishDraft['definition']['form']['settings']['submission_proof_format'] = 'pdf';
     $publishDraft['definition']['form']['fields'][4]['label'] = 'Published email';
+    $publishColumn = array_values(array_filter($publishDraft['definition']['form']['fields'], static fn(array $field): bool => $field['type'] === 'col'))[0]['key'];
+    $publishDraft['definition']['form']['fields'][] = ['key'=>'proof_upload','parent'=>$publishColumn,'type'=>'file','label'=>'Proof upload','placeholder'=>'','help'=>'Legacy help','required'=>false,'width'=>12,'order'=>40,'hidden'=>false,'options'=>[],'validation'=>['max_bytes'=>1048576,'max_files'=>1,'exts'=>['pdf']],'settings'=>['upload_description_html'=>'<p>Published <strong>description</strong>.</p>','preview_mode'=>'icon']];
     $publishSaved = fb_visual_save_draft($pdo, $publishFormId, $publishDraft['definition'], $publishDraft['revision'], 11, true);
     try { fb_visual_publish_draft($pdo, $publishFormId, $publishSaved['revision'], 12, false); $unsafePublishRejected = false; } catch (DomainException) { $unsafePublishRejected = true; }
     $publishedDraft = fb_visual_publish_draft($pdo, $publishFormId, $publishSaved['revision'], 11, true);
     $publishedForm = fb_get_form($pdo, $publishFormId);
     $publishedSettings = fb_form_settings($publishedForm);
     $publishedField = $pdo->query("SELECT label FROM fb_fields WHERE form_id={$publishFormId} AND field_key='email' AND deleted_at IS NULL")->fetchColumn();
-    $check($unsafePublishRejected && $publishedDraft['revision'] === 3 && $publishedDraft['published_changed'] === false && $publishedDraft['has_unpublished_changes'] === false && $publishedForm['title'] === 'Published visual form' && $publishedForm['status'] === 'active' && $publishedField === 'Published email' && $publishedSettings['unsafe_code_enabled'] === true && $publishedForm['css'] === '.published-unsafe{color:blue}' && $publishedForm['js'] === 'window.publishedUnsafe=true', 'transactional publish requires unsafe permission for protected changes without disabling existing unsafe content');
+    $publishedUpload = $pdo->query("SELECT help_text,settings_json FROM fb_fields WHERE form_id={$publishFormId} AND field_key='proof_upload' AND deleted_at IS NULL")->fetch(PDO::FETCH_ASSOC);
+    $publishedUploadSettings = is_array($publishedUpload) ? json_decode((string)$publishedUpload['settings_json'], true) : null;
+    $check($unsafePublishRejected && $publishedDraft['revision'] === 3 && $publishedDraft['published_changed'] === false && $publishedDraft['has_unpublished_changes'] === false && $publishedForm['title'] === 'Published visual form' && $publishedForm['status'] === 'active' && $publishedField === 'Published email' && $publishedSettings['unsafe_code_enabled'] === true && $publishedSettings['submission_proof_enabled'] === '1' && $publishedSettings['submission_proof_format'] === 'pdf' && ($publishedUpload['help_text'] ?? null) === 'Legacy help' && ($publishedUploadSettings['upload_description_html'] ?? null) === '<p>Published <strong>description</strong>.</p>' && $publishedForm['css'] === '.published-unsafe{color:blue}' && $publishedForm['js'] === 'window.publishedUnsafe=true', 'transactional publish preserves proof settings and upload descriptions while requiring unsafe permission for protected changes');
     $deleteForm = $publishedForm;
     $storageRoot = fb_prepare_files_base_dir($deleteForm);
     $storedDirectory = fb_ensure_storage_directory($storageRoot, [(string)$publishFormId, '2026', '09']);

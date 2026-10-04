@@ -139,6 +139,7 @@ function fb_sanitize_upload_description(string $html): string {
     if (str_contains($html, "\0") || mb_strlen($html, 'UTF-8') > FB_UPLOAD_DESCRIPTION_MAX_LENGTH) {
         throw new InvalidArgumentException('Upload description is invalid or too long.');
     }
+    $html = preg_replace('/\A(?:\s*<\?xml\b[^?]*\?>)+\s*/i', '', $html) ?? '';
     if (function_exists('cms_sanitize_restricted_html')) {
         $sanitized = (string)cms_sanitize_restricted_html($html);
     } else {
@@ -153,6 +154,7 @@ function fb_sanitize_upload_description(string $html): string {
             return '<a href="' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '" rel="nofollow noopener">';
         }, $html) ?? '';
     }
+    $sanitized = preg_replace('/\A(?:\s*<\?xml\b[^?]*\?>)+\s*/i', '', $sanitized) ?? '';
     if (str_contains($sanitized, "\0") || mb_strlen($sanitized, 'UTF-8') > FB_UPLOAD_DESCRIPTION_MAX_LENGTH) {
         throw new InvalidArgumentException('Sanitized upload description is too long.');
     }
@@ -484,6 +486,8 @@ function fb_default_settings(): array {
         'success_message' => 'Thank you! Your submission has been received.',
         'success_detail_template' => '',
         'success_detail_field' => '',
+        'submission_proof_enabled' => '0',
+        'submission_proof_format' => 'png',
         'recaptcha'       => '0',
         'rate_max'        => 10,
         'rate_window'     => 3600,
@@ -511,6 +515,8 @@ function fb_form_settings(array $form): array {
     $s['min_fill_seconds'] = max(0, min(30, (int)($s['min_fill_seconds'] ?? 2)));
     $s['success_detail_template'] = is_string($s['success_detail_template'] ?? null) ? trim(mb_substr($s['success_detail_template'], 0, 2000)) : '';
     $s['success_detail_field'] = is_string($s['success_detail_field'] ?? null) && preg_match('/\A[a-z0-9][a-z0-9_]{0,79}\z/', $s['success_detail_field']) === 1 ? $s['success_detail_field'] : '';
+    $s['submission_proof_enabled'] = ($s['submission_proof_enabled'] ?? '0') === '1' ? '1' : '0';
+    $s['submission_proof_format'] = in_array(($s['submission_proof_format'] ?? ''), ['png', 'pdf'], true) ? $s['submission_proof_format'] : 'png';
     $statuses = array_values(array_unique(array_filter(array_map('strval', (array)($s['workflow_statuses'] ?? [])), static fn(string $v): bool => preg_match('/\A[a-z][a-z0-9_-]{0,39}\z/', $v) === 1)));
     $s['workflow_statuses'] = $statuses ?: ['submitted', 'reviewing', 'accepted', 'rejected', 'archived'];
     if (!in_array('submitted', $s['workflow_statuses'], true)) array_unshift($s['workflow_statuses'], 'submitted');

@@ -8,8 +8,10 @@ $permissions = array_column($manifest['permissions'] ?? [], null, 'key');
 $composer = json_decode((string)file_get_contents($root . '/composer.json'), true, 32, JSON_THROW_ON_ERROR);
 $lock = json_decode((string)file_get_contents($root . '/composer.lock'), true, 64, JSON_THROW_ON_ERROR);
 $lockedPackages = array_column($lock['packages'] ?? [], 'version', 'name');
-$check(($manifest['version'] ?? null) === '2.2.2' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.140' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
+$check(($manifest['version'] ?? null) === '2.2.3' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.140' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
 $check(in_array('content-editor', $manifest['dependencies']['js'] ?? [], true), 'upload descriptions declare the Core content-editor dependency');
+$staticCopies = array_column($manifest['static']['copy'] ?? [], 'to', 'from');
+$check(($staticCopies['public/proof.js'] ?? null) === 'static/plugins/form-builder/proof.js', 'submission proof generator publishes only in the plugin-owned static namespace');
 $check(($composer['require']['php'] ?? null) === '>=8.1' && ($composer['require']['phpoffice/phpspreadsheet'] ?? null) === '~5.8.1'
     && ($composer['config']['platform']['php'] ?? null) === '8.1.0'
     && ($lockedPackages['phpoffice/phpspreadsheet'] ?? null) === '5.8.1'
@@ -45,6 +47,7 @@ $check(str_contains($visualAjax, "\$action === 'publish' || \$action === 'reset'
 $submit = (string)file_get_contents($root . '/public/submit.php');
 $publicHelpers = (string)file_get_contents($root . '/public/_helpers.php');
 $publicRenderer = (string)file_get_contents($root . '/public/render.php');
+$proofScript = (string)file_get_contents($root . '/public/proof.js');
 $plugin = (string)file_get_contents($root . '/plugin.php');
 $check(!preg_match('/(?<!jy_)mail\s*\(/', $submit) && strpos($submit, '$pdo->commit()') < strpos($submit, 'jy_mail_send'), 'Core mail executes only after persistence');
 $check(!str_contains($submit, 'HTTP_X_FORWARDED_FOR') && str_contains($submit, 'do_action_isolated'), 'submission path retains trusted IP and isolated observer contracts');
@@ -58,6 +61,28 @@ $check(substr_count($submit, 'fb_success_redirect($pdo, $return, $form,') === 3
     && str_contains($publicRenderer, 'fb_success_value_text($successField')
     && str_contains($publicRenderer, 'class="fb-success-detail"'),
     'custom success details use a short-lived signed PRG lookup instead of exposing submission values in the URL');
+$check(str_contains($publicRenderer, 'SELECT data_json,created_at FROM fb_submissions WHERE form_id = ? AND reference_code = ? AND is_deleted = 0 LIMIT 1')
+    && str_contains($publicRenderer, "header('Cache-Control: private, no-store")
+    && str_contains($publicRenderer, "header('Referrer-Policy: no-referrer')")
+    && str_contains($publicRenderer, "header('X-Robots-Tag: noindex, nofollow, noarchive')")
+    && str_contains($publicRenderer, 'JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT')
+    && str_contains($publicRenderer, 'data-fb-proof-download')
+    && str_contains($publicRenderer, 'referrerpolicy="no-referrer"')
+    && !str_contains($publicRenderer, 'data_json"=>')
+    && !str_contains($submit, 'submission_proof'),
+    'submission proof is gated by the verified success row and exposes only a bounded no-store browser model');
+$check(str_contains($proofScript, "document.createElement('canvas')")
+    && str_contains($proofScript, 'const height = proofHeight(sizingContext, model)')
+    && !str_contains($proofScript, 'WORK_HEIGHT')
+    && str_contains($proofScript, "ascii('%PDF-1.4\\n')")
+    && str_contains($proofScript, 'const sliceHeight = Math.floor((pageHeight - margin * 2) / scale)')
+    && str_contains($proofScript, 'const safeBreakpoints = proofBreakpoints.get(canvas) || []')
+    && str_contains($proofScript, '/Count ${pages.length}')
+    && str_contains($proofScript, "new Blob([concatBytes(parts)], { type: 'application/pdf' })")
+    && str_contains($proofScript, "canvasBlob(canvas, 'image/png')")
+    && str_contains($proofScript, 'link.download = filename')
+    && !preg_match('/\b(?:fetch|XMLHttpRequest|sendBeacon|WebSocket)\b/', $proofScript),
+    'browser proof generator creates local PNG/PDF downloads without transmitting submission data');
 $check(str_contains($submit, 'if ($uploadFields !== [])')
     && str_contains($submit, 'fb_prepare_files_base_dir($form)')
     && str_contains($submit, 'chmod($path, 0640)'),
@@ -121,6 +146,11 @@ $check(str_contains($settings, 'name="success_detail_template"')
     && str_contains($visualBuilder, "'success_detail_field'")
     && str_contains($ajax, "\$formSettings['success_detail_field']"),
     'shared settings and both builder lifecycles preserve valid custom success notification references');
+$check(str_contains($settings, 'name="submission_proof_enabled"')
+    && str_contains($settings, 'name="submission_proof_format"')
+    && str_contains($settings, '>PNG image</option>')
+    && str_contains($settings, '>PDF document</option>'),
+    'each form exposes explicit disabled-by-default PNG or PDF proof settings');
 $check(str_contains($visualBuilder, "adiwira_require_permission(\$pdo, 'plugin.form-builder.workspace.access'")
     && str_contains($visualBuilder, 'fb_can_access_form($pdo, $form, $uid)')
     && str_contains($visualBuilder, 'id="fbvPreviewFrame"')

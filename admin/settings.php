@@ -55,6 +55,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $successField = $_POST['success_detail_field'] ?? '';
         $successFieldKeys = array_column($successValueFields, 'field_key');
         $settings['success_detail_field'] = is_string($successField) && in_array($successField, $successFieldKeys, true) ? $successField : '';
+        $settings['submission_proof_enabled'] = !empty($_POST['submission_proof_enabled']) ? '1' : '0';
+        $proofFormat = $_POST['submission_proof_format'] ?? 'png';
+        $settings['submission_proof_format'] = is_string($proofFormat) && in_array($proofFormat, ['png', 'pdf'], true) ? $proofFormat : 'png';
         $settings['recaptcha'] = !empty($_POST['recaptcha']) ? '1' : '0';
         $settings['rate_max'] = max(1, min(10000, (int)($_POST['rate_max'] ?? 10)));
         $settings['rate_window'] = max(60, min(604800, (int)($_POST['rate_window'] ?? 3600)));
@@ -176,6 +179,10 @@ $allUsers = $pdo->query("SELECT id, name, email, role FROM `users` WHERE is_dele
       <div class="fba-row2">
         <div class="fba-field"><label>Custom success notification</label><textarea name="success_detail_template" rows="3" maxlength="2000" placeholder="Anda telah mendaftarkan diri di Trial Class {value}" style="font-family:inherit"><?= htmlspecialchars($settings['success_detail_template'], ENT_QUOTES) ?></textarea><div class="fba-hint">Use <span class="fba-code">{value}</span> for the submitted value and <span class="fba-code">{label}</span> for its field label. The value is displayed prominently; without <span class="fba-code">{value}</span>, it is appended below the text.</div></div>
         <div class="fba-field"><label>Success notification value</label><select name="success_detail_field"><option value="">Disabled</option><?php foreach ($successValueFields as $successValueField): ?><option value="<?= htmlspecialchars($successValueField['field_key'], ENT_QUOTES) ?>" <?= $settings['success_detail_field'] === $successValueField['field_key'] ? 'selected' : '' ?>><?= htmlspecialchars((string)($successValueField['label'] ?: $successValueField['field_key']), ENT_QUOTES) ?></option><?php endforeach; ?></select><div class="fba-hint">Choice fields display their visitor-facing option label instead of the stored key.</div></div>
+      </div>
+      <div class="fba-row2">
+        <div class="fba-field"><label class="fba-check"><input type="checkbox" name="submission_proof_enabled" value="1" <?= $settings['submission_proof_enabled'] === '1' ? 'checked' : '' ?>> Enable downloadable submission proof</label><div class="fba-hint">Shown only after a verified successful submission. The proof is generated in the visitor's browser and is not stored on the server.</div></div>
+        <div class="fba-field"><label>Submission proof format</label><select name="submission_proof_format"><option value="png" <?= $settings['submission_proof_format'] === 'png' ? 'selected' : '' ?>>PNG image</option><option value="pdf" <?= $settings['submission_proof_format'] === 'pdf' ? 'selected' : '' ?>>PDF document</option></select></div>
       </div>
       <div class="fba-row3">
         <div class="fba-field"><label>Confirmation email field</label><select name="confirmation_email_field"><option value="">Disabled</option><?php foreach ($inputFields as $ef) if ($ef['type'] === 'email'): ?><option value="<?= htmlspecialchars($ef['field_key'], ENT_QUOTES) ?>" <?= $settings['confirmation_email_field'] === $ef['field_key'] ? 'selected' : '' ?>><?= htmlspecialchars($ef['label'], ENT_QUOTES) ?></option><?php endif; ?></select></div>

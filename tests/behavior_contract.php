@@ -192,6 +192,12 @@ $check(fb_success_token_check($successTokenPdo, 7, 'FB-ABC123', $successToken)
     && !fb_success_token_check($successTokenPdo, 7, 'FB-ABC123', fb_success_token($successTokenPdo, 7, 'FB-ABC123', time() - 7201))
     && fb_safe_return_url('/apply/?fb_status=ok&fb_success=secret&keep=yes') === '/apply/?keep=yes',
     'success detail tokens bind the form and reference, expire, and are removed from return URLs');
+$proofDefaults = fb_default_settings();
+$normalizedProofSettings = fb_form_settings(['settings_json'=>fb_json_encode(['submission_proof_enabled'=>'invalid','submission_proof_format'=>'svg'])]);
+$check($proofDefaults['submission_proof_enabled'] === '0' && $proofDefaults['submission_proof_format'] === 'png'
+    && $normalizedProofSettings['submission_proof_enabled'] === '0' && $normalizedProofSettings['submission_proof_format'] === 'png'
+    && fb_public_message_defaults('en')['proof_download'] === 'Download submission proof',
+    'submission proof defaults are disabled, PNG-based, normalized, and publicly labelled');
 $relocatedParent = $sandbox . '/relocated'; mkdir($relocatedParent, 0700);
 add_filter('fb_files_base_dir', static fn(string $base): string => $relocatedParent . '/form-builder', 50);
 $check(fb_prepare_files_base_dir([]) === realpath($relocatedParent) . '/form-builder', 'trusted storage filter provisions a normalized dedicated relocation');
@@ -248,6 +254,8 @@ $selectDefinition = $definition;
 $selectDefinition['form']['fields'][] = ['key'=>'choice','parent'=>'col_main','type'=>'select','label'=>'Choice','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>40,'hidden'=>false,'options'=>[['value'=>'one','label'=>'One','price'=>0,'capacity'=>3]],'validation'=>[],'settings'=>[]];
 $selectDefinition['form']['settings']['success_detail_template'] = 'Registered for {value} ({label})';
 $selectDefinition['form']['settings']['success_detail_field'] = 'choice';
+$selectDefinition['form']['settings']['submission_proof_enabled'] = '1';
+$selectDefinition['form']['settings']['submission_proof_format'] = 'pdf';
 $selectDefinition['form']['settings']['translations']['fr-ca']['form']['success_detail_template'] = 'Inscrit a {value}';
 $decodedCapacity = fb_definition_decode($selectDefinition);
 $capacityField = ['type'=>'select','field_key'=>'choice','label'=>'Choice','required'=>1,'is_hidden'=>0,'placeholder'=>'','help_text'=>'','options_json'=>fb_json_encode($decodedCapacity['form']['fields'][5]['options']),'validation_json'=>null,'settings_json'=>null];
@@ -263,6 +271,8 @@ $localizedSuccessSettings = array_merge(fb_default_settings(), $decodedCapacity[
 $successValue = fb_success_value_text($capacityField, 'one');
 $successDetailHtml = fb_success_detail_html($localizedSuccessSettings['success_detail_template'], 'Choice <unsafe>', $successValue);
 $check($decodedCapacity['form']['settings']['success_detail_field'] === 'choice'
+    && $decodedCapacity['form']['settings']['submission_proof_enabled'] === '1'
+    && $decodedCapacity['form']['settings']['submission_proof_format'] === 'pdf'
     && fb_localized_form(['title'=>'Contact'], $localizedSuccessSettings)[1]['success_detail_template'] === 'Inscrit a {value}'
     && $successValue === 'One'
     && str_contains($successDetailHtml, 'fb-success-value')
@@ -274,6 +284,10 @@ $invalid = $selectDefinition; $invalid['form']['settings']['success_detail_field
 $check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects unknown success detail references');
 $invalid = $selectDefinition; $invalid['form']['fields'][5]['hidden'] = true;
 $check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects hidden success detail references');
+$invalid = $selectDefinition; $invalid['form']['settings']['submission_proof_enabled'] = 'yes';
+$check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects malformed submission proof toggles');
+$invalid = $selectDefinition; $invalid['form']['settings']['submission_proof_format'] = 'docx';
+$check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects unsupported submission proof formats');
 $displayLabel = 'Kebidanan : "Midwife Challenge" | Sesi A';
 $labelDefinition = $selectDefinition;
 $labelDefinition['form']['fields'][5]['options'][0]['label'] = $displayLabel;
@@ -313,11 +327,18 @@ $decodedUpload = fb_definition_decode($uploadDefinition);
 $decodedUploadField = $decodedUpload['form']['fields'][5];
 $uploadDbField = ['type'=>'file','field_key'=>'attachment','label'=>'Attachment','required'=>0,'is_hidden'=>0,'help_text'=>'','validation_json'=>fb_json_encode($decodedUploadField['validation']),'settings_json'=>fb_json_encode($decodedUploadField['settings'])];
 $uploadHtml = fb_render_field_html($uploadDbField, 'contract', 'i4', false, fb_default_settings());
+$legacyUploadField = $uploadDbField;
+$legacyUploadField['help_text'] = 'Upload proof below the label.';
+$legacyUploadField['settings_json'] = fb_json_encode(['preview_mode'=>'icon']);
+$legacyUploadHtml = fb_render_field_html($legacyUploadField, 'contract', 'i5', false, fb_default_settings());
+$sanitizedUploadDescription = fb_sanitize_upload_description('<?xml encoding="utf-8" ?><p>Stable <strong>description</strong>.</p>');
 $normalizedUploads = fb_normalize_uploaded_files(['name'=>['one.pdf','two.jpg'],'type'=>['application/pdf','image/jpeg'],'tmp_name'=>['/tmp/one','/tmp/two'],'error'=>[UPLOAD_ERR_OK,UPLOAD_ERR_OK],'size'=>[100,200]]);
 $check($decodedUploadField['validation']['max_files'] === 3
     && $decodedUploadField['settings']['preview_mode'] === 'real'
     && !str_contains($decodedUploadField['settings']['upload_description_html'], '<script')
     && !str_contains($decodedUploadField['settings']['upload_description_html'], 'javascript:')
+    && str_contains($uploadHtml, 'class="fb-upload-description"')
+    && str_contains($uploadHtml, 'Attach <strong>records</strong>.')
     && str_contains($uploadHtml, 'name="attachment[]"')
     && str_contains($uploadHtml, 'data-max-files="3"')
     && str_contains($uploadHtml, 'name="fb_upload_count[attachment]"')
@@ -326,6 +347,15 @@ $check($decodedUploadField['validation']['max_files'] === 3
     && count($normalizedUploads) === 2
     && $normalizedUploads[1]['name'] === 'two.jpg',
     'upload definitions sanitize descriptions and render additive removable multi-file controls');
+$check(strpos($legacyUploadHtml, 'fb-label') < strpos($legacyUploadHtml, 'fb-upload-description')
+    && strpos($legacyUploadHtml, 'fb-upload-description') < strpos($legacyUploadHtml, 'fb-drop')
+    && substr_count($legacyUploadHtml, 'Upload proof below the label.') === 1
+    && !str_contains($legacyUploadHtml, 'class="fb-help"'),
+    'legacy plain upload help falls back to one description directly below the field label');
+$check($sanitizedUploadDescription === fb_sanitize_upload_description($sanitizedUploadDescription)
+    && !str_contains($sanitizedUploadDescription, '<?xml')
+    && str_contains($sanitizedUploadDescription, '<strong>description</strong>'),
+    'upload description sanitization is idempotent and removes sanitizer transport declarations');
 $publicRenderer = (string)file_get_contents(dirname(__DIR__) . '/public/render.php');
 $check(str_contains($publicRenderer, "var selectedFiles = []")
     && str_contains($publicRenderer, 'selectedFiles.slice()')

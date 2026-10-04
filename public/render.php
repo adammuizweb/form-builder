@@ -85,10 +85,12 @@ function fb_render_field_html(array $f, string $slug, string $instance, bool $un
         <?php
           $descriptionHtml = '';
           try { $descriptionHtml = fb_sanitize_upload_description((string)$uploadPolicy['description_html']); } catch (InvalidArgumentException) {}
+          $plainUploadDescription = $descriptionHtml === '' ? trim((string)($f['help_text'] ?? '')) : '';
           $maxFiles = (int)$uploadPolicy['max_files'];
           $inputName = $key . ($maxFiles > 1 ? '[]' : '');
         ?>
         <?php if ($descriptionHtml !== ''): ?><div class="fb-upload-description"><?= $descriptionHtml ?></div><?php endif; ?>
+        <?php if ($plainUploadDescription !== ''): ?><div class="fb-upload-description"><?= nl2br(fb_h($plainUploadDescription)) ?></div><?php endif; ?>
         <input type="hidden" name="fb_upload_count[<?= fb_h($key) ?>]" value="0" data-fb-upload-count>
         <div class="fb-drop" data-max="<?= $maxBytes ?>" data-max-files="<?= $maxFiles ?>" data-image="<?= !empty($meta['image']) ? '1' : '0' ?>" data-preview-mode="<?= fb_h((string)$uploadPolicy['preview_mode']) ?>">
           <input type="file" name="<?= fb_h($inputName) ?>" accept="<?= fb_h(implode(',', array_map(static fn(string $ext): string => '.' . $ext, $uploadPolicy['exts']))) ?>" <?= $maxFiles > 1 ? 'multiple' : '' ?> <?= $req ? 'required' : '' ?>>
@@ -98,7 +100,7 @@ function fb_render_field_html(array $f, string $slug, string $instance, bool $un
           <div class="up-items" aria-live="polite"></div>
           <div class="up-error" data-fb-upload-error role="alert"></div>
         </div>
-        <?php if (!empty($f['help_text'])): ?><div class="fb-help"><?= fb_h($f['help_text']) ?></div><?php endif; ?>
+        <?php if ($descriptionHtml !== '' && !empty($f['help_text'])): ?><div class="fb-help"><?= fb_h($f['help_text']) ?></div><?php endif; ?>
       <?php elseif ($type === 'country'): ?>
         <label class="fb-label" for="<?= fb_h($id) ?>"><?= fb_h($label) ?> <?= $req ? '<span class="req">*</span>' : '' ?></label>
         <select id="<?= fb_h($id) ?>" name="<?= fb_h($key) ?>" data-fb-country <?= $req ? 'required' : '' ?>>
@@ -189,18 +191,60 @@ function fb_render_form(PDO $pdo, array $form): string {
     $successDetail = '';
     $successField = fb_success_value_field($allFields, (string)$settings['success_detail_field']);
     $successToken = is_string($_GET['fb_success'] ?? null) ? $_GET['fb_success'] : '';
-    if ($flash === 'ok' && $successField !== null && $ref !== '' && $successToken !== '') {
+    $proofModel = null;
+    $needsVerifiedSuccess = $successField !== null || $settings['submission_proof_enabled'] === '1';
+    if ($flash === 'ok' && $needsVerifiedSuccess && $ref !== '' && $successToken !== '') {
         try {
             if (fb_success_token_check($pdo, $formId, $ref, $successToken)) {
-                $submission = $pdo->prepare('SELECT data_json FROM fb_submissions WHERE form_id = ? AND reference_code = ? AND is_deleted = 0 LIMIT 1');
+                $submission = $pdo->prepare('SELECT data_json,created_at FROM fb_submissions WHERE form_id = ? AND reference_code = ? AND is_deleted = 0 LIMIT 1');
                 $submission->execute([$formId, $ref]);
-                $data = json_decode((string)($submission->fetchColumn() ?: ''), true);
-                $fieldKey = (string)$successField['field_key'];
-                $value = is_array($data) ? fb_success_value_text($successField, $data[$fieldKey] ?? '') : '';
-                $successDetail = fb_success_detail_html((string)$settings['success_detail_template'], (string)$successField['label'], $value);
+                $submissionRow = $submission->fetch(PDO::FETCH_ASSOC);
+                if (is_array($submissionRow)) {
+                    if (!headers_sent()) {
+                        header('Cache-Control: private, no-store, no-cache, must-revalidate, max-age=0');
+                        header('Pragma: no-cache');
+                        header('Referrer-Policy: no-referrer');
+                        header('X-Robots-Tag: noindex, nofollow, noarchive');
+                    }
+                    $data = json_decode((string)($submissionRow['data_json'] ?? ''), true);
+                    $successValue = '';
+                    if ($successField !== null) {
+                        $fieldKey = (string)$successField['field_key'];
+                        $successValue = is_array($data) ? fb_success_value_text($successField, $data[$fieldKey] ?? '') : '';
+                        $successDetail = fb_success_detail_html((string)$settings['success_detail_template'], (string)$successField['label'], $successValue);
+                    }
+                    if ($settings['submission_proof_enabled'] === '1') {
+                        $detailMessage = str_replace(
+                            ['{label}', '{value}'],
+                            [$successField !== null ? (string)$successField['label'] : '', ''],
+                            (string)$settings['success_detail_template']
+                        );
+                        $detailMessage = trim((string)(preg_replace('/\s+/u', ' ', $detailMessage) ?? ''));
+                        $createdAt = (string)($submissionRow['created_at'] ?? '');
+                        $submittedAt = function_exists('app_display_datetime') ? app_display_datetime($createdAt) : $createdAt;
+                        $proofModel = [
+                            'format'=>(string)$settings['submission_proof_format'],
+                            'filename'=>substr(preg_replace('/[^a-z0-9_-]+/i', '-', $slug . '-' . strtolower($ref)) ?? 'submission-proof', 0, 120),
+                            'proof_title'=>fb_message($settings, 'proof_title'),
+                            'form_title'=>mb_substr((string)$form['title'], 0, 180),
+                            'success_heading'=>fb_message($settings, 'success_heading'),
+                            'success_message'=>mb_substr((string)$settings['success_message'], 0, 1000),
+                            'detail_message'=>mb_substr($detailMessage, 0, 1000),
+                            'detail_value'=>mb_substr($successValue, 0, 500),
+                            'reference_label'=>fb_message($settings, 'reference_label'),
+                            'reference'=>$ref,
+                            'submitted_label'=>fb_message($settings, 'proof_submitted_at'),
+                            'submitted_at'=>mb_substr($submittedAt, 0, 200),
+                            'note'=>fb_message($settings, 'proof_note'),
+                            'download_label'=>fb_message($settings, 'proof_download'),
+                            'preparing_label'=>fb_message($settings, 'proof_preparing'),
+                            'failed_label'=>fb_message($settings, 'proof_failed'),
+                        ];
+                    }
+                }
             }
         } catch (Throwable $error) {
-            error_log('[form-builder] success detail unavailable: ' . $error->getMessage());
+            error_log('[form-builder] verified success data unavailable: ' . $error->getMessage());
         }
     }
     $capacityUsage = fb_select_capacity_usage($pdo, $formId, $allFields);
@@ -216,6 +260,7 @@ function fb_render_form(PDO $pdo, array $form): string {
     $showTotal = $settings['show_total'] === '1' && $priceMap !== [] && !$hasTotalEl;
 
     static $cssPrinted = false;
+    static $proofScriptPrinted = false;
     ob_start();
 
     if (!$cssPrinted):
@@ -322,6 +367,13 @@ function fb_render_form(PDO $pdo, array $form): string {
 .fb-success-detail { max-width: 52ch; margin: 0 auto 1.5rem; color: var(--fb-text); font-size: 1rem; line-height: 1.55; overflow-wrap: anywhere; }
 .fb-success-value { color: var(--fb-accent-deep); font-size: clamp(1.45rem, 4vw, 2.15rem); font-weight: 800; line-height: 1.2; }
 .fb-ref { display: inline-block; font-family: ui-monospace, monospace; font-weight: 700; letter-spacing: .08em; background: var(--fb-surface); border: 1.5px dashed var(--fb-accent); color: var(--fb-accent-deep); border-radius: 10px; padding: .5rem 1.1rem; }
+.fb-proof { display: flex; flex-direction: column; align-items: center; gap: .55rem; margin-top: 1.4rem; }
+.fb-proof-download { display: inline-flex; align-items: center; justify-content: center; gap: .55rem; min-height: 44px; border: 1.5px solid var(--fb-accent); border-radius: var(--fb-radius); padding: .7rem 1rem; color: var(--fb-accent-deep); background: var(--fb-surface); font: inherit; font-weight: 750; cursor: pointer; transition: background .2s, color .2s, transform .2s; }
+.fb-proof-download:hover { color: var(--fb-on-accent, #fff); background: var(--fb-accent); transform: translateY(-1px); }
+.fb-proof-download:focus-visible { outline: 3px solid var(--fb-accent-soft, rgba(43 122 74 / .25)); outline-offset: 2px; }
+.fb-proof-download:disabled { opacity: .65; cursor: wait; transform: none; }
+.fb-proof-download svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2; }
+.fb-proof-status { min-height: 1.2em; color: var(--fb-muted); font-size: .78rem; }
 @keyframes fb-pop { 0% { transform: scale(.7); } 60% { transform: scale(1.12); } 100% { transform: scale(1); } }
 </style>
 <?php endif; ?>
@@ -340,6 +392,19 @@ function fb_render_form(PDO $pdo, array $form): string {
     <p><?= nl2br(fb_h($settings['success_message'])) ?></p>
     <?php if ($successDetail !== ''): ?><div class="fb-success-detail"><?= $successDetail ?></div><?php endif; ?>
     <?php if ($ref !== ''): ?><div><?= fb_h(fb_message($settings, 'reference_label')) ?></div><span class="fb-ref"><?= fb_h($ref) ?></span><?php endif; ?>
+    <?php if (is_array($proofModel)):
+      $proofJson = json_encode($proofModel, FB_JSON_FLAGS | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+      $proofScriptHash = is_file(__DIR__ . '/proof.js') ? substr(hash_file('sha256', __DIR__ . '/proof.js'), 0, 16) : 'missing'; ?>
+    <div class="fb-proof" data-fb-proof>
+      <button class="fb-proof-download" type="button" data-fb-proof-download>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 19h14"/></svg>
+        <span><?= fb_h((string)$proofModel['download_label']) ?></span>
+      </button>
+      <span class="fb-proof-status" data-fb-proof-status role="status" aria-live="polite"></span>
+      <script type="application/json" data-fb-proof-model><?= $proofJson ?></script>
+    </div>
+    <?php if (!$proofScriptPrinted): $proofScriptPrinted = true; ?><script src="/static/plugins/form-builder/proof.js?v=<?= fb_h($proofScriptHash) ?>" defer referrerpolicy="no-referrer"></script><?php endif; ?>
+    <?php endif; ?>
   </div>
 <?php else: ?>
   <div class="fb-title"><?= fb_h($form['title']) ?></div>

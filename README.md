@@ -22,9 +22,13 @@ Public labels, help, options, UI messages, validation messages, success text, an
 
 Submission settings may add a custom success notification using `success_detail_template` and `success_detail_field`. The plain-text template accepts `{value}` for the submitted value and `{label}` for its localized field label; choice fields display their visitor-facing option labels. The selected value is retrieved after redirect through a short-lived signed token and rendered prominently without placing submission data in the URL.
 
+Each form may optionally expose a downloadable submission proof in PNG or PDF format. The proof is available only on a signed, non-expired success page, contains the localized form title, success information, selected custom success value, submission reference, and submission time, and is generated entirely in the visitor's browser without storing another server file. It is a convenience receipt rather than a tamper-proof digital certificate.
+
 The `country` field renders a searchable bundled ISO 3166-1 picker and stores the uppercase alpha-2 code. The `intl_phone` field requires a `settings.country_field` reference to a `country` field, displays its calling code, and stores a server-normalized E.164 value. Country names and calling metadata are bundled for runtime independence; provenance and licenses are documented in `THIRD_PARTY_NOTICES.md`.
 
 Priced options and totals use the form's configurable uppercase ISO 4217 `currency_code`; new forms default to `USD`.
+
+File and image fields render their sanitized rich upload description directly below the field label. Existing definitions that only provide plain `help` text use that text as the same below-label description; when both values exist, rich description remains primary and plain help stays below the dropzone.
 
 Select options may define an optional positive `capacity`. Public forms disable full options, while final submission, restore, and legacy-import checks run under the form mutation lock. Capacity is derived from non-trashed submissions, so trashing or permanently deleting a submission releases its slot without maintaining a separate counter. Visual Builder provides structured controls for visitor-facing text, stored values, pricing, and optional registration limits. Classic Builder option lines use `value|Label|price|capacity`; leave capacity blank for an unlimited option.
 
