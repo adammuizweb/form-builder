@@ -8,26 +8,6 @@ function fb_h(?string $v): string {
     return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
 }
 
-function fb_success_detail_html(string $template, string $label, string $value): string {
-    if ($value === '') return '';
-    $parts = preg_split('/(\{value\}|\{label\})/', mb_substr($template, 0, 2000), -1, PREG_SPLIT_DELIM_CAPTURE);
-    if (!is_array($parts)) return '';
-    $html = '';
-    $hasValue = false;
-    foreach ($parts as $part) {
-        if ($part === '{value}') {
-            $html .= '<strong class="fb-success-value">' . fb_h($value) . '</strong>';
-            $hasValue = true;
-        } elseif ($part === '{label}') {
-            $html .= fb_h($label);
-        } else {
-            $html .= nl2br(fb_h($part), false);
-        }
-    }
-    if (!$hasValue) $html .= ($html !== '' ? '<br>' : '') . '<strong class="fb-success-value">' . fb_h($value) . '</strong>';
-    return $html;
-}
-
 // Render a single (non-container) field. Returns '' for hidden/unknown types.
 function fb_render_field_html(array $f, string $slug, string $instance, bool $unsafeCode, array $publicSettings, array $capacityUsage = []): string {
     $types = fb_field_types();
@@ -186,8 +166,14 @@ function fb_render_form(PDO $pdo, array $form): string {
     unset($localizedField);
     foreach ($tree as &$treeRow) foreach ($treeRow['cols'] as &$treeCol) foreach ($treeCol['fields'] as &$treeField) $treeField = fb_localized_field($treeField, $settings);
     unset($treeRow, $treeCol, $treeField);
-    $successDetail = '';
     $successField = fb_success_value_field($allFields, (string)$settings['success_detail_field']);
+    $successTemplate = fb_success_notification_template($settings);
+    $successMessage = fb_success_notification_text(
+        $successTemplate,
+        $successField !== null ? (string)$successField['label'] : '',
+        '',
+        (string)$settings['success_message_case']
+    );
     $successToken = is_string($_GET['fb_success'] ?? null) ? $_GET['fb_success'] : '';
     $proofModel = null;
     $needsVerifiedSuccess = $successField !== null || $settings['submission_proof_enabled'] === '1';
@@ -209,15 +195,14 @@ function fb_render_form(PDO $pdo, array $form): string {
                     if ($successField !== null) {
                         $fieldKey = (string)$successField['field_key'];
                         $successValue = is_array($data) ? fb_success_value_text($successField, $data[$fieldKey] ?? '') : '';
-                        $successDetail = fb_success_detail_html((string)$settings['success_detail_template'], (string)$successField['label'], $successValue);
+                        $successMessage = fb_success_notification_text(
+                            $successTemplate,
+                            (string)$successField['label'],
+                            $successValue,
+                            (string)$settings['success_message_case']
+                        );
                     }
                     if ($settings['submission_proof_enabled'] === '1') {
-                        $detailMessage = str_replace(
-                            ['{label}', '{value}'],
-                            [$successField !== null ? (string)$successField['label'] : '', ''],
-                            (string)$settings['success_detail_template']
-                        );
-                        $detailMessage = trim((string)(preg_replace('/\s+/u', ' ', $detailMessage) ?? ''));
                         $createdAt = (string)($submissionRow['created_at'] ?? '');
                         $submittedAt = function_exists('app_display_datetime') ? app_display_datetime($createdAt) : $createdAt;
                         $proofModel = [
@@ -226,9 +211,7 @@ function fb_render_form(PDO $pdo, array $form): string {
                             'proof_title'=>fb_message($settings, 'proof_title'),
                             'form_title'=>mb_substr((string)$form['title'], 0, 180),
                             'success_heading'=>fb_message($settings, 'success_heading'),
-                            'success_message'=>mb_substr((string)$settings['success_message'], 0, 1000),
-                            'detail_message'=>mb_substr($detailMessage, 0, 1000),
-                            'detail_value'=>mb_substr($successValue, 0, 500),
+                            'success_message'=>mb_substr($successMessage, 0, 4000),
                             'reference_label'=>fb_message($settings, 'reference_label'),
                             'reference'=>$ref,
                             'submitted_label'=>fb_message($settings, 'proof_submitted_at'),
@@ -387,8 +370,7 @@ function fb_render_form(PDO $pdo, array $form): string {
   <div class="fb-success">
     <div class="check">&#10003;</div>
     <h3><?= fb_h(fb_message($settings, 'success_heading')) ?></h3>
-    <p><?= nl2br(fb_h($settings['success_message'])) ?></p>
-    <?php if ($successDetail !== ''): ?><div class="fb-success-detail"><?= $successDetail ?></div><?php endif; ?>
+    <?php if ($successMessage !== ''): ?><p><?= nl2br(fb_h($successMessage)) ?></p><?php endif; ?>
     <?php if ($ref !== ''): ?><div><?= fb_h(fb_message($settings, 'reference_label')) ?></div><span class="fb-ref"><?= fb_h($ref) ?></span><?php endif; ?>
     <?php if (is_array($proofModel)):
       $proofJson = json_encode($proofModel, FB_JSON_FLAGS | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);

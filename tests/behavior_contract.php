@@ -193,9 +193,10 @@ $check(fb_success_token_check($successTokenPdo, 7, 'FB-ABC123', $successToken)
     && fb_safe_return_url('/apply/?fb_status=ok&fb_success=secret&keep=yes') === '/apply/?keep=yes',
     'success detail tokens bind the form and reference, expire, and are removed from return URLs');
 $proofDefaults = fb_default_settings();
-$normalizedProofSettings = fb_form_settings(['settings_json'=>fb_json_encode(['submission_proof_enabled'=>'invalid','submission_proof_format'=>'svg'])]);
+$normalizedProofSettings = fb_form_settings(['settings_json'=>fb_json_encode(['submission_proof_enabled'=>'invalid','submission_proof_format'=>'svg','success_message_case'=>'invalid'])]);
 $check($proofDefaults['submission_proof_enabled'] === '0' && $proofDefaults['submission_proof_format'] === 'png'
     && $normalizedProofSettings['submission_proof_enabled'] === '0' && $normalizedProofSettings['submission_proof_format'] === 'png'
+    && $proofDefaults['success_message_case'] === 'preserve' && $normalizedProofSettings['success_message_case'] === 'preserve'
     && fb_public_message_defaults('en')['proof_download'] === 'Download submission proof',
     'submission proof defaults are disabled, PNG-based, normalized, and publicly labelled');
 $relocatedParent = $sandbox . '/relocated'; mkdir($relocatedParent, 0700);
@@ -252,11 +253,12 @@ $invalid = $definition; $invalid['form']['fields'][3]['validation']['unknown_rul
 $check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects unknown nested keys');
 $selectDefinition = $definition;
 $selectDefinition['form']['fields'][] = ['key'=>'choice','parent'=>'col_main','type'=>'select','label'=>'Choice','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>40,'hidden'=>false,'options'=>[['value'=>'one','label'=>'One','price'=>0,'capacity'=>3]],'validation'=>[],'settings'=>[]];
-$selectDefinition['form']['settings']['success_detail_template'] = 'Registered for {value} ({label})';
+$selectDefinition['form']['settings']['success_message'] = 'Registered for {value} ({label})';
+$selectDefinition['form']['settings']['success_message_case'] = 'upper';
 $selectDefinition['form']['settings']['success_detail_field'] = 'choice';
 $selectDefinition['form']['settings']['submission_proof_enabled'] = '1';
 $selectDefinition['form']['settings']['submission_proof_format'] = 'pdf';
-$selectDefinition['form']['settings']['translations']['fr-ca']['form']['success_detail_template'] = 'Inscrit a {value}';
+$selectDefinition['form']['settings']['translations']['fr-ca']['form']['success_message'] = 'Inscrit a {value}';
 $decodedCapacity = fb_definition_decode($selectDefinition);
 $capacityField = ['type'=>'select','field_key'=>'choice','label'=>'Choice','required'=>1,'is_hidden'=>0,'placeholder'=>'','help_text'=>'','options_json'=>fb_json_encode($decodedCapacity['form']['fields'][5]['options']),'validation_json'=>null,'settings_json'=>null];
 $capacityOptions = fb_field_options($capacityField);
@@ -268,18 +270,18 @@ $check(($capacityOptions[0]['capacity'] ?? null) === 3
     && !str_contains($availableOptionHtml, 'value="one" disabled'),
     'select capacity round-trips through definitions and disables only a full public option');
 $localizedSuccessSettings = array_merge(fb_default_settings(), $decodedCapacity['form']['settings']);
+[, $localizedSuccessSettings] = fb_localized_form(['title'=>'Contact'], $localizedSuccessSettings);
 $successValue = fb_success_value_text($capacityField, 'one');
-$successDetailHtml = fb_success_detail_html($localizedSuccessSettings['success_detail_template'], 'Choice <unsafe>', $successValue);
+$successNotification = fb_success_notification_text(fb_success_notification_template($localizedSuccessSettings), 'Choice', $successValue, $localizedSuccessSettings['success_message_case']);
+$legacySuccessTemplate = fb_success_notification_template(array_merge(fb_default_settings(), ['success_message'=>'Current message','success_detail_template'=>'Legacy {value}']));
 $check($decodedCapacity['form']['settings']['success_detail_field'] === 'choice'
     && $decodedCapacity['form']['settings']['submission_proof_enabled'] === '1'
     && $decodedCapacity['form']['settings']['submission_proof_format'] === 'pdf'
-    && fb_localized_form(['title'=>'Contact'], $localizedSuccessSettings)[1]['success_detail_template'] === 'Inscrit a {value}'
+    && $localizedSuccessSettings['success_message'] === 'Inscrit a {value}'
     && $successValue === 'One'
-    && str_contains($successDetailHtml, 'fb-success-value')
-    && str_contains($successDetailHtml, 'One')
-    && str_contains($successDetailHtml, 'Choice &lt;unsafe&gt;')
-    && !str_contains($successDetailHtml, '<unsafe>'),
-    'custom success notifications localize templates and prominently render safe visitor-facing choice labels');
+    && $successNotification === 'INSCRIT A ONE'
+    && $legacySuccessTemplate === 'Legacy {value}',
+    'one localized success template and letter case drive notification and proof with legacy template fallback');
 $invalid = $selectDefinition; $invalid['form']['settings']['success_detail_field'] = 'missing';
 $check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects unknown success detail references');
 $invalid = $selectDefinition; $invalid['form']['fields'][5]['hidden'] = true;
@@ -288,6 +290,8 @@ $invalid = $selectDefinition; $invalid['form']['settings']['submission_proof_ena
 $check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects malformed submission proof toggles');
 $invalid = $selectDefinition; $invalid['form']['settings']['submission_proof_format'] = 'docx';
 $check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects unsupported submission proof formats');
+$invalid = $selectDefinition; $invalid['form']['settings']['success_message_case'] = 'title';
+$check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects unsupported success message letter case');
 $displayLabel = 'Kebidanan : "Midwife Challenge" | Sesi A';
 $labelDefinition = $selectDefinition;
 $labelDefinition['form']['fields'][5]['options'][0]['label'] = $displayLabel;
@@ -393,7 +397,7 @@ $check(fb_format_currency(1250, 'EUR') === 'EUR 1,250' && fb_format_currency(125
 $exportFields = [
     ['field_key'=>'name','type'=>'text','label'=>'Name','is_hidden'=>0],
     ['field_key'=>'country','type'=>'country','label'=>'Country','is_hidden'=>0],
-    ['field_key'=>'choice','type'=>'select','label'=>'Trial Class','is_hidden'=>0,'options_json'=>fb_json_encode([['value'=>'biomedis','label'=>'Biomedis / Dart Mutation','price'=>0]])],
+    ['field_key'=>'choice','type'=>'select','label'=>'Workshop','is_hidden'=>0,'options_json'=>fb_json_encode([['value'=>'session_a','label'=>'Session A','price'=>0]])],
     ['field_key'=>'attachment','type'=>'file','label'=>'Attachment','is_hidden'=>0,'validation_json'=>fb_json_encode(['max_files'=>2])],
     ['field_key'=>'private','type'=>'text','label'=>'Private','is_hidden'=>1],
 ];
@@ -402,12 +406,12 @@ $exportColumns = fb_submission_export_columns($exportFields, fb_field_types(), $
 $exportRecord = fb_submission_export_record([
     'id'=>17,'form_id'=>3,
     'reference_code'=>'FB-1','workflow_status'=>'submitted','created_at'=>'2026-09-16 10:00:00','updated_at'=>'2026-09-16 10:01:00','ip'=>'203.0.113.1',
-    'data_json'=>fb_json_encode(['name'=>'=unsafe','country'=>'ID','choice'=>'biomedis','private'=>'hidden']),
+    'data_json'=>fb_json_encode(['name'=>'=unsafe','country'=>'ID','choice'=>'session_a','private'=>'hidden']),
     'files_json'=>fb_json_encode(['attachment'=>[['original'=>'document.pdf'],['original'=>'photo.jpg']]]),
     'totals_json'=>fb_json_encode(['total'=>1250]),
 ], $exportColumns, 'https://example.test/dashboard/');
-$check(array_column($exportColumns, 'label') === ['Reference','Workflow','Submitted','Updated','IP Address','Name','Country','Trial Class','Attachment (file 1)','Attachment (file 2)','Total']
-    && $exportRecord['field:country'] === 'Indonesia (ID)' && $exportRecord['field:choice'] === 'Biomedis / Dart Mutation'
+$check(array_column($exportColumns, 'label') === ['Reference','Workflow','Submitted','Updated','IP Address','Name','Country','Workshop','Attachment (file 1)','Attachment (file 2)','Total']
+    && $exportRecord['field:country'] === 'Indonesia (ID)' && $exportRecord['field:choice'] === 'Session A'
     && $exportRecord['field:attachment'] === 'document.pdf' && $exportRecord['field:attachment:2'] === 'photo.jpg'
     && $exportRecord['field:attachment:url'] === 'https://example.test/dashboard/?page=admin%2Ftools%2Fform-builder&view=submissions&id=3&action=file&sid=17&fkey=attachment&file=0'
     && str_ends_with($exportRecord['field:attachment:2:url'], '&file=1')

@@ -8,7 +8,7 @@ $permissions = array_column($manifest['permissions'] ?? [], null, 'key');
 $composer = json_decode((string)file_get_contents($root . '/composer.json'), true, 32, JSON_THROW_ON_ERROR);
 $lock = json_decode((string)file_get_contents($root . '/composer.lock'), true, 64, JSON_THROW_ON_ERROR);
 $lockedPackages = array_column($lock['packages'] ?? [], 'version', 'name');
-$check(($manifest['version'] ?? null) === '2.2.3' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.140' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
+$check(($manifest['version'] ?? null) === '2.2.4' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.140' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
 $check(in_array('content-editor', $manifest['dependencies']['js'] ?? [], true), 'upload descriptions declare the Core content-editor dependency');
 $staticCopies = array_column($manifest['static']['copy'] ?? [], 'to', 'from');
 $check(($staticCopies['public/proof.js'] ?? null) === 'static/plugins/form-builder/proof.js', 'submission proof generator publishes only in the plugin-owned static namespace');
@@ -59,8 +59,8 @@ $check(substr_count($submit, 'fb_success_redirect($pdo, $return, $form,') === 3
     && str_contains($publicRenderer, 'fb_success_token_check($pdo, $formId, $ref, $successToken)')
     && str_contains($publicRenderer, 'WHERE form_id = ? AND reference_code = ? AND is_deleted = 0 LIMIT 1')
     && str_contains($publicRenderer, 'fb_success_value_text($successField')
-    && str_contains($publicRenderer, 'class="fb-success-detail"'),
-    'custom success details use a short-lived signed PRG lookup instead of exposing submission values in the URL');
+    && str_contains($publicRenderer, 'fb_success_notification_text('),
+    'dynamic success messages use a short-lived signed PRG lookup instead of exposing submission values in the URL');
 $check(str_contains($publicRenderer, 'SELECT data_json,created_at FROM fb_submissions WHERE form_id = ? AND reference_code = ? AND is_deleted = 0 LIMIT 1')
     && str_contains($publicRenderer, "header('Cache-Control: private, no-store")
     && str_contains($publicRenderer, "header('Referrer-Policy: no-referrer')")
@@ -81,6 +81,10 @@ $check(str_contains($proofScript, "document.createElement('canvas')")
     && str_contains($proofScript, "new Blob([concatBytes(parts)], { type: 'application/pdf' })")
     && str_contains($proofScript, "canvasBlob(canvas, 'image/png')")
     && str_contains($proofScript, 'link.download = filename')
+    && str_contains($proofScript, 'model.success_message')
+    && str_contains($proofScript, 'const source = text(value, 4000)')
+    && !str_contains($proofScript, 'detail_message')
+    && !str_contains($proofScript, 'detail_value')
     && !preg_match('/\b(?:fetch|XMLHttpRequest|sendBeacon|WebSocket)\b/', $proofScript),
     'browser proof generator creates local PNG/PDF downloads without transmitting submission data');
 $check(str_contains($submit, 'if ($uploadFields !== [])')
@@ -139,13 +143,16 @@ $check(str_contains($adminUi, 'function fb_visual_builder_url(')
     && str_contains($classicBuilder, 'Classic Builder:')
     && str_contains($classicBuilder, 'fb_visual_builder_url($formId)'),
     'new forms default to Visual Builder while Classic remains explicitly available');
-$check(str_contains($settings, 'name="success_detail_template"')
+$check(str_contains($settings, 'name="success_message"')
     && str_contains($settings, 'name="success_detail_field"')
+    && str_contains($settings, 'name="success_message_case"')
+    && str_contains($settings, 'placeholder="Your submission for {value} has been received."')
+    && !str_contains($settings, 'Trial' . ' Class')
     && str_contains($settings, '{value}')
     && str_contains($settings, '{label}')
     && str_contains($visualBuilder, "'success_detail_field'")
     && str_contains($ajax, "\$formSettings['success_detail_field']"),
-    'shared settings and both builder lifecycles preserve valid custom success notification references');
+    'one configurable success and proof message preserves valid dynamic field references across both builders');
 $check(str_contains($settings, 'name="submission_proof_enabled"')
     && str_contains($settings, 'name="submission_proof_format"')
     && str_contains($settings, '>PNG image</option>')

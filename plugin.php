@@ -484,6 +484,7 @@ function fb_default_settings(): array {
     return [
         'submit_label'    => 'Submit',
         'success_message' => 'Thank you! Your submission has been received.',
+        'success_message_case' => 'preserve',
         'success_detail_template' => '',
         'success_detail_field' => '',
         'submission_proof_enabled' => '0',
@@ -513,6 +514,7 @@ function fb_form_settings(array $form): array {
     $s['rate_max'] = max(1, min(10000, (int)$s['rate_max']));
     $s['rate_window'] = max(60, min(604800, (int)$s['rate_window']));
     $s['min_fill_seconds'] = max(0, min(30, (int)($s['min_fill_seconds'] ?? 2)));
+    $s['success_message_case'] = in_array(($s['success_message_case'] ?? ''), ['preserve', 'upper'], true) ? $s['success_message_case'] : 'preserve';
     $s['success_detail_template'] = is_string($s['success_detail_template'] ?? null) ? trim(mb_substr($s['success_detail_template'], 0, 2000)) : '';
     $s['success_detail_field'] = is_string($s['success_detail_field'] ?? null) && preg_match('/\A[a-z0-9][a-z0-9_]{0,79}\z/', $s['success_detail_field']) === 1 ? $s['success_detail_field'] : '';
     $s['submission_proof_enabled'] = ($s['submission_proof_enabled'] ?? '0') === '1' ? '1' : '0';
@@ -553,6 +555,17 @@ function fb_success_value_text(array $field, mixed $value): string {
     $text = preg_replace('/[\x00-\x1F\x7F]+/u', ' ', (string)$value);
     $text = is_string($text) ? preg_replace('/\s+/u', ' ', $text) : '';
     return trim(mb_substr(is_string($text) ? $text : '', 0, 500));
+}
+
+function fb_success_notification_template(array $settings): string {
+    $legacy = trim((string)($settings['success_detail_template'] ?? ''));
+    return $legacy !== '' ? $legacy : (string)($settings['success_message'] ?? '');
+}
+
+function fb_success_notification_text(string $template, string $label, string $value, string $letterCase = 'preserve'): string {
+    $message = str_replace(['{label}', '{value}'], [$label, $value], mb_substr($template, 0, 4000));
+    if ($letterCase === 'upper') $message = mb_strtoupper($message, 'UTF-8');
+    return trim(mb_substr($message, 0, 4000));
 }
 
 function fb_form_access(array $form): array {

@@ -37,7 +37,7 @@
   }
 
   function wrappedLines(ctx, value, maxWidth) {
-    const source = text(value, 2000);
+    const source = text(value, 4000);
     if (!source) return [];
     const words = source.split(/\s+/u).flatMap((word) => ctx.measureText(word).width > maxWidth ? splitLongWord(ctx, word, maxWidth) : [word]);
     const lines = [];
@@ -86,14 +86,6 @@
     y += (wrappedLines(ctx, model.success_heading, CONTENT_WIDTH).length * 46) + 18;
     ctx.font = '400 27px system-ui, sans-serif';
     y += (wrappedLines(ctx, model.success_message, CONTENT_WIDTH).length * 39) + 34;
-    if (text(model.detail_message, 1000)) {
-      ctx.font = '550 29px system-ui, sans-serif';
-      y += (wrappedLines(ctx, model.detail_message, CONTENT_WIDTH).length * 42) + 14;
-    }
-    if (text(model.detail_value, 500)) {
-      ctx.font = '850 54px system-ui, sans-serif';
-      y += (wrappedLines(ctx, model.detail_value, CONTENT_WIDTH).length * 66) + 42;
-    }
     y += proofCardHeight(ctx, model) + 58;
     ctx.font = '400 22px system-ui, sans-serif';
     y += (wrappedLines(ctx, model.note, CONTENT_WIDTH).length * 33) + 55;
@@ -141,17 +133,6 @@
     ctx.fillStyle = '#596659';
     ctx.font = '400 27px system-ui, sans-serif';
     y = drawWrapped(ctx, model.success_message, PAD, y, CONTENT_WIDTH, 39, breakpoints) + 34;
-
-    if (text(model.detail_message, 1000)) {
-      ctx.fillStyle = '#1d241d';
-      ctx.font = '550 29px system-ui, sans-serif';
-      y = drawWrapped(ctx, model.detail_message, PAD, y, CONTENT_WIDTH, 42, breakpoints) + 14;
-    }
-    if (text(model.detail_value, 500)) {
-      ctx.fillStyle = '#1c5633';
-      ctx.font = '850 54px system-ui, sans-serif';
-      y = drawWrapped(ctx, model.detail_value, PAD, y, CONTENT_WIDTH, 66, breakpoints) + 42;
-    }
 
     const cardY = y;
     const cardHeight = proofCardHeight(ctx, model);

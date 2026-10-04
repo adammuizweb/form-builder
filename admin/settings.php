@@ -49,9 +49,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 
     if ($act === 'save_submission') {
         $settings['submit_label'] = trim((string)($_POST['submit_label'] ?? 'Submit')) ?: 'Submit';
-        $settings['success_message'] = trim((string)($_POST['success_message'] ?? ''));
-        $successTemplate = $_POST['success_detail_template'] ?? '';
-        $settings['success_detail_template'] = is_string($successTemplate) ? trim(mb_substr($successTemplate, 0, 2000)) : '';
+        $successMessage = $_POST['success_message'] ?? '';
+        $settings['success_message'] = is_string($successMessage) ? trim(mb_substr($successMessage, 0, 4000)) : '';
+        $settings['success_detail_template'] = '';
+        $successMessageCase = $_POST['success_message_case'] ?? 'preserve';
+        $settings['success_message_case'] = is_string($successMessageCase) && in_array($successMessageCase, ['preserve', 'upper'], true) ? $successMessageCase : 'preserve';
         $successField = $_POST['success_detail_field'] ?? '';
         $successFieldKeys = array_column($successValueFields, 'field_key');
         $settings['success_detail_field'] = is_string($successField) && in_array($successField, $successFieldKeys, true) ? $successField : '';
@@ -173,12 +175,12 @@ $allUsers = $pdo->query("SELECT id, name, email, role FROM `users` WHERE is_dele
         <div class="fba-field"><label>Rate window (seconds)</label><input type="number" name="rate_window" value="<?= (int)$settings['rate_window'] ?>"></div>
       </div>
       <div class="fba-row2">
-        <div class="fba-field"><label>Success message</label><textarea name="success_message" rows="2" style="font-family:inherit"><?= htmlspecialchars($settings['success_message'], ENT_QUOTES) ?></textarea></div>
+        <div class="fba-field"><label>Success notification and proof message</label><textarea name="success_message" rows="3" maxlength="4000" placeholder="Your submission for {value} has been received." style="font-family:inherit"><?= htmlspecialchars(fb_success_notification_template($settings), ENT_QUOTES) ?></textarea><div class="fba-hint">This exact message is shown after submission and included in the downloadable proof. <span class="fba-code">{value}</span> inserts the selected field's submitted display value; <span class="fba-code">{label}</span> inserts that field's label.</div></div>
         <div class="fba-field"><label>Notification email</label><input type="email" name="notify_email" value="<?= htmlspecialchars($settings['notify_email'], ENT_QUOTES) ?>" placeholder="admin@example.com"><div class="fba-hint">Sent after persistence through the Core Mail API.</div></div>
       </div>
       <div class="fba-row2">
-        <div class="fba-field"><label>Custom success notification</label><textarea name="success_detail_template" rows="3" maxlength="2000" placeholder="Anda telah mendaftarkan diri di Trial Class {value}" style="font-family:inherit"><?= htmlspecialchars($settings['success_detail_template'], ENT_QUOTES) ?></textarea><div class="fba-hint">Use <span class="fba-code">{value}</span> for the submitted value and <span class="fba-code">{label}</span> for its field label. The value is displayed prominently; without <span class="fba-code">{value}</span>, it is appended below the text.</div></div>
-        <div class="fba-field"><label>Success notification value</label><select name="success_detail_field"><option value="">Disabled</option><?php foreach ($successValueFields as $successValueField): ?><option value="<?= htmlspecialchars($successValueField['field_key'], ENT_QUOTES) ?>" <?= $settings['success_detail_field'] === $successValueField['field_key'] ? 'selected' : '' ?>><?= htmlspecialchars((string)($successValueField['label'] ?: $successValueField['field_key']), ENT_QUOTES) ?></option><?php endforeach; ?></select><div class="fba-hint">Choice fields display their visitor-facing option label instead of the stored key.</div></div>
+        <div class="fba-field"><label>Dynamic message value</label><select name="success_detail_field"><option value="">No dynamic value</option><?php foreach ($successValueFields as $successValueField): ?><option value="<?= htmlspecialchars($successValueField['field_key'], ENT_QUOTES) ?>" <?= $settings['success_detail_field'] === $successValueField['field_key'] ? 'selected' : '' ?>><?= htmlspecialchars((string)($successValueField['label'] ?: $successValueField['field_key']), ENT_QUOTES) ?></option><?php endforeach; ?></select><div class="fba-hint">For choice fields, <span class="fba-code">{value}</span> uses the visitor-facing option label rather than its stored key.</div></div>
+        <div class="fba-field"><label>Message letter case</label><select name="success_message_case"><option value="preserve" <?= $settings['success_message_case'] === 'preserve' ? 'selected' : '' ?>>As entered</option><option value="upper" <?= $settings['success_message_case'] === 'upper' ? 'selected' : '' ?>>UPPERCASE</option></select><div class="fba-hint">Applied to the complete message, including dynamic labels and values, on both the success screen and proof.</div></div>
       </div>
       <div class="fba-row2">
         <div class="fba-field"><label class="fba-check"><input type="checkbox" name="submission_proof_enabled" value="1" <?= $settings['submission_proof_enabled'] === '1' ? 'checked' : '' ?>> Enable downloadable submission proof</label><div class="fba-hint">Shown only after a verified successful submission. The proof is generated in the visitor's browser and is not stored on the server.</div></div>

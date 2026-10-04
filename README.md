@@ -1,6 +1,6 @@
 # Form Builder
 
-Form Builder 2.2.2 is a Jyavani Core 2.3.140 plugin for reusable public forms, configurable private multi-file uploads, multilingual definitions, review workflows, and revision-safe visual editing.
+Form Builder 2.2.4 is a Jyavani Core 2.3.140 plugin for reusable public forms, configurable private multi-file uploads, multilingual definitions, review workflows, and revision-safe visual editing.
 
 ## Requirements
 
@@ -20,15 +20,15 @@ Definitions use schema version `1` and deterministically upsert by slug. The adm
 
 Public labels, help, options, UI messages, validation messages, success text, and administrator/applicant mail templates can be overridden under any valid locale key in `settings.translations`. Locale identifiers use normalized lowercase BCP 47 syntax, such as `fr`, `pt-br`, or `zh-hant`; an exact locale falls back to its base language and then to the built-in English text. Unknown translation keys and malformed or oversized values are rejected during definition validation.
 
-Submission settings may add a custom success notification using `success_detail_template` and `success_detail_field`. The plain-text template accepts `{value}` for the submitted value and `{label}` for its localized field label; choice fields display their visitor-facing option labels. The selected value is retrieved after redirect through a short-lived signed token and rendered prominently without placing submission data in the URL.
+Submission settings use `success_message` as one plain-text template for both the success screen and downloadable proof. `success_detail_field` selects an optional dynamic field: `{value}` inserts its submitted display value and `{label}` inserts its localized field label; choice fields use their visitor-facing option labels. `success_message_case` preserves the entered case or applies uppercase formatting to the complete rendered message. Dynamic values are retrieved after redirect through a short-lived signed token without placing submission data in the URL. Previously persisted `success_detail_template` values remain readable and migrate into the unified message when settings are saved.
 
-Each form may optionally expose a downloadable submission proof in PNG or PDF format. The proof is available only on a signed, non-expired success page, contains the localized form title, success information, selected custom success value, submission reference, and submission time, and is generated entirely in the visitor's browser without storing another server file. It is a convenience receipt rather than a tamper-proof digital certificate.
+Each form may optionally expose a downloadable submission proof in PNG or PDF format. The proof is available only on a signed, non-expired success page, contains the same configured success message shown on screen plus the localized form title, submission reference, and submission time, and is generated entirely in the visitor's browser without storing another server file. It is a convenience receipt rather than a tamper-proof digital certificate.
 
 The `country` field renders a searchable bundled ISO 3166-1 picker and stores the uppercase alpha-2 code. The `intl_phone` field requires a `settings.country_field` reference to a `country` field, displays its calling code, and stores a server-normalized E.164 value. Country names and calling metadata are bundled for runtime independence; provenance and licenses are documented in `THIRD_PARTY_NOTICES.md`.
 
 Priced options and totals use the form's configurable uppercase ISO 4217 `currency_code`; new forms default to `USD`.
 
-File and image fields render their sanitized rich upload description directly below the field label. Existing definitions that only provide plain `help` text use that text as the same below-label description; when both values exist, rich description remains primary and plain help stays below the dropzone.
+File and image fields render their sanitized rich upload description directly below the field label. Plain help text remains an independent value below the dropzone and never substitutes for the description.
 
 Select options may define an optional positive `capacity`. Public forms disable full options, while final submission, restore, and legacy-import checks run under the form mutation lock. Capacity is derived from non-trashed submissions, so trashing or permanently deleting a submission releases its slot without maintaining a separate counter. Visual Builder provides structured controls for visitor-facing text, stored values, pricing, and optional registration limits. Classic Builder option lines use `value|Label|price|capacity`; leave capacity blank for an unlimited option.
 

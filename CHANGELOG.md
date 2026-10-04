@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.4 - 2026-10-04
+
+- Persist Visual Builder upload descriptions from legacy empty settings and keep upload descriptions independent from help text.
+- Use one configurable message for the success screen and downloadable proof, with optional dynamic field values and uppercase formatting.
+- Clarify generic success-message settings while keeping project-specific copy outside the plugin.
+
 ## 2.2.3 - 2026-10-04
 
 - Add configurable custom success notifications with localized visitor-facing values retrieved through short-lived signed success tokens.

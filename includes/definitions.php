@@ -197,7 +197,7 @@ function fb_definition_decode(string|array $definition): array {
 
     $settings = $form['settings'] ?? [];
     if (!is_array($settings) || array_diff(array_keys($settings), array_keys(fb_default_settings())) !== []) throw new InvalidArgumentException('Invalid form settings.');
-    foreach (['submit_label','success_message','recaptcha','notify_email','show_total','total_label','accent','currency_code','confirmation_email_field','reply_to_email_field','success_detail_field','submission_proof_enabled','submission_proof_format'] as $key) if (isset($settings[$key])) fb_definition_text($settings[$key], 4000, 'Invalid form setting.');
+    foreach (['submit_label','success_message','success_message_case','recaptcha','notify_email','show_total','total_label','accent','currency_code','confirmation_email_field','reply_to_email_field','success_detail_field','submission_proof_enabled','submission_proof_format'] as $key) if (isset($settings[$key])) fb_definition_text($settings[$key], 4000, 'Invalid form setting.');
     if (isset($settings['success_detail_template'])) fb_definition_text($settings['success_detail_template'], 2000, 'Invalid success detail template.');
     foreach (['rate_max','rate_window','min_fill_seconds'] as $key) if (isset($settings[$key]) && !is_int($settings[$key])) throw new InvalidArgumentException('Invalid numeric setting.');
     if (isset($settings['rate_max']) && ($settings['rate_max'] < 1 || $settings['rate_max'] > 10000)) throw new InvalidArgumentException('Invalid rate maximum.');
@@ -205,6 +205,7 @@ function fb_definition_decode(string|array $definition): array {
     if (isset($settings['min_fill_seconds']) && ($settings['min_fill_seconds'] < 0 || $settings['min_fill_seconds'] > 30)) throw new InvalidArgumentException('Invalid minimum fill time.');
     foreach (['recaptcha','show_total','submission_proof_enabled'] as $toggle) if (isset($settings[$toggle]) && !in_array($settings[$toggle], ['0','1'], true)) throw new InvalidArgumentException('Invalid toggle setting.');
     if (isset($settings['submission_proof_format']) && !in_array($settings['submission_proof_format'], ['png','pdf'], true)) throw new InvalidArgumentException('Invalid submission proof format.');
+    if (isset($settings['success_message_case']) && !in_array($settings['success_message_case'], ['preserve','upper'], true)) throw new InvalidArgumentException('Invalid success message letter case.');
     if (($settings['notify_email'] ?? '') !== '' && filter_var($settings['notify_email'], FILTER_VALIDATE_EMAIL) === false) throw new InvalidArgumentException('Invalid notification email.');
     if (isset($settings['accent']) && !isset(fb_accent_presets()[$settings['accent']])) throw new InvalidArgumentException('Invalid accent setting.');
     if (isset($settings['currency_code']) && preg_match('/\A[A-Z]{3}\z/', $settings['currency_code']) !== 1) throw new InvalidArgumentException('Invalid currency code.');
