@@ -281,6 +281,34 @@ $invalid = $selectDefinition; $invalid['form']['settings']['translations']['fr']
 $check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects unknown translated options');
 $invalid = $definition; $invalid['form']['fields'][] = ['key'=>'attachment','parent'=>'col_main','type'=>'file','label'=>'Attachment','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>40,'hidden'=>false,'options'=>[],'validation'=>['max_bytes'=>1024,'exts'=>['exe']],'settings'=>[]];
 $check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects unsafe upload extensions');
+$uploadDefinition = $definition;
+$uploadDefinition['form']['fields'][] = ['key'=>'attachment','parent'=>'col_main','type'=>'file','label'=>'Attachment','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>40,'hidden'=>false,'options'=>[],'validation'=>['max_bytes'=>5242880,'max_files'=>3,'exts'=>['pdf','jpg']],'settings'=>['upload_description_html'=>'<p>Attach <strong>records</strong>.</p><script>unsafe()</script><a href="javascript:unsafe()">bad</a>','preview_mode'=>'real']];
+$decodedUpload = fb_definition_decode($uploadDefinition);
+$decodedUploadField = $decodedUpload['form']['fields'][5];
+$uploadDbField = ['type'=>'file','field_key'=>'attachment','label'=>'Attachment','required'=>0,'is_hidden'=>0,'help_text'=>'','validation_json'=>fb_json_encode($decodedUploadField['validation']),'settings_json'=>fb_json_encode($decodedUploadField['settings'])];
+$uploadHtml = fb_render_field_html($uploadDbField, 'contract', 'i4', false, fb_default_settings());
+$normalizedUploads = fb_normalize_uploaded_files(['name'=>['one.pdf','two.jpg'],'type'=>['application/pdf','image/jpeg'],'tmp_name'=>['/tmp/one','/tmp/two'],'error'=>[UPLOAD_ERR_OK,UPLOAD_ERR_OK],'size'=>[100,200]]);
+$check($decodedUploadField['validation']['max_files'] === 3
+    && $decodedUploadField['settings']['preview_mode'] === 'real'
+    && !str_contains($decodedUploadField['settings']['upload_description_html'], '<script')
+    && !str_contains($decodedUploadField['settings']['upload_description_html'], 'javascript:')
+    && str_contains($uploadHtml, 'name="attachment[]"')
+    && str_contains($uploadHtml, 'data-max-files="3"')
+    && str_contains($uploadHtml, 'name="fb_upload_count[attachment]"')
+    && str_contains($uploadHtml, 'data-preview-mode="real"')
+    && count($normalizedUploads) === 2
+    && $normalizedUploads[1]['name'] === 'two.jpg',
+    'upload definitions sanitize descriptions and render bounded multi-file preview controls');
+$invalid = $uploadDefinition; $invalid['form']['fields'][5]['validation']['max_files'] = FB_UPLOAD_MAX_FILES + 1;
+$check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects excessive upload counts');
+$invalid = $uploadDefinition; $invalid['form']['fields'][5]['settings']['preview_mode'] = 'embed';
+$check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects unsupported upload preview modes');
+$check(fb_normalize_stored_attachments(['original'=>'legacy.pdf']) === [['original'=>'legacy.pdf']]
+    && fb_normalize_stored_attachments([['original'=>'one.pdf'],['original'=>'two.pdf']])[1]['original'] === 'two.pdf',
+    'stored attachment normalization supports legacy objects and multi-file lists');
+$countMismatchPost = ['fb_upload_count'=>['attachment'=>'2']];
+[, $countMismatchErrors] = fb_validate_submission([$uploadDbField], $countMismatchPost, [], fb_default_settings());
+$check($countMismatchErrors !== [] && str_contains(implode(' ', $countMismatchErrors), 'truncated'), 'declared browser upload counts detect server-side truncation');
 $invalid = $definition; $invalid['form']['settings']['translations']['not_a_locale'] = [];
 $check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects malformed locale identifiers');
 $check($rejects(static fn() => fb_definition_decode(str_repeat('x', FB_DEFINITION_MAX_BYTES + 1))), 'definition input is bounded');
@@ -296,21 +324,26 @@ $check(fb_format_currency(1250, 'EUR') === 'EUR 1,250' && fb_format_currency(125
 $exportFields = [
     ['field_key'=>'name','type'=>'text','label'=>'Name','is_hidden'=>0],
     ['field_key'=>'country','type'=>'country','label'=>'Country','is_hidden'=>0],
-    ['field_key'=>'attachment','type'=>'file','label'=>'Attachment','is_hidden'=>0],
+    ['field_key'=>'choice','type'=>'select','label'=>'Trial Class','is_hidden'=>0,'options_json'=>fb_json_encode([['value'=>'biomedis','label'=>'Biomedis / Dart Mutation','price'=>0]])],
+    ['field_key'=>'attachment','type'=>'file','label'=>'Attachment','is_hidden'=>0,'validation_json'=>fb_json_encode(['max_files'=>2])],
     ['field_key'=>'private','type'=>'text','label'=>'Private','is_hidden'=>1],
 ];
 $exportSettings = fb_default_settings(); $exportSettings['show_total'] = '1';
 $exportColumns = fb_submission_export_columns($exportFields, fb_field_types(), $exportSettings);
 $exportRecord = fb_submission_export_record([
+    'id'=>17,'form_id'=>3,
     'reference_code'=>'FB-1','workflow_status'=>'submitted','created_at'=>'2026-09-16 10:00:00','updated_at'=>'2026-09-16 10:01:00','ip'=>'203.0.113.1',
-    'data_json'=>fb_json_encode(['name'=>'=unsafe','country'=>'ID','private'=>'hidden']),
-    'files_json'=>fb_json_encode(['attachment'=>['original'=>'document.pdf']]),
+    'data_json'=>fb_json_encode(['name'=>'=unsafe','country'=>'ID','choice'=>'biomedis','private'=>'hidden']),
+    'files_json'=>fb_json_encode(['attachment'=>[['original'=>'document.pdf'],['original'=>'photo.jpg']]]),
     'totals_json'=>fb_json_encode(['total'=>1250]),
-], $exportColumns);
-$check(array_column($exportColumns, 'label') === ['Reference','Workflow','Submitted','Updated','IP Address','Name','Country','Attachment (file)','Total']
-    && $exportRecord['field:country'] === 'Indonesia (ID)' && $exportRecord['field:attachment'] === 'document.pdf'
+], $exportColumns, 'https://example.test/dashboard/');
+$check(array_column($exportColumns, 'label') === ['Reference','Workflow','Submitted','Updated','IP Address','Name','Country','Trial Class','Attachment (file 1)','Attachment (file 2)','Total']
+    && $exportRecord['field:country'] === 'Indonesia (ID)' && $exportRecord['field:choice'] === 'Biomedis / Dart Mutation'
+    && $exportRecord['field:attachment'] === 'document.pdf' && $exportRecord['field:attachment:2'] === 'photo.jpg'
+    && $exportRecord['field:attachment:url'] === 'https://example.test/dashboard/?page=admin%2Ftools%2Fform-builder&view=submissions&id=3&action=file&sid=17&fkey=attachment&file=0'
+    && str_ends_with($exportRecord['field:attachment:2:url'], '&file=1')
     && !isset($exportRecord['field:private']) && $exportRecord['total'] === 1250,
-    'submission export schema produces readable allowlisted spreadsheet columns and values');
+    'submission export maps choice labels and emits one protected attachment link per configured file slot');
 $check(fb_submission_csv_cell(" \t=SUM(1,1)\nnext") === "' \t=SUM(1,1) next" && fb_submission_csv_cell('ordinary') === 'ordinary', 'submission CSV neutralizes formulas and line breaks');
 $csvStream = fopen('php://temp', 'w+b');
 $csvCells = ['plain', 'a\\"b', fb_submission_csv_cell(' =SUM(1,1)')];
@@ -341,6 +374,19 @@ $form = ['id'=>1,'slug'=>'contact','deleted_at'=>null,'settings_json'=>fb_json_e
 $record = ['schema'=>1,'reference_code'=>'LEGACY-001','workflow_status'=>'reviewing','created_at'=>'2025-01-02 03:04:05','updated_at'=>'2025-01-03 04:05:06','notes'=>[['at'=>'2025-01-03 04:05:06','actor'=>null,'text'=>'Reviewed during migration.']],'history'=>[['at'=>'2025-01-02 03:04:05','actor'=>null,'from'=>null,'to'=>'submitted','source'=>'legacy']],'source'=>['system'=>'legacy-app','record'=>101],'data'=>['country'=>'ID','phone'=>'+6281234567890','email'=>'person@example.test'],'files'=>[],'totals'=>[],'ip'=>null,'is_read'=>true,'is_deleted'=>false];
 $normalized = fb_normalize_legacy_submission($record, $form, $dbFields, false);
 $check($normalized['reference_code'] === 'LEGACY-001' && $normalized['created_at'] === $record['created_at'] && $normalized['notes'] === $record['notes'] && $normalized['source'] === $record['source'], 'generic legacy import contract preserves reference, timestamps, notes, and provenance');
+$multiImportRecord = $record;
+$multiImportRecord['files'] = ['attachment'=>[
+    ['stored'=>'1/2026/10/one.pdf','original'=>'one.pdf','mime'=>'application/pdf','size'=>100,'sha256'=>str_repeat('a', 64)],
+    ['stored'=>'1/2026/10/two.jpg','original'=>'two.jpg','mime'=>'image/jpeg','size'=>200,'sha256'=>str_repeat('b', 64)],
+]];
+$multiImported = fb_normalize_legacy_submission($multiImportRecord, $form, [...$dbFields, $uploadDbField], false);
+$check(count($multiImported['files']['attachment']) === 2
+    && $multiImported['files']['attachment'][1]['original'] === 'two.jpg',
+    'legacy import validates and preserves multi-file attachment lists');
+$excessImport = $multiImportRecord;
+$excessImport['files']['attachment'][] = ['stored'=>'1/2026/10/three.pdf','original'=>'three.pdf','mime'=>'application/pdf','size'=>300,'sha256'=>str_repeat('c', 64)];
+$excessImport['files']['attachment'][] = ['stored'=>'1/2026/10/four.pdf','original'=>'four.pdf','mime'=>'application/pdf','size'=>400,'sha256'=>str_repeat('d', 64)];
+$check($rejects(static fn() => fb_normalize_legacy_submission($excessImport, $form, [...$dbFields, $uploadDbField], false)), 'legacy import rejects attachment lists above the field limit');
 $divergent = $record; $divergent['data']['email'] = 'changed@example.test';
 $check(hash('sha256', fb_json_encode(fb_import_canonicalize($normalized))) !== hash('sha256', fb_json_encode(fb_import_canonicalize(fb_normalize_legacy_submission($divergent, $form, $dbFields, false)))), 'generic import payload hashing detects divergent repeats');
 

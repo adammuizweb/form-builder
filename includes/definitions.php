@@ -15,6 +15,11 @@ function fb_public_message_defaults(string $locale): array {
         'country_search' => 'Search countries',
         'country_placeholder' => '-- Select a country --',
         'invalid_country' => '{field} must be a valid country',
+        'too_many_files' => '{field} accepts at most {max} files',
+        'too_many_uploads' => 'Too many files were uploaded in this request',
+        'upload_count_mismatch' => '{field} upload was truncated; please choose the files again',
+        'files_ready' => '{count} files ready',
+        'max_files' => '{max} files max',
     ];
     if (!function_exists('apply_filters')) return $defaults;
     $localized = apply_filters('fb_public_message_defaults', $defaults, $locale);
@@ -121,9 +126,9 @@ function fb_definition_decode(string|array $definition): array {
         $byKey[$key] = $field;
     }
 
-    $allowedValidation = ['min','max','maxlength','pattern','after_field','before_field','max_bytes','exts','max_bytes_by_ext'];
+    $allowedValidation = ['min','max','maxlength','pattern','after_field','before_field','max_bytes','max_files','exts','max_bytes_by_ext'];
     $allowedExtensions = ['jpg','jpeg','png','webp','pdf'];
-    foreach ($fields as $field) {
+    foreach ($fields as $fieldIndex => $field) {
         $key = $field['key']; $type = $field['type']; $parent = $field['parent'] ?? null;
         if ($parent !== null && (!is_string($parent) || !isset($byKey[$parent]))) throw new InvalidArgumentException('Unknown field parent.');
         if ($type === 'row' && $parent !== null) throw new InvalidArgumentException('Rows must be top-level.');
@@ -145,8 +150,9 @@ function fb_definition_decode(string|array $definition): array {
         if (isset($validation['pattern']) && !in_array($type, ['text','email','tel','intl_phone','textarea'], true)) throw new InvalidArgumentException('Pattern used on an unsupported field.');
         foreach (['after_field','before_field'] as $dateRule) if (isset($validation[$dateRule]) && (!is_string($validation[$dateRule]) || $type !== 'date' || $validation[$dateRule] === $key || !isset($byKey[$validation[$dateRule]]) || $byKey[$validation[$dateRule]]['type'] !== 'date')) throw new InvalidArgumentException('Invalid date reference.');
         $isFile = !empty($types[$type]['file']);
-        foreach (['max_bytes','exts','max_bytes_by_ext'] as $fileRule) if (isset($validation[$fileRule]) && !$isFile) throw new InvalidArgumentException('File validation used on a non-file field.');
+        foreach (['max_bytes','max_files','exts','max_bytes_by_ext'] as $fileRule) if (isset($validation[$fileRule]) && !$isFile) throw new InvalidArgumentException('File validation used on a non-file field.');
         if (isset($validation['max_bytes']) && (!is_int($validation['max_bytes']) || $validation['max_bytes'] < 1 || $validation['max_bytes'] > 25 * 1024 * 1024)) throw new InvalidArgumentException('Invalid file size.');
+        if (isset($validation['max_files']) && (!is_int($validation['max_files']) || $validation['max_files'] < 1 || $validation['max_files'] > FB_UPLOAD_MAX_FILES)) throw new InvalidArgumentException('Invalid maximum file count.');
         if (isset($validation['exts'])) {
             if (!is_array($validation['exts']) || !array_is_list($validation['exts']) || $validation['exts'] === [] || count($validation['exts']) > 10 || array_values(array_unique($validation['exts'])) !== $validation['exts']) throw new InvalidArgumentException('Invalid extension list.');
             foreach ($validation['exts'] as $extension) if (!is_string($extension) || !in_array($extension, $allowedExtensions, true) || ($type === 'image' && $extension === 'pdf')) throw new InvalidArgumentException('Unsupported extension.');
@@ -156,8 +162,11 @@ function fb_definition_decode(string|array $definition): array {
             foreach ($validation['max_bytes_by_ext'] as $extension => $bytes) if (!in_array($extension, $validation['exts'] ?? [], true) || !is_int($bytes) || $bytes < 1 || $bytes > ($validation['max_bytes'] ?? 25 * 1024 * 1024)) throw new InvalidArgumentException('Invalid per-extension limit.');
         }
         $fieldSettings = $field['settings'] ?? [];
-        if (!is_array($fieldSettings) || array_is_list($fieldSettings) && $fieldSettings !== [] || array_diff(array_keys($fieldSettings), ['align','valign','level','html','url','alt','caption','width','country_field']) !== []) throw new InvalidArgumentException('Invalid field settings.');
-        foreach ($fieldSettings as $settingKey => $settingValue) if (!is_string($settingValue) || mb_strlen($settingValue) > ($settingKey === 'html' ? 100000 : 2000)) throw new InvalidArgumentException('Invalid field setting.');
+        if (!is_array($fieldSettings) || array_is_list($fieldSettings) && $fieldSettings !== [] || array_diff(array_keys($fieldSettings), ['align','valign','level','html','url','alt','caption','width','country_field','upload_description_html','preview_mode']) !== []) throw new InvalidArgumentException('Invalid field settings.');
+        foreach ($fieldSettings as $settingKey => $settingValue) {
+            $maxSettingLength = $settingKey === 'html' ? 100000 : ($settingKey === 'upload_description_html' ? FB_UPLOAD_DESCRIPTION_MAX_LENGTH : 2000);
+            if (!is_string($settingValue) || mb_strlen($settingValue, 'UTF-8') > $maxSettingLength || str_contains($settingValue, "\0")) throw new InvalidArgumentException('Invalid field setting.');
+        }
         if (isset($fieldSettings['align']) && !in_array($fieldSettings['align'], ['center','right'], true)) throw new InvalidArgumentException('Invalid alignment.');
         if (isset($fieldSettings['valign']) && !in_array($fieldSettings['valign'], ['middle','bottom'], true)) throw new InvalidArgumentException('Invalid vertical alignment.');
         if (isset($fieldSettings['level']) && ($type !== 'heading' || !in_array($fieldSettings['level'], FB_HEADING_LEVELS, true))) throw new InvalidArgumentException('Invalid heading level.');
@@ -169,6 +178,11 @@ function fb_definition_decode(string|array $definition): array {
         } elseif (isset($fieldSettings['country_field'])) throw new InvalidArgumentException('Invalid country field setting.');
         if (isset($fieldSettings['width']) && !in_array($fieldSettings['width'], ['25','50','75'], true)) throw new InvalidArgumentException('Invalid image width.');
         if (isset($fieldSettings['url']) && $fieldSettings['url'] !== '' && $fieldSettings['url'][0] !== '/' && preg_match('#\Ahttps?://#i', $fieldSettings['url']) !== 1) throw new InvalidArgumentException('Invalid image URL.');
+        foreach (['upload_description_html','preview_mode'] as $uploadSetting) if (isset($fieldSettings[$uploadSetting]) && !$isFile) throw new InvalidArgumentException('Upload setting used on a non-file field.');
+        if (isset($fieldSettings['preview_mode']) && !in_array($fieldSettings['preview_mode'], ['none','icon','real'], true)) throw new InvalidArgumentException('Invalid upload preview mode.');
+        if (isset($fieldSettings['upload_description_html'])) {
+            $definition['form']['fields'][$fieldIndex]['settings']['upload_description_html'] = fb_sanitize_upload_description($fieldSettings['upload_description_html']);
+        }
     }
 
     $settings = $form['settings'] ?? [];

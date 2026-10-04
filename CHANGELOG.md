@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.0 - 2026-10-04
+
+- Add Core-editor upload descriptions, configurable file counts, and `none`, `icon`, or safe real-image preview modes to Classic and Visual Builder.
+- Validate, store, display, import, export, download, and remove multiple private attachments while preserving legacy single-file submissions.
+- Export choice labels instead of internal values and add one session-protected Excel/CSV attachment link per configured upload slot.
+
 ## 2.1.3 - 2026-10-04
 
 - Replace native browser confirmation dialogs across Form Builder administration with the accessible Core confirmation component.

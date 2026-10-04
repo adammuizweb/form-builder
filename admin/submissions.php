@@ -25,10 +25,14 @@ if (!$columns) $columns = array_slice($inputFields, 0, 4);
 if (($_GET['action'] ?? '') === 'file') {
     $sid = (int)($_GET['sid'] ?? 0);
     $fkey = preg_replace('/[^a-z0-9_]/', '', (string)($_GET['fkey'] ?? ''));
+    $fileInput = $_GET['file'] ?? '0';
+    if (!is_string($fileInput) || preg_match('/\A(?:0|[1-9][0-9]*)\z/', $fileInput) !== 1 || (int)$fileInput >= FB_UPLOAD_MAX_FILES) { http_response_code(404); exit('File not found'); }
+    $fileIndex = (int)$fileInput;
     $st = $pdo->prepare('SELECT files_json FROM `fb_submissions` WHERE id = ? AND form_id = ? LIMIT 1');
     $st->execute([$sid, $formId]);
     $fj = json_decode((string)($st->fetchColumn() ?: ''), true);
-    $info = is_array($fj) ? ($fj[$fkey] ?? null) : null;
+    $attachments = is_array($fj) ? fb_normalize_stored_attachments($fj[$fkey] ?? null) : [];
+    $info = $attachments[$fileIndex] ?? null;
     $rel = is_array($info) ? (string)($info['stored'] ?? '') : '';
     if ($rel === '' || str_contains($rel, '..') || str_starts_with($rel, '/')) { http_response_code(404); exit('File not found'); }
     $path = fb_contained_path(fb_files_base_dir($form), $rel, true);
@@ -119,6 +123,7 @@ if ($isExport) {
     $st = $pdo->prepare("SELECT * FROM `fb_submissions` {$whereSql} ORDER BY created_at DESC");
     $st->execute($params);
     $exportColumns = fb_submission_export_columns($fields, $types, $settings);
+    $attachmentBaseUrl = fb_submission_export_admin_base_url($pdo);
     $headers = array_column($exportColumns, 'label');
     $filenameBase = preg_replace('/[^a-z0-9-]/', '-', strtolower((string)$form['slug'])) . '-submissions-' . date('Ymd-His');
     while (ob_get_level() > 0) @ob_end_clean();
@@ -134,8 +139,11 @@ if ($isExport) {
         fwrite($out, "\xEF\xBB\xBF");
         fputcsv($out, array_map('fb_submission_csv_cell', $headers), ';', '"', '');
         while ($submission = $st->fetch(PDO::FETCH_ASSOC)) {
-            $record = fb_submission_export_record($submission, $exportColumns);
-            $row = array_map(static fn(array $column): mixed => $record[$column['key']] ?? '', $exportColumns);
+            $record = fb_submission_export_record($submission, $exportColumns, $attachmentBaseUrl);
+            $row = array_map(static function (array $column) use ($record): mixed {
+                if (($column['type'] ?? '') === 'attachment') return ($record[$column['key'] . ':url'] ?? '') ?: ($record[$column['key']] ?? '');
+                return $record[$column['key']] ?? '';
+            }, $exportColumns);
             fputcsv($out, array_map('fb_submission_csv_cell', $row), ';', '"', '');
         }
         fclose($out);
@@ -152,16 +160,23 @@ if ($isExport) {
     }
     $rowNumber = 2;
     while ($submission = $st->fetch(PDO::FETCH_ASSOC)) {
-        $record = fb_submission_export_record($submission, $exportColumns);
+        $record = fb_submission_export_record($submission, $exportColumns, $attachmentBaseUrl);
         foreach ($exportColumns as $index => $definition) {
             $columnName = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($index + 1);
+            $coordinate = $columnName . $rowNumber;
             $value = $record[$definition['key']] ?? '';
             if ($definition['type'] === 'datetime' && ($timestamp = strtotime((string)$value)) !== false) {
-                $sheet->setCellValue($columnName . $rowNumber, \PhpOffice\PhpSpreadsheet\Shared\Date::PHPToExcel($timestamp));
+                $sheet->setCellValue($coordinate, \PhpOffice\PhpSpreadsheet\Shared\Date::PHPToExcel($timestamp));
             } elseif ($definition['type'] === 'number') {
-                $sheet->setCellValue($columnName . $rowNumber, (float)$value);
+                $sheet->setCellValue($coordinate, (float)$value);
             } else {
-                $sheet->setCellValueExplicit($columnName . $rowNumber, (string)$value, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+                $sheet->setCellValueExplicit($coordinate, (string)$value, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+                $attachmentUrl = ($definition['type'] ?? '') === 'attachment' ? (string)($record[$definition['key'] . ':url'] ?? '') : '';
+                if ($attachmentUrl !== '') {
+                    $sheet->getCell($coordinate)->getHyperlink()->setUrl($attachmentUrl)->setTooltip('Open private attachment (admin login required)');
+                    $sheet->getStyle($coordinate)->getFont()->getColor()->setARGB('FF0563C1');
+                    $sheet->getStyle($coordinate)->getFont()->setUnderline(\PhpOffice\PhpSpreadsheet\Style\Font::UNDERLINE_SINGLE);
+                }
             }
         }
         $rowNumber++;
@@ -267,7 +282,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 $root = fb_files_base_dir($form);
                 while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
                     $fj = json_decode((string)($r['files_json'] ?? ''), true);
-                    if (is_array($fj)) foreach ($fj as $info) {
+                    if (is_array($fj)) foreach ($fj as $metadata) foreach (fb_normalize_stored_attachments($metadata) as $info) {
+                        if (!is_array($info)) throw new RuntimeException('Refusing invalid private attachment metadata.');
                         $rel = (string)($info['stored'] ?? '');
                         $path = fb_contained_path($root, $rel, true);
                         if ($rel !== '' && $path === null) throw new RuntimeException('Refusing unsafe private attachment path.');
@@ -331,17 +347,19 @@ $accessible = fb_accessible_forms($pdo, "status != 'archived'", 'submissions');
 
 function fb_render_value(array $field, mixed $v, int $sid, array $filesJ, string $formIdStr): string {
     $type = (string)$field['type'];
-    if ($type === 'image') {
-        $info = $filesJ[$field['field_key']] ?? null;
-        if (!is_array($info)) return '&mdash;';
-        $url = '?page=admin/tools/form-builder&view=submissions&id=' . $formIdStr . '&action=file&sid=' . $sid . '&fkey=' . rawurlencode((string)$field['field_key']);
-        return '<a href="' . $url . '" target="_blank"><img src="' . $url . '" alt="" style="max-width:220px;max-height:160px;border-radius:10px;box-shadow:0 4px 14px rgba(0 0 0 / .15)"></a>';
-    }
-    if ($type === 'file') {
-        $info = $filesJ[$field['field_key']] ?? null;
-        if (!is_array($info)) return '&mdash;';
-        $url = '?page=admin/tools/form-builder&view=submissions&id=' . $formIdStr . '&action=file&sid=' . $sid . '&fkey=' . rawurlencode((string)$field['field_key']);
-        return '<a class="fba-btn sm" href="' . $url . '" target="_blank">' . htmlspecialchars((string)($info['original'] ?? 'file'), ENT_QUOTES) . '</a>';
+    if ($type === 'image' || $type === 'file') {
+        $attachments = fb_normalize_stored_attachments($filesJ[$field['field_key']] ?? null);
+        if ($attachments === []) return '&mdash;';
+        $rendered = [];
+        foreach ($attachments as $index => $info) {
+            if (!is_array($info)) continue;
+            $url = '?page=admin/tools/form-builder&view=submissions&id=' . rawurlencode($formIdStr) . '&action=file&sid=' . $sid . '&fkey=' . rawurlencode((string)$field['field_key']) . '&file=' . $index;
+            $safeUrl = htmlspecialchars($url, ENT_QUOTES, 'UTF-8');
+            $name = htmlspecialchars((string)($info['original'] ?? 'file'), ENT_QUOTES, 'UTF-8');
+            if ($type === 'image') $rendered[] = '<a href="' . $safeUrl . '" target="_blank" rel="noopener"><img src="' . $safeUrl . '" alt="' . $name . '" style="max-width:220px;max-height:160px;border-radius:10px;box-shadow:0 4px 14px rgba(0 0 0 / .15)"></a>';
+            else $rendered[] = '<a class="fba-btn sm" href="' . $safeUrl . '" target="_blank" rel="noopener">' . $name . '</a>';
+        }
+        return $rendered !== [] ? implode(' ', $rendered) : '&mdash;';
     }
     if (is_array($v)) return htmlspecialchars(implode(', ', array_map('strval', $v)), ENT_QUOTES);
     if ($type === 'email' && $v !== '') return '<a href="mailto:' . htmlspecialchars((string)$v, ENT_QUOTES) . '">' . htmlspecialchars((string)$v, ENT_QUOTES) . '</a>';

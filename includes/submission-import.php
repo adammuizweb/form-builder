@@ -89,23 +89,34 @@ function fb_normalize_legacy_submission(array $record, array $form, array $field
     $files = $record['files'] ?? [];
     if (!is_array($files) || ($files !== [] && array_is_list($files)) || count($files) > 100) throw new InvalidArgumentException('Invalid imported attachments.');
     $base = $verifyFiles && $files !== [] ? fb_files_base_dir($form) : '';
-    foreach ($files as $key => $file) {
-        if (!is_string($key) || !isset($fileFields[$key]) || !is_array($file) || array_diff(array_keys($file), ['stored','original','mime','size','sha256']) !== []) throw new InvalidArgumentException('Invalid imported attachment contract.');
-        if (!is_string($file['stored'] ?? null) || !is_string($file['original'] ?? null) || mb_strlen($file['original']) > 255 || str_contains($file['original'], "\0") || !is_string($file['mime'] ?? null) || preg_match('#\A[a-z0-9.+-]+/[a-z0-9.+-]+\z#i', $file['mime']) !== 1 || !is_int($file['size'] ?? null) || $file['size'] < 1 || $file['size'] > 25 * 1024 * 1024 || !is_string($file['sha256'] ?? null) || preg_match('/\A[a-f0-9]{64}\z/', $file['sha256']) !== 1) throw new InvalidArgumentException('Invalid imported attachment metadata.');
-        $extension = strtolower(pathinfo($file['stored'], PATHINFO_EXTENSION));
-        $validation = fb_field_validation($fileFields[$key]);
-        $allowedExtensions = $validation['exts'] ?? ($fileFields[$key]['type'] === 'image' ? ['jpg','jpeg','png','webp'] : ['jpg','jpeg','png','webp','pdf']);
-        $mimeByExtension = ['jpg'=>['image/jpeg'],'jpeg'=>['image/jpeg'],'png'=>['image/png'],'webp'=>['image/webp'],'pdf'=>['application/pdf']];
-        if (!in_array($extension, $allowedExtensions, true) || !in_array(strtolower($file['mime']), $mimeByExtension[$extension] ?? [], true)) throw new InvalidArgumentException('Imported attachment violates the field policy.');
-        $maxBytes = min(25 * 1024 * 1024, (int)($validation['max_bytes'] ?? 5 * 1024 * 1024));
-        $extensionMax = min($maxBytes, (int)($validation['max_bytes_by_ext'][$extension] ?? $maxBytes));
-        if ($file['size'] > $extensionMax) throw new InvalidArgumentException('Imported attachment exceeds the field policy.');
-        if ($verifyFiles) {
-            $path = fb_contained_path($base, $file['stored'], true);
-            if ($path === null || !is_file($path) || filesize($path) !== $file['size'] || !hash_equals($file['sha256'], (string)hash_file('sha256', $path))) throw new InvalidArgumentException('Imported attachment does not match private storage.');
-            $finfo = new finfo(FILEINFO_MIME_TYPE);
-            if (!hash_equals(strtolower($file['mime']), strtolower((string)$finfo->file($path)))) throw new InvalidArgumentException('Imported attachment MIME does not match private storage.');
+    $attachmentCount = 0;
+    foreach ($files as $key => $metadata) {
+        if (!is_string($key) || !isset($fileFields[$key]) || !is_array($metadata)) throw new InvalidArgumentException('Invalid imported attachment contract.');
+        $maxFiles = fb_upload_max_files($fileFields[$key]);
+        $isList = array_is_list($metadata);
+        if (($maxFiles === 1 && $isList) || (!$isList && !array_key_exists('stored', $metadata))) throw new InvalidArgumentException('Invalid imported attachment shape.');
+        $attachments = fb_normalize_stored_attachments($metadata);
+        if ($attachments === [] || count($attachments) > $maxFiles || ($attachmentCount += count($attachments)) > FB_UPLOAD_MAX_TOTAL_FILES) throw new InvalidArgumentException('Imported attachment count exceeds the field policy.');
+        foreach ($attachments as $file) {
+            if (!is_array($file) || array_diff(array_keys($file), ['stored','original','mime','size','sha256']) !== []) throw new InvalidArgumentException('Invalid imported attachment contract.');
+            if (!is_string($file['stored'] ?? null) || str_contains($file['stored'], "\0") || !is_string($file['original'] ?? null) || mb_strlen($file['original']) > 255 || str_contains($file['original'], "\0") || !is_string($file['mime'] ?? null) || preg_match('#\A[a-z0-9.+-]+/[a-z0-9.+-]+\z#i', $file['mime']) !== 1 || !is_int($file['size'] ?? null) || $file['size'] < 1 || $file['size'] > 25 * 1024 * 1024 || !is_string($file['sha256'] ?? null) || preg_match('/\A[a-f0-9]{64}\z/', $file['sha256']) !== 1) throw new InvalidArgumentException('Invalid imported attachment metadata.');
+            $extension = strtolower(pathinfo($file['stored'], PATHINFO_EXTENSION));
+            $validation = fb_field_validation($fileFields[$key]);
+            $allowedExtensions = $validation['exts'] ?? ($fileFields[$key]['type'] === 'image' ? ['jpg','jpeg','png','webp'] : ['jpg','jpeg','png','webp','pdf']);
+            $mimeByExtension = ['jpg'=>['image/jpeg'],'jpeg'=>['image/jpeg'],'png'=>['image/png'],'webp'=>['image/webp'],'pdf'=>['application/pdf']];
+            if (!in_array($extension, $allowedExtensions, true) || !in_array(strtolower($file['mime']), $mimeByExtension[$extension] ?? [], true)) throw new InvalidArgumentException('Imported attachment violates the field policy.');
+            $maxBytes = min(25 * 1024 * 1024, (int)($validation['max_bytes'] ?? 5 * 1024 * 1024));
+            $extensionMax = min($maxBytes, (int)($validation['max_bytes_by_ext'][$extension] ?? $maxBytes));
+            if ($file['size'] > $extensionMax) throw new InvalidArgumentException('Imported attachment exceeds the field policy.');
+            if ($verifyFiles) {
+                $path = fb_contained_path($base, $file['stored'], true);
+                if ($path === null || !is_file($path) || filesize($path) !== $file['size'] || !hash_equals($file['sha256'], (string)hash_file('sha256', $path))) throw new InvalidArgumentException('Imported attachment does not match private storage.');
+                $finfo = new finfo(FILEINFO_MIME_TYPE);
+                if (!hash_equals(strtolower($file['mime']), strtolower((string)$finfo->file($path)))) throw new InvalidArgumentException('Imported attachment MIME does not match private storage.');
+                if ($fileFields[$key]['type'] === 'image' && function_exists('getimagesize') && @getimagesize($path) === false) throw new InvalidArgumentException('Imported image attachment is invalid.');
+            }
         }
+        $files[$key] = $maxFiles === 1 ? $attachments[0] : array_values($attachments);
     }
     $ip = $record['ip'] ?? null;
     if ($ip !== null && (!is_string($ip) || filter_var($ip, FILTER_VALIDATE_IP) === false)) throw new InvalidArgumentException('Invalid imported IP address.');

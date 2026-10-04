@@ -22,6 +22,9 @@ const FB_RECAPTCHA_SITEKEY_KEY = 'form_builder_recaptcha_sitekey';
 const FB_RECAPTCHA_SECRET_KEY = 'form_builder_recaptcha_secret';
 const FB_OPTION_CAPACITY_MAX = 1000000;
 const FB_TRACKED_CAPACITY_OPTIONS_MAX = 500;
+const FB_UPLOAD_MAX_FILES = 20;
+const FB_UPLOAD_MAX_TOTAL_FILES = 50;
+const FB_UPLOAD_DESCRIPTION_MAX_LENGTH = 20000;
 
 require_once __DIR__ . '/includes/countries.php';
 
@@ -132,10 +135,108 @@ function fb_accent_style(array $settings): string {
     return '--fb-accent:' . $p['accent'] . ';--fb-accent-deep:' . $p['deep'] . ';--fb-on-accent:' . $p['on'] . ';--fb-accent-soft:' . $p['soft'] . ';--fb-bg:' . $p['bg'] . ';';
 }
 
+function fb_sanitize_upload_description(string $html): string {
+    if (str_contains($html, "\0") || mb_strlen($html, 'UTF-8') > FB_UPLOAD_DESCRIPTION_MAX_LENGTH) {
+        throw new InvalidArgumentException('Upload description is invalid or too long.');
+    }
+    if (function_exists('cms_sanitize_restricted_html')) {
+        $sanitized = (string)cms_sanitize_restricted_html($html);
+    } else {
+        $html = strip_tags($html, '<p><br><strong><em><ul><ol><li><a>');
+        $sanitized = preg_replace_callback('/<\/?([a-z0-9]+)(?:\s[^>]*)?>/i', static function (array $match): string {
+            $tag = strtolower($match[1]);
+            if (str_starts_with($match[0], '</')) return '</' . $tag . '>';
+            if ($tag !== 'a') return '<' . $tag . '>';
+            if (preg_match('/\shref\s*=\s*(["\'])(.*?)\1/is', $match[0], $href) !== 1) return '<a>';
+            $url = html_entity_decode($href[2], ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            if ($url !== '' && $url[0] !== '/' && $url[0] !== '#' && preg_match('#\Ahttps?://#i', $url) !== 1 && preg_match('/\Amailto:/i', $url) !== 1) return '<a>';
+            return '<a href="' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '" rel="nofollow noopener">';
+        }, $html) ?? '';
+    }
+    if (str_contains($sanitized, "\0") || mb_strlen($sanitized, 'UTF-8') > FB_UPLOAD_DESCRIPTION_MAX_LENGTH) {
+        throw new InvalidArgumentException('Sanitized upload description is too long.');
+    }
+    return $sanitized;
+}
+
+function fb_upload_max_files(array $field): int {
+    $maxFiles = fb_field_validation($field)['max_files'] ?? 1;
+    return is_int($maxFiles) && $maxFiles >= 1 && $maxFiles <= FB_UPLOAD_MAX_FILES ? $maxFiles : 1;
+}
+
+function fb_upload_policy(array $field): array {
+    $validation = fb_field_validation($field);
+    $settings = fb_field_settings($field);
+    $isImage = (string)($field['type'] ?? '') === 'image';
+    $previewMode = $settings['preview_mode'] ?? ($isImage ? 'real' : 'icon');
+    if (!is_string($previewMode) || !in_array($previewMode, ['none', 'icon', 'real'], true)) $previewMode = $isImage ? 'real' : 'icon';
+    return [
+        'max_files' => fb_upload_max_files($field),
+        'max_bytes' => max(1, min(25 * 1024 * 1024, (int)($validation['max_bytes'] ?? 5 * 1024 * 1024))),
+        'exts' => $isImage
+            ? (array)($validation['exts'] ?? ['jpg', 'jpeg', 'png', 'webp'])
+            : (array)($validation['exts'] ?? ['jpg', 'jpeg', 'png', 'webp', 'pdf']),
+        'max_bytes_by_ext' => is_array($validation['max_bytes_by_ext'] ?? null) ? $validation['max_bytes_by_ext'] : [],
+        'description_html' => (string)($settings['upload_description_html'] ?? ''),
+        'preview_mode' => $previewMode,
+        'image' => $isImage,
+    ];
+}
+
+/** Normalize a scalar or arbitrarily nested PHP upload entry into leaf file entries. */
+function fb_normalize_uploaded_files(mixed $upload): array {
+    if (!is_array($upload) || !array_key_exists('name', $upload)) return [];
+    $files = [];
+    $walk = static function (mixed $name, array $path) use (&$walk, &$files, $upload): void {
+        if (is_array($name)) {
+            foreach ($name as $key => $child) $walk($child, [...$path, $key]);
+            return;
+        }
+        $read = static function (mixed $value, array $segments): mixed {
+            foreach ($segments as $segment) {
+                if (!is_array($value) || !array_key_exists($segment, $value)) return null;
+                $value = $value[$segment];
+            }
+            return $value;
+        };
+        $file = [];
+        foreach (['name', 'type', 'tmp_name', 'error', 'size', 'full_path'] as $property) {
+            if (array_key_exists($property, $upload)) $file[$property] = $read($upload[$property], $path);
+        }
+        if ((int)($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) $files[] = $file;
+    };
+    $walk($upload['name'], []);
+    return $files;
+}
+
+function fb_count_uploaded_files(array $uploads): int {
+    $count = 0;
+    foreach ($uploads as $upload) $count += count(fb_normalize_uploaded_files($upload));
+    return $count;
+}
+
+/** Normalize legacy attachment metadata objects and multi-file lists to a list. */
+function fb_normalize_stored_attachments(mixed $metadata): array {
+    if (!is_array($metadata) || $metadata === []) return [];
+    if (array_is_list($metadata)) return array_values($metadata);
+    foreach (['stored', 'original', 'mime', 'size', 'sha256'] as $key) {
+        if (array_key_exists($key, $metadata)) return [$metadata];
+    }
+    return [];
+}
+
 // Per-field type-specific settings (heading level, rich text/html content, image data).
 function fb_field_settings(array $f): array {
     $s = json_decode((string)($f['settings_json'] ?? ''), true);
-    return is_array($s) ? $s : [];
+    if (!is_array($s)) return [];
+    if (in_array((string)($f['type'] ?? ''), ['file', 'image'], true) && array_key_exists('upload_description_html', $s)) {
+        try {
+            $s['upload_description_html'] = is_string($s['upload_description_html']) ? fb_sanitize_upload_description($s['upload_description_html']) : '';
+        } catch (InvalidArgumentException) {
+            $s['upload_description_html'] = '';
+        }
+    }
+    return $s;
 }
 
 function fb_normalize_key(string $s): string {
@@ -584,7 +685,8 @@ function fb_hard_delete_form(PDO $pdo, array $form): void {
         $root = fb_files_base_dir($current);
         while ($r = $subs->fetch(PDO::FETCH_ASSOC)) {
             $fj = json_decode((string)($r['files_json'] ?? ''), true);
-            if (is_array($fj)) foreach ($fj as $info) {
+            if (is_array($fj)) foreach ($fj as $metadata) foreach (fb_normalize_stored_attachments($metadata) as $info) {
+                if (!is_array($info)) throw new RuntimeException('Refusing invalid private attachment metadata.');
                 $rel = (string)($info['stored'] ?? '');
                 $path = function_exists('fb_contained_path') ? fb_contained_path($root, $rel, true) : null;
                 if ($rel !== '' && ($path === null || !str_starts_with($rel, $fid . '/'))) throw new RuntimeException('Refusing unsafe private attachment path.');
@@ -682,6 +784,10 @@ function fb_validate_submission(array $fields, array $post, array $files, array 
     $data = [];
     $errors = [];
 
+    if (fb_count_uploaded_files($files) > FB_UPLOAD_MAX_TOTAL_FILES) $errors[] = fb_message($settings, 'too_many_uploads');
+    $declaredCounts = $post['fb_upload_count'] ?? null;
+    if ($declaredCounts !== null && !is_array($declaredCounts)) $errors[] = fb_message($settings, 'invalid_request');
+
     foreach ($fields as $f) {
         $type = (string)$f['type'];
         $meta = $types[$type] ?? null;
@@ -692,8 +798,20 @@ function fb_validate_submission(array $fields, array $post, array $files, array 
         $valid = fb_field_validation($f);
 
         if (!empty($meta['file'])) {
-            $err = fb_validate_file($f, $files[$key] ?? null, $settings);
-            if ($err !== null) $errors[] = $err;
+            $normalizedFiles = fb_normalize_uploaded_files($files[$key] ?? null);
+            $maxFiles = fb_upload_max_files($f);
+            if ($required && $normalizedFiles === []) $errors[] = fb_message($settings, 'required', ['field'=>$label]);
+            if (count($normalizedFiles) > $maxFiles) $errors[] = fb_message($settings, 'too_many_files', ['field'=>$label,'max'=>$maxFiles]);
+            if (is_array($declaredCounts) && array_key_exists($key, $declaredCounts)) {
+                $declared = $declaredCounts[$key];
+                if (!is_string($declared) || preg_match('/\A\d+\z/', $declared) !== 1 || (int)$declared !== count($normalizedFiles)) {
+                    $errors[] = fb_message($settings, 'upload_count_mismatch', ['field'=>$label]);
+                }
+            }
+            foreach ($normalizedFiles as $file) {
+                $err = fb_validate_file($f, is_array($file) ? $file : null, $settings);
+                if ($err !== null) $errors[] = $err;
+            }
             continue;
         }
 
@@ -783,11 +901,10 @@ function fb_validate_file(array $field, ?array $file, array $settings = []): ?st
     $label = (string)($field['label'] !== '' ? $field['label'] : $field['field_key']);
     $required = !empty($field['required']);
     $valid = fb_field_validation($field);
-    $isImage = (string)$field['type'] === 'image';
-    $maxBytes = max(1, min(25 * 1024 * 1024, (int)($valid['max_bytes'] ?? 5 * 1024 * 1024)));
-    $exts = $isImage
-        ? (array)($valid['exts'] ?? ['jpg', 'jpeg', 'png', 'webp'])
-        : (array)($valid['exts'] ?? ['jpg', 'jpeg', 'png', 'webp', 'pdf']);
+    $policy = fb_upload_policy($field);
+    $isImage = $policy['image'];
+    $maxBytes = $policy['max_bytes'];
+    $exts = $policy['exts'];
 
     if (!is_array($file) || (int)($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
         return $required ? fb_message($settings, 'required', ['field'=>$label]) : null;

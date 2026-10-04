@@ -11,7 +11,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') { http_response_code(405); he
 
 try { fb_assert_schema($pdo); } catch (Throwable $error) { http_response_code(503); exit(fb_message($settings, 'service_unavailable')); }
 $contentLength = filter_var($_SERVER['CONTENT_LENGTH'] ?? 0, FILTER_VALIDATE_INT) ?: 0;
-if ($contentLength > 64 * 1024 * 1024 || count($_POST) > 350 || count($_FILES) > 100) { http_response_code(413); exit(fb_message($settings, 'request_too_large')); }
+if ($contentLength > 64 * 1024 * 1024 || count($_POST) > 350 || count($_FILES) > 100 || fb_count_uploaded_files($_FILES) > FB_UPLOAD_MAX_TOTAL_FILES) { http_response_code(413); exit(fb_message($settings, 'request_too_large')); }
 foreach (['fb_return'=>2048,'fb_slug'=>80,'fb_locale'=>35,'csrf_token'=>2048,'fb_website'=>256,'fb_started'=>100,'fb_idempotency'=>64,'g-recaptcha-response'=>8192] as $reserved => $limit) {
     if (isset($_POST[$reserved]) && (!is_string($_POST[$reserved]) || strlen($_POST[$reserved]) > $limit)) { http_response_code(400); exit(fb_message($settings, 'invalid_request')); }
 }
@@ -69,11 +69,13 @@ if ($settings['recaptcha'] === '1') {
 if ($errors) $fail(implode(' | ', array_slice($errors, 0, 3)));
 
 $uploadFields = [];
+$uploadsByKey = [];
 $types = fb_field_types();
 foreach ($fields as $field) {
     if (empty($types[$field['type']]['file']) || !empty($field['is_hidden'])) continue;
-    $file = $_FILES[(string)$field['field_key']] ?? null;
-    if (is_array($file) && (int)($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) $uploadFields[] = $field;
+    $key = (string)$field['field_key'];
+    $uploadsByKey[$key] = fb_normalize_uploaded_files($_FILES[$key] ?? null);
+    if ($uploadsByKey[$key] !== []) $uploadFields[] = $field;
 }
 $realBase = null;
 $stageDir = null;
@@ -87,6 +89,7 @@ if ($uploadFields !== []) {
     }
 }
 $staged = [];
+$stagedPaths = [];
 $submissionMutationLock = null;
 $cleanup = static function (array $paths, ?string $dir = null): void {
     foreach ($paths as $path) if (is_string($path) && is_file($path)) @unlink($path);
@@ -96,16 +99,18 @@ $cleanup = static function (array $paths, ?string $dir = null): void {
 try {
     foreach ($uploadFields as $field) {
         $key = (string)$field['field_key'];
-        $file = $_FILES[$key];
-        $original = basename((string)$file['name']);
-        $extension = strtolower(pathinfo($original, PATHINFO_EXTENSION));
-        $name = bin2hex(random_bytes(16)) . '.' . $extension;
-        $path = $stageDir . '/' . $name;
-        if (!move_uploaded_file((string)$file['tmp_name'], $path)) throw new RuntimeException(fb_message($settings, 'file_store_failed', ['field'=>$localizedByKey[$key]['label'] ?? $field['label']]));
-        if (!chmod($path, 0640)) throw new RuntimeException(fb_message($settings, 'file_store_failed', ['field'=>$localizedByKey[$key]['label'] ?? $field['label']]));
-        $finfo = new finfo(FILEINFO_MIME_TYPE);
-        $staged[$key] = ['path' => $path, 'name' => $name, 'original' => mb_substr($original, 0, 255),
-            'mime' => (string)$finfo->file($path), 'size' => (int)filesize($path), 'sha256' => hash_file('sha256', $path)];
+        foreach ($uploadsByKey[$key] as $file) {
+            $original = basename(str_replace('\\', '/', (string)$file['name']));
+            $extension = strtolower(pathinfo($original, PATHINFO_EXTENSION));
+            $name = bin2hex(random_bytes(16)) . '.' . $extension;
+            $path = $stageDir . '/' . $name;
+            if (!move_uploaded_file((string)$file['tmp_name'], $path)) throw new RuntimeException(fb_message($settings, 'file_store_failed', ['field'=>$localizedByKey[$key]['label'] ?? $field['label']]));
+            $stagedPaths[] = $path;
+            if (!chmod($path, 0640)) throw new RuntimeException(fb_message($settings, 'file_store_failed', ['field'=>$localizedByKey[$key]['label'] ?? $field['label']]));
+            $finfo = new finfo(FILEINFO_MIME_TYPE);
+            $staged[$key][] = ['path' => $path, 'name' => $name, 'original' => mb_substr($original, 0, 255),
+                'mime' => (string)$finfo->file($path), 'size' => (int)filesize($path), 'sha256' => hash_file('sha256', $path)];
+        }
     }
 
     $submissionMutationLock = fb_acquire_form_mutation_lock($pdo, (int)$formId);
@@ -118,20 +123,20 @@ try {
     if ($lockedForm->fetchColumn() === false) throw new UnexpectedValueException('Form changed during submission.');
     $rate = fb_rate_limit_check($pdo, $ctx['ip'], 'submit_f' . $formId, (int)$settings['rate_window'], (int)$settings['rate_max']);
     if (!$rate['allowed']) {
-        $pdo->rollBack(); $cleanup(array_column($staged, 'path'), $stageDir);
+        $pdo->rollBack(); $cleanup($stagedPaths, $stageDir);
         header('Retry-After: ' . $rate['retry_after']); $fail(fb_message($settings, 'rate_limited'), 429);
     }
     $existing = $pdo->prepare('SELECT reference_code FROM fb_submissions WHERE form_id = ? AND idempotency_key = ? FOR UPDATE');
     $existing->execute([$formId, $idempotency]);
     $existingRef = $existing->fetchColumn();
     if (is_string($existingRef) && $existingRef !== '') {
-        $pdo->commit(); $cleanup(array_column($staged, 'path'), $stageDir);
+        $pdo->commit(); $cleanup($stagedPaths, $stageDir);
         fb_redirect($return, ['fb_status'=>'ok','fb_form'=>(string)$form['slug'],'fb_ref'=>$existingRef]);
     }
     $capacityErrors = fb_select_capacity_errors($pdo, $formId, $localizedFields, [$data], $settings);
     if ($capacityErrors !== []) {
         $pdo->rollBack();
-        $cleanup(array_column($staged, 'path'), $stageDir);
+        $cleanup($stagedPaths, $stageDir);
         fb_release_form_mutation_lock($pdo, $submissionMutationLock);
         $submissionMutationLock = null;
         $fail(implode(' | ', array_slice($capacityErrors, 0, 3)));
@@ -143,11 +148,18 @@ try {
         $finalSegments = [(string)$formId, date('Y'), date('m')];
         $finalRelDir = implode('/', $finalSegments);
         $finalDir = fb_ensure_storage_directory($realBase, $finalSegments);
-        foreach ($staged as $key => $file) {
-            $destination = $finalDir . '/' . $file['name'];
-            if (!rename($file['path'], $destination)) throw new RuntimeException(fb_message($settings, 'upload_finalize_failed'));
-            $finalPaths[] = $destination;
-            $files[$key] = ['stored'=>$finalRelDir . '/' . $file['name'],'original'=>$file['original'],'mime'=>$file['mime'],'size'=>$file['size'],'sha256'=>$file['sha256']];
+        foreach ($staged as $key => $fieldFiles) {
+            $storedFiles = [];
+            foreach ($fieldFiles as $file) {
+                $destination = $finalDir . '/' . $file['name'];
+                if (!rename($file['path'], $destination)) throw new RuntimeException(fb_message($settings, 'upload_finalize_failed'));
+                $finalPaths[] = $destination;
+                $storedFiles[] = ['stored'=>$finalRelDir . '/' . $file['name'],'original'=>$file['original'],'mime'=>$file['mime'],'size'=>$file['size'],'sha256'=>$file['sha256']];
+            }
+            $field = null;
+            foreach ($fields as $candidate) if ((string)$candidate['field_key'] === $key) { $field = $candidate; break; }
+            if ($field === null) throw new RuntimeException('Upload field disappeared during submission.');
+            $files[$key] = fb_upload_max_files($field) === 1 ? $storedFiles[0] : $storedFiles;
         }
     }
     if (is_string($stageDir)) @rmdir($stageDir);
@@ -163,7 +175,7 @@ try {
 } catch (Throwable $error) {
     if ($pdo->inTransaction()) $pdo->rollBack();
     if ($submissionMutationLock !== null) fb_release_form_mutation_lock($pdo, $submissionMutationLock);
-    $cleanup(array_merge(array_column($staged, 'path'), $finalPaths ?? []), $stageDir);
+    $cleanup(array_merge($stagedPaths, $finalPaths ?? []), $stageDir);
     if ($error instanceof PDOException && (int)($error->errorInfo[1] ?? 0) === 1062) {
         $replay = $pdo->prepare('SELECT reference_code FROM fb_submissions WHERE form_id = ? AND idempotency_key = ? LIMIT 1');
         $replay->execute([$formId, $idempotency]);
@@ -175,11 +187,14 @@ try {
 }
 
 if (function_exists('do_action_isolated')) {
-    foreach ($files as $key => $fileInfo) {
+    foreach ($files as $key => $storedMetadata) {
         $fileField = null;
         foreach ($fields as $candidate) if ($candidate['field_key'] === $key) { $fileField = $candidate; break; }
         if ($fileField === null) continue;
-        foreach (do_action_isolated('fb_file_stored', $form, $fileField, $fileInfo) as $hookError) error_log('[form-builder] observer failed: ' . $hookError['message']);
+        foreach (fb_normalize_stored_attachments($storedMetadata) as $fileInfo) {
+            if (!is_array($fileInfo)) continue;
+            foreach (do_action_isolated('fb_file_stored', $form, $fileField, $fileInfo) as $hookError) error_log('[form-builder] observer failed: ' . $hookError['message']);
+        }
     }
     foreach (do_action_isolated('fb_after_submit', $form, $data, $submissionId, $reference) as $hookError) error_log('[form-builder] observer failed: ' . $hookError['message']);
 }

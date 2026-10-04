@@ -8,7 +8,8 @@ $permissions = array_column($manifest['permissions'] ?? [], null, 'key');
 $composer = json_decode((string)file_get_contents($root . '/composer.json'), true, 32, JSON_THROW_ON_ERROR);
 $lock = json_decode((string)file_get_contents($root . '/composer.lock'), true, 64, JSON_THROW_ON_ERROR);
 $lockedPackages = array_column($lock['packages'] ?? [], 'version', 'name');
-$check(($manifest['version'] ?? null) === '2.1.3' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.122' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
+$check(($manifest['version'] ?? null) === '2.2.0' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.122' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
+$check(in_array('content-editor', $manifest['dependencies']['js'] ?? [], true), 'upload descriptions declare the Core content-editor dependency');
 $check(($composer['require']['php'] ?? null) === '>=8.1' && ($composer['require']['phpoffice/phpspreadsheet'] ?? null) === '~5.8.1'
     && ($composer['config']['platform']['php'] ?? null) === '8.1.0'
     && ($lockedPackages['phpoffice/phpspreadsheet'] ?? null) === '5.8.1'
@@ -70,6 +71,7 @@ $settings = (string)file_get_contents($root . '/admin/settings.php');
 $visualBuilder = (string)file_get_contents($root . '/admin/visual-builder.php');
 $visualPreview = (string)file_get_contents($root . '/admin/visual-preview.php');
 $classicBuilder = (string)file_get_contents($root . '/admin/builder.php');
+$classicCanvas = (string)file_get_contents($root . '/admin/_canvas.php');
 $adminUi = (string)file_get_contents($root . '/admin/_ui.php');
 $referenceProviderAt = strpos($plugin, "register_editor_reference_provider('form-builder'");
 $referenceProviderEnd = strpos($plugin, "if (function_exists('register_theme_section'))", $referenceProviderAt ?: 0);
@@ -112,6 +114,23 @@ $check(str_contains($visualBuilder, "adiwira_require_permission(\$pdo, 'plugin.f
     && str_contains($visualBuilder, "window.addEventListener('fbv:draft-change'")
     && str_contains($visualBuilder, 'Open Classic Builder'),
     'Visual Builder is authorized, safely rendered, initially inert, responsive, autosave-ready, and Classic-compatible');
+$check(str_contains($classicCanvas, 'content_editor_render_mount([')
+    && str_contains($classicCanvas, "'name' => 's_upload_description_html'")
+    && str_contains($classicBuilder, 'window.JyavaniEditor.mount(root')
+    && str_contains($classicBuilder, 'uploadDescriptionEditor.sync()')
+    && str_contains($classicBuilder, 'uploadDescriptionEditor.destroy()')
+    && str_contains($visualBuilder, 'id="fbvUploadEditorParking"')
+    && str_contains($visualBuilder, 'window.JyavaniEditor.mount(uploadEditorRoot')
+    && str_contains($visualBuilder, 'uploadDescriptionEditor.setContent(')
+    && str_contains($visualBuilder, 'uploadDescriptionEditor.destroy()'),
+    'Classic and Visual upload descriptions use scoped Core editor mounts with explicit lifecycle management');
+$check(str_contains($classicCanvas, 'name="v_max_files"')
+    && str_contains($classicCanvas, 'name="s_preview_mode"')
+    && str_contains($visualBuilder, 'data-upload-prop="max_files"')
+    && str_contains($visualBuilder, 'data-upload-prop="preview_mode"')
+    && str_contains($plugin, 'function fb_normalize_uploaded_files(')
+    && str_contains($submit, 'fb_normalize_stored_attachments($storedMetadata)'),
+    'both builders and submission runtime expose the configurable multi-file contract');
 $check(str_contains($visualPreview, "user_can(\$pdo, \$uid, 'plugin.form-builder.workspace.access'")
     && str_contains($visualPreview, 'fb_can_access_form($pdo, $form, $uid)')
     && str_contains($visualPreview, "\$previewSettings['unsafe_code_enabled'] = false")
@@ -294,8 +313,11 @@ $check(str_contains($adminIndex, "\$_POST['fb_action'] ?? '') === 'export'")
     && !str_contains($submissions, "(\$_GET['action'] ?? '') === 'export'"),
     'submission exports enter the Core raw-response dispatcher and require POST, CSRF, an allowlisted format, and the scoped route guard');
 $check(str_contains($submissions, 'setCellValueExplicit(') && str_contains($submissions, "freezePane('A2')")
-    && str_contains($submissions, 'setAutoFilter(') && str_contains($submissions, "setFormatCode('dd/mm/yyyy hh:mm')"),
-    'Excel exports preserve text safety and apply staff-friendly worksheet formatting');
+    && str_contains($submissions, 'setAutoFilter(') && str_contains($submissions, "setFormatCode('dd/mm/yyyy hh:mm')")
+    && str_contains($submissions, 'getHyperlink()->setUrl($attachmentUrl)')
+    && str_contains($submissions, 'admin login required')
+    && str_contains($importSource, 'fb_normalize_stored_attachments('),
+    'Excel exports preserve text safety, format staff data, and link each private attachment through the authorized admin endpoint');
 $check(str_contains($submissions, 'fba-detail-layout') && !str_contains($submissions, '<div class="fba-overlay" onclick=')
     && !str_contains($submissions, '<main>')
     && !str_contains($submissions, "<?php return; endif; ?>\n?>")

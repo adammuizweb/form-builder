@@ -1,9 +1,9 @@
 {
     "name": "form-builder",
-    "version": "2.1.3",
+    "version": "2.2.0",
     "title": "Form Builder",
     "icon": "icon.png",
-    "description": "Production form builder with multilingual definitions, capacity-limited select options, private validated uploads, idempotent submissions, review workflows, Core Mail, CSV export, and shortcode/theme-section embedding.",
+    "description": "Production form builder with multilingual definitions, configurable private multi-file uploads, protected attachment exports, idempotent submissions, review workflows, Core Mail, and shortcode/theme-section embedding.",
     "author": "Adam Muiz",
     "author_uri": "https://jyavani.com/member/adammuiz/",
     "plugin_uri": "https://jyavani.com/plugin/form-builder/",
@@ -92,6 +92,7 @@
     "license": "MIT",
     "dependencies": {
         "js": [
+            "content-editor",
             "modal-helpers",
             "media-selector",
             "file-selector"

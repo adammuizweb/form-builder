@@ -116,6 +116,23 @@ function fb_render_field_form(array $f, array $countryFields = []): string {
       <div class="fba-field"><label>Label</label><input type="text" name="label" value="<?= htmlspecialchars($f['label'], ENT_QUOTES) ?>"></div>
       <?php endif; ?>
 
+      <?php if (in_array($type, ['file', 'image'], true)): ?>
+      <div class="fba-field">
+        <?php if (function_exists('content_editor_render_mount')): ?>
+        <?= content_editor_render_mount([
+            'id' => 'fbc-upload-description-' . $fid,
+            'name' => 's_upload_description_html',
+            'mode_name' => 's_upload_description_mode',
+            'value' => (string)($fs['upload_description_html'] ?? ''),
+            'initial_mode' => 'quill',
+            'label' => __('Description'),
+        ]) ?>
+        <?php else: ?>
+        <div class="fba-empty" data-upload-editor-error role="alert"><?= htmlspecialchars((string)__('The description editor is unavailable. This field cannot be saved safely.'), ENT_QUOTES) ?></div>
+        <?php endif; ?>
+      </div>
+      <?php endif; ?>
+
       <?php if ($type === 'heading'): ?>
       <div class="fba-field"><label>Level</label>
         <select name="s_level">
@@ -161,8 +178,17 @@ function fb_render_field_form(array $f, array $countryFields = []): string {
       </div>
       <?php elseif (in_array($type, ['file', 'image'], true)): ?>
       <div class="fba-row2">
-        <div class="fba-field"><label>Max size (MB)</label><input type="number" name="v_maxmb" value="<?= (int)round(($valid['max_bytes'] ?? 5242880) / 1048576) ?>"></div>
-        <div class="fba-field"><label>Allowed extensions</label><input type="text" name="v_exts" value="<?= htmlspecialchars(implode(', ', (array)($valid['exts'] ?? ($type === 'image' ? ['jpg','jpeg','png','webp'] : ['jpg','jpeg','png','webp','pdf']))), ENT_QUOTES) ?>"></div>
+        <div class="fba-field"><label><?= __('Max files') ?></label><input type="number" name="v_max_files" min="1" max="<?= FB_UPLOAD_MAX_FILES ?>" step="1" required value="<?= (int)($valid['max_files'] ?? 1) ?>"></div>
+        <div class="fba-field"><label><?= __('Max size (MB)') ?></label><input type="number" name="v_maxmb" min="1" max="25" step="1" required value="<?= (int)round(($valid['max_bytes'] ?? 5242880) / 1048576) ?>"></div>
+      </div>
+      <div class="fba-field"><label><?= __('Allowed extensions') ?></label><input type="text" name="v_exts" required value="<?= htmlspecialchars(implode(', ', (array)($valid['exts'] ?? ($type === 'image' ? ['jpg','jpeg','png','webp'] : ['jpg','jpeg','png','webp','pdf']))), ENT_QUOTES) ?>"></div>
+      <div class="fba-field"><label><?= __('Preview mode') ?></label>
+        <?php $previewMode = (string)($fs['preview_mode'] ?? ($type === 'image' ? 'real' : 'icon')); ?>
+        <select name="s_preview_mode" required>
+          <option value="none" <?= $previewMode === 'none' ? 'selected' : '' ?>><?= __('None') ?></option>
+          <option value="icon" <?= $previewMode === 'icon' ? 'selected' : '' ?>><?= __('Icon') ?></option>
+          <option value="real" <?= $previewMode === 'real' ? 'selected' : '' ?>><?= __('Real preview') ?></option>
+        </select>
       </div>
       <?php endif; ?>
       <div class="fba-checks" style="margin:.4rem 0 .9rem">

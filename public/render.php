@@ -18,7 +18,8 @@ function fb_render_field_html(array $f, string $slug, string $instance, bool $un
     $label = (string)$f['label'];
     $req = !empty($f['required']);
     $valid = fb_field_validation($f);
-    $maxBytes = (int)($valid['max_bytes'] ?? 5 * 1024 * 1024);
+    $uploadPolicy = !empty($meta['file']) ? fb_upload_policy($f) : null;
+    $maxBytes = (int)($uploadPolicy['max_bytes'] ?? 5 * 1024 * 1024);
     $id = 'fb-' . $slug . '-' . $instance . '-' . $key;
 
     $fsA = fb_field_settings($f);
@@ -61,17 +62,20 @@ function fb_render_field_html(array $f, string $slug, string $instance, bool $un
         <?php else: ?><hr class="fb-divider"><?php endif; ?>
       <?php elseif (!empty($meta['file'])): ?>
         <label class="fb-label"><?= fb_h($label) ?> <?= $req ? '<span class="req">*</span>' : '' ?></label>
-        <div class="fb-drop" data-max="<?= $maxBytes ?>" data-image="<?= !empty($meta['image']) ? '1' : '0' ?>">
-          <?php if (!empty($meta['image'])): ?>
-          <input type="file" name="<?= fb_h($key) ?>" accept="<?= fb_h(implode(',', array_map(static fn(string $ext): string => '.' . $ext, (array)($valid['exts'] ?? ['jpg','jpeg','png','webp'])))) ?>" <?= $req ? 'required' : '' ?>>
-          <img class="up-preview" alt="">
-          <div class="up-ic">&#128444;</div>
-          <?php else: ?>
-          <input type="file" name="<?= fb_h($key) ?>" accept="<?= fb_h(implode(',', array_map(static fn(string $ext): string => '.' . $ext, (array)($valid['exts'] ?? ['jpg','jpeg','png','webp','pdf'])))) ?>" <?= $req ? 'required' : '' ?>>
-          <div class="up-ic">&#8682;</div>
-          <?php endif; ?>
+        <?php
+          $descriptionHtml = '';
+          try { $descriptionHtml = fb_sanitize_upload_description((string)$uploadPolicy['description_html']); } catch (InvalidArgumentException) {}
+          $maxFiles = (int)$uploadPolicy['max_files'];
+          $inputName = $key . ($maxFiles > 1 ? '[]' : '');
+        ?>
+        <?php if ($descriptionHtml !== ''): ?><div class="fb-upload-description"><?= $descriptionHtml ?></div><?php endif; ?>
+        <input type="hidden" name="fb_upload_count[<?= fb_h($key) ?>]" value="0" data-fb-upload-count>
+        <div class="fb-drop" data-max="<?= $maxBytes ?>" data-max-files="<?= $maxFiles ?>" data-image="<?= !empty($meta['image']) ? '1' : '0' ?>" data-preview-mode="<?= fb_h((string)$uploadPolicy['preview_mode']) ?>">
+          <input type="file" name="<?= fb_h($inputName) ?>" accept="<?= fb_h(implode(',', array_map(static fn(string $ext): string => '.' . $ext, $uploadPolicy['exts']))) ?>" <?= $maxFiles > 1 ? 'multiple' : '' ?> <?= $req ? 'required' : '' ?>>
+          <div class="up-ic" aria-hidden="true"><?= !empty($meta['image']) ? '&#128444;' : '&#8682;' ?></div>
           <div class="up-t"><?= fb_h(fb_message($publicSettings, 'dropzone_prompt')) ?></div>
-          <div class="up-s"><?= fb_h(fb_message($publicSettings, 'max_size', ['size'=>round($maxBytes / 1048576, 1)])) ?></div>
+          <div class="up-s"><?= fb_h(fb_message($publicSettings, 'max_size', ['size'=>round($maxBytes / 1048576, 1)])) ?><?= $maxFiles > 1 ? ' · ' . fb_h(fb_message($publicSettings, 'max_files', ['max'=>$maxFiles])) : '' ?></div>
+          <div class="up-items" aria-live="polite"></div>
         </div>
         <?php if (!empty($f['help_text'])): ?><div class="fb-help"><?= fb_h($f['help_text']) ?></div><?php endif; ?>
       <?php elseif ($type === 'country'): ?>
@@ -210,6 +214,9 @@ function fb_render_form(PDO $pdo, array $form): string {
 .fb-intl-phone input[type=tel] { border-radius: 0 var(--fb-radius) var(--fb-radius) 0; }
 .fb-field input:focus, .fb-field textarea:focus, .fb-field select:focus { border-color: var(--fb-accent); box-shadow: 0 0 0 4px var(--fb-accent-soft, rgba(43 122 74 / .14)); }
 .fb-help { font-size: .76rem; color: var(--fb-muted); margin-top: .35rem; }
+.fb-upload-description { font-size: .86rem; color: var(--fb-muted); margin: -.1rem 0 .55rem; }
+.fb-upload-description > :first-child { margin-top: 0; }
+.fb-upload-description > :last-child { margin-bottom: 0; }
 .fb-choices { display: flex; flex-direction: column; gap: .5rem; }
 .fb-choice { display: flex; align-items: center; gap: .55rem; font-size: .94rem; background: var(--fb-surface); border: 1.5px solid var(--fb-border); border-radius: var(--fb-radius); padding: .6rem .9rem; cursor: pointer; transition: border-color .2s, background .2s; }
 .fb-choice:hover { border-color: var(--fb-accent); }
@@ -245,11 +252,17 @@ function fb_render_form(PDO $pdo, array $form): string {
 .fb-drop { position: relative; border: 2px dashed var(--fb-border); border-radius: var(--fb-radius); padding: 1.5rem 1rem; text-align: center; background: var(--fb-surface); transition: border-color .25s, background .25s; cursor: pointer; }
 .fb-drop:hover, .fb-drop.dragover { border-color: var(--fb-accent); background: var(--fb-accent-soft, rgba(43 122 74 / .05)); }
 .fb-drop input[type=file] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 2; }
-.fb-drop .up-t, .fb-drop .up-s, .fb-drop .up-ic, .fb-drop .up-preview { position: relative; z-index: 1; pointer-events: none; }
+.fb-drop .up-t, .fb-drop .up-s, .fb-drop .up-ic, .fb-drop .up-items { position: relative; z-index: 1; pointer-events: none; }
 .fb-drop .up-ic { font-size: 1.5rem; margin-bottom: .35rem; }
 .fb-drop .up-t { font-weight: 600; font-size: .92rem; }
 .fb-drop .up-s { font-size: .74rem; color: var(--fb-muted); margin-top: .2rem; }
-.fb-drop .up-preview { display: none; margin: 0 auto .5rem; max-width: 160px; max-height: 120px; border-radius: 10px; object-fit: cover; box-shadow: 0 4px 14px rgba(0 0 0 / .12); }
+.fb-drop .up-items { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: .55rem; margin-top: .75rem; }
+.fb-drop .up-items:empty { display: none; }
+.fb-drop .up-item { min-width: 0; padding: .55rem; border: 1px solid var(--fb-border); border-radius: 10px; background: var(--fb-surface); }
+.fb-drop .up-item img { display: block; width: 100%; height: 82px; margin-bottom: .4rem; border-radius: 7px; object-fit: cover; }
+.fb-drop .up-item svg { display: block; width: 34px; height: 34px; margin: 0 auto .4rem; color: var(--fb-accent-deep); }
+.fb-drop .up-name { display: block; overflow: hidden; font-size: .75rem; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.fb-drop .up-size { display: block; font-size: .68rem; color: var(--fb-muted); }
 .fb-drop.has-file { border-style: solid; border-color: var(--fb-accent); background: var(--fb-accent-soft, rgba(43 122 74 / .06)); }
 .fb-total { display: flex; justify-content: space-between; align-items: center; gap: 1rem; background: var(--fb-accent-soft, rgba(43 122 74 / .07)); border: 1.5px dashed var(--fb-accent); border-radius: var(--fb-radius); padding: .9rem 1.2rem; margin-top: 1rem; }
 .fb-total .lbl { font-size: .72rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--fb-accent-deep); }
@@ -333,7 +346,7 @@ function fb_render_form(PDO $pdo, array $form): string {
   if (!root) return;
   var form = root.querySelector('form[data-fb-form]');
   if (!form) return;
-  var I18N = <?= json_encode(['choose_image'=>fb_message($settings,'choose_image'),'file_too_large'=>fb_message($settings,'file_too_large'),'ready_to_upload'=>fb_message($settings,'ready_to_upload'),'submitting'=>fb_message($settings,'submitting')], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>;
+  var I18N = <?= json_encode(['choose_image'=>fb_message($settings,'choose_image'),'file_too_large'=>fb_message($settings,'file_too_large'),'ready_to_upload'=>fb_message($settings,'ready_to_upload'),'too_many_files'=>fb_message($settings,'too_many_files'),'files_ready'=>fb_message($settings,'files_ready'),'submitting'=>fb_message($settings,'submitting')], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>;
 
   // ---- Live total ----
   var PRICES = <?= json_encode($priceMap, JSON_UNESCAPED_UNICODE) ?>;
@@ -384,28 +397,94 @@ function fb_render_form(PDO $pdo, array $form): string {
     var input = zone.querySelector('input[type=file]');
     var title = zone.querySelector('.up-t');
     var sub = zone.querySelector('.up-s');
-    var preview = zone.querySelector('.up-preview');
+    var items = zone.querySelector('.up-items');
+    var countInput = zone.parentNode.querySelector('[data-fb-upload-count]');
     var max = parseInt(zone.getAttribute('data-max') || '5242880', 10);
+    var maxFiles = parseInt(zone.getAttribute('data-max-files') || '1', 10);
     var isImage = zone.getAttribute('data-image') === '1';
+    var previewMode = zone.getAttribute('data-preview-mode') || (isImage ? 'real' : 'icon');
+    var objectUrls = [];
     function fmt(b) { return b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB'; }
-    function setFile(file) {
-      if (!file) return;
-      if (isImage && file.type.indexOf('image/') !== 0) { title.textContent = I18N.choose_image; input.value = ''; zone.classList.remove('has-file'); return; }
-      if (file.size > max) { title.textContent = I18N.file_too_large.replace('{size}', fmt(file.size)); input.value = ''; zone.classList.remove('has-file'); return; }
-      title.textContent = file.name;
-      sub.textContent = I18N.ready_to_upload.replace('{size}', fmt(file.size));
-      zone.classList.add('has-file');
-      if (preview) {
-        try { preview.src = URL.createObjectURL(file); preview.style.display = 'block'; } catch (e) {}
-      }
+    function revokePreviews() {
+      objectUrls.forEach(function (url) { URL.revokeObjectURL(url); });
+      objectUrls = [];
     }
-    input.addEventListener('change', function () { setFile(input.files[0]); });
+    function clearSelection(message) {
+      revokePreviews();
+      input.value = '';
+      if (items) items.replaceChildren();
+      if (countInput) countInput.value = '0';
+      title.textContent = message;
+      zone.classList.remove('has-file');
+    }
+    function appendIcon(target, file) {
+      var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('viewBox', '0 0 24 24');
+      svg.setAttribute('aria-hidden', 'true');
+      var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('fill', 'currentColor');
+      path.setAttribute('d', file.type === 'application/pdf' ? 'M6 2h8l4 4v16H6V2zm7 1.5V7h3.5L13 3.5zM8 11v7h2v-2h1.2a2.5 2.5 0 0 0 0-5H8zm2 2h1.2a.5.5 0 0 1 0 1H10v-1z' : 'M6 2h8l4 4v16H6V2zm7 1.5V7h3.5L13 3.5zM8 11h8v2H8v-2zm0 4h8v2H8v-2z');
+      svg.appendChild(path);
+      target.appendChild(svg);
+    }
+    function appendPreview(file) {
+      if (!items || previewMode === 'none') return;
+      var item = document.createElement('div');
+      item.className = 'up-item';
+      if (previewMode === 'real' && file.type.indexOf('image/') === 0) {
+        try {
+          var image = document.createElement('img');
+          var url = URL.createObjectURL(file);
+          objectUrls.push(url);
+          image.src = url;
+          image.alt = '';
+          item.appendChild(image);
+        } catch (error) { appendIcon(item, file); }
+      } else {
+        appendIcon(item, file);
+      }
+      var name = document.createElement('span');
+      name.className = 'up-name';
+      name.textContent = file.name;
+      name.title = file.name;
+      var size = document.createElement('span');
+      size.className = 'up-size';
+      size.textContent = fmt(file.size);
+      item.appendChild(name);
+      item.appendChild(size);
+      items.appendChild(item);
+    }
+    function setFiles() {
+      revokePreviews();
+      if (items) items.replaceChildren();
+      var selected = Array.prototype.slice.call(input.files || []);
+      if (selected.length > maxFiles) { clearSelection(I18N.too_many_files.replace('{field}', '').replace('{max}', String(maxFiles)).trim()); return; }
+      for (var i = 0; i < selected.length; i++) {
+        if (isImage && selected[i].type.indexOf('image/') !== 0) { clearSelection(I18N.choose_image); return; }
+        if (selected[i].size > max) { clearSelection(I18N.file_too_large.replace('{size}', fmt(selected[i].size))); return; }
+      }
+      if (countInput) countInput.value = String(selected.length);
+      zone.classList.toggle('has-file', selected.length > 0);
+      if (!selected.length) return;
+      title.textContent = selected.length === 1 ? selected[0].name : I18N.files_ready.replace('{count}', String(selected.length));
+      sub.textContent = selected.length === 1 ? I18N.ready_to_upload.replace('{size}', fmt(selected[0].size)) : selected.map(function (file) { return fmt(file.size); }).join(' · ');
+      selected.forEach(appendPreview);
+    }
+    input.addEventListener('change', setFiles);
     ['dragenter', 'dragover'].forEach(function (ev) { zone.addEventListener(ev, function (e) { e.preventDefault(); zone.classList.add('dragover'); }); });
     ['dragleave', 'drop'].forEach(function (ev) { zone.addEventListener(ev, function (e) { e.preventDefault(); zone.classList.remove('dragover'); }); });
     zone.addEventListener('drop', function (e) {
-      var f = e.dataTransfer.files[0];
-      if (f) { try { var dt = new DataTransfer(); dt.items.add(f); input.files = dt.files; } catch (err) {} setFile(f); }
+      var dropped = Array.prototype.slice.call(e.dataTransfer.files || []);
+      if (!dropped.length) return;
+      try {
+        var dt = new DataTransfer();
+        dropped.forEach(function (file) { dt.items.add(file); });
+        input.files = dt.files;
+      } catch (error) {}
+      setFiles();
     });
+    window.addEventListener('pagehide', revokePreviews, { once: true });
+    form.addEventListener('submit', revokePreviews);
   });
 
   // ---- Submit loader ----

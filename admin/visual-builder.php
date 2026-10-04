@@ -99,6 +99,9 @@ fb_admin_css();
 .fbv-field-picker:disabled { cursor: not-allowed; opacity: .58; }
 .fbv-field-picker-help { display: block; margin-top: .4rem; color: var(--adam-muted); font-size: .68rem; line-height: 1.4; }
 .fbv-inspector textarea { resize: vertical; }
+.fbv-upload-editor-shell { margin-bottom: .75rem; }
+.fbv-upload-editor-error { padding: .7rem; border: 1px solid #dc2626; border-radius: 9px; color: #b91c1c; font-size: .74rem; line-height: 1.45; }
+#fbvUploadEditorParking { position: absolute; left: -100000px; width: 360px; visibility: hidden; pointer-events: none; }
 .fbv-inspector-actions { display: flex; justify-content: space-between; gap: .5rem; margin-top: 1rem; padding-top: .8rem; border-top: 1px solid var(--adam-border); }
 .fbv-position-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; }
 .fbv-inspector-key { font-family: ui-monospace, monospace; font-size: .72rem; }
@@ -232,6 +235,22 @@ fb_admin_css();
       </div>
     </aside>
   </div>
+  <div id="fbvUploadEditorParking" aria-hidden="true">
+    <div class="fbv-upload-editor-shell" id="fbvUploadEditorShell">
+      <?php if (function_exists('content_editor_render_mount')): ?>
+      <?= content_editor_render_mount([
+          'id' => 'fbv-upload-description-editor',
+          'name' => 's_upload_description_html',
+          'mode_name' => 's_upload_description_mode',
+          'value' => '',
+          'initial_mode' => 'quill',
+          'label' => __('Description'),
+      ]) ?>
+      <?php else: ?>
+      <div class="fbv-upload-editor-error" data-upload-editor-error role="alert"><?= htmlspecialchars((string)__('The description editor is unavailable. Upload descriptions cannot be edited safely.'), ENT_QUOTES) ?></div>
+      <?php endif; ?>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -260,6 +279,21 @@ fb_admin_css();
   const layoutList = document.getElementById('fbvLayoutList');
   const leftToggle = document.getElementById('fbvToggleLeft');
   const rightToggle = document.getElementById('fbvToggleRight');
+  const uploadEditorParking = document.getElementById('fbvUploadEditorParking');
+  const uploadEditorShell = document.getElementById('fbvUploadEditorShell');
+  const uploadEditorRoot = uploadEditorShell?.querySelector('[data-jyavani-editor-mount]') || null;
+  const UPLOAD_MAX_FILES = <?= FB_UPLOAD_MAX_FILES ?>;
+  const UPLOAD_DESCRIPTION_MAX_LENGTH = <?= FB_UPLOAD_DESCRIPTION_MAX_LENGTH ?>;
+  const UPLOAD_MIB = 1024 * 1024;
+  const UPLOAD_TEXT = <?= json_encode([
+      'maxFiles' => __('Max files'),
+      'maxSize' => __('Max size (MB)'),
+      'extensions' => __('Allowed extensions'),
+      'previewMode' => __('Preview mode'),
+      'none' => __('None'),
+      'icon' => __('Icon'),
+      'real' => __('Real preview'),
+  ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
   let draft = null;
   let workingDefinition = null;
   let selectedKey = null;
@@ -270,6 +304,10 @@ fb_admin_css();
   let draggedFieldKey = null;
   let retryTimer = 0;
   let preview = null;
+  let uploadDescriptionEditor = null;
+  let uploadEditorFieldKey = null;
+  let uploadEditorApplying = false;
+  let uploadEditorSelectionToken = 0;
 
   const setPanelHidden = (side, hidden, persist = true) => {
     const toggle = side === 'left' ? leftToggle : rightToggle;
@@ -330,6 +368,7 @@ fb_admin_css();
   };
   const currentFields = () => workingDefinition?.form?.fields || [];
   const currentField = () => currentFields().find((field) => field.key === selectedKey) || null;
+  const isUploadField = (field) => field && ['file', 'image'].includes(field.type);
   const ordered = (fields) => [...fields].sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0) || a.key.localeCompare(b.key));
   const layoutRows = () => ordered(currentFields().filter((field) => field.type === 'row'));
   const layoutColumns = () => layoutRows().flatMap((row, rowIndex) => ordered(currentFields().filter((field) => field.type === 'col' && field.parent === row.key)).map((column, columnIndex) => ({ row, column, rowIndex, columnIndex })));
@@ -416,7 +455,84 @@ fb_admin_css();
       <div class="fbv-option-list">${optionCards || '<div class="fbv-option-empty">Add the first answer choice.</div>'}</div>
     </section>`;
   };
+  const storeUploadDescription = (fieldKey, content) => {
+    const field = currentFields().find((candidate) => candidate.key === fieldKey);
+    if (!isUploadField(field) || String(field.settings?.upload_description_html || '') === content) return;
+    mutateDefinition((definition) => {
+      const target = definition.form.fields.find((candidate) => candidate.key === fieldKey);
+      if (!isUploadField(target)) return;
+      target.settings = target.settings || {};
+      target.settings.upload_description_html = content;
+    });
+  };
+  const syncUploadDescription = () => {
+    if (!uploadDescriptionEditor || !uploadEditorFieldKey || uploadEditorApplying) return true;
+    let content;
+    try { content = uploadDescriptionEditor.sync(); }
+    catch (error) {
+      setStatus(error?.message || <?= json_encode(__('Description editor sync failed.')) ?>, 'error');
+      return false;
+    }
+    if ([...content].length > UPLOAD_DESCRIPTION_MAX_LENGTH) {
+      setStatus(<?= json_encode(__('Upload description is too long.')) ?>, 'error');
+      return false;
+    }
+    storeUploadDescription(uploadEditorFieldKey, content);
+    return true;
+  };
+  const detachUploadDescriptionEditor = (sync = true) => {
+    if (sync) syncUploadDescription();
+    uploadEditorSelectionToken++;
+    uploadEditorFieldKey = null;
+    if (uploadEditorShell && uploadEditorParking && uploadEditorShell.parentElement !== uploadEditorParking) {
+      uploadEditorParking.appendChild(uploadEditorShell);
+    }
+    uploadEditorParking?.setAttribute('aria-hidden', 'true');
+  };
+  const showUploadEditorError = (message) => {
+    let error = uploadEditorShell?.querySelector('[data-upload-editor-runtime-error]');
+    if (!error && uploadEditorShell) {
+      error = document.createElement('div');
+      error.className = 'fbv-upload-editor-error';
+      error.dataset.uploadEditorRuntimeError = '1';
+      error.setAttribute('role', 'alert');
+      uploadEditorShell.prepend(error);
+    }
+    if (error) error.textContent = message;
+    setStatus(message, 'error');
+  };
+  const setUploadEditorContent = (field) => {
+    if (!uploadDescriptionEditor) return;
+    const token = ++uploadEditorSelectionToken;
+    const content = String(field.settings?.upload_description_html || '');
+    const apply = () => {
+      if (token !== uploadEditorSelectionToken || selectedKey !== field.key || uploadEditorFieldKey !== field.key) return;
+      uploadEditorApplying = true;
+      try {
+        if (uploadDescriptionEditor.getContent() !== content) uploadDescriptionEditor.setContent(content, { source: 'field-selection' });
+      } finally { uploadEditorApplying = false; }
+    };
+    try { apply(); }
+    catch (error) {
+      if (error?.code !== 'EDITOR_LOSSY_MODE_CHANGE') {
+        showUploadEditorError(error?.message || <?= json_encode(__('The description editor could not load this field.')) ?>);
+        return;
+      }
+      uploadDescriptionEditor.setMode('codemirror').then(apply).catch((modeError) => {
+        if (token === uploadEditorSelectionToken) showUploadEditorError(modeError?.message || <?= json_encode(__('The description editor could not load this field.')) ?>);
+      });
+    }
+  };
+  const attachUploadDescriptionEditor = (field) => {
+    const host = inspector.querySelector('[data-upload-editor-host]');
+    if (!host || !uploadEditorShell || !isUploadField(field)) return;
+    host.appendChild(uploadEditorShell);
+    uploadEditorParking?.setAttribute('aria-hidden', 'false');
+    uploadEditorFieldKey = field.key;
+    setUploadEditorContent(field);
+  };
   const renderInspector = () => {
+    detachUploadDescriptionEditor();
     const field = currentField();
     if (!field) {
       inspector.innerHTML = '<div class="fbv-inspector-empty">Select a field on the canvas, or add one from the library.</div>';
@@ -426,13 +542,21 @@ fb_admin_css();
     const isInput = meta.input === true;
     const isChoice = meta.options === true;
     const labelControl = field.type === 'divider' ? '' : `<div class="fba-field"><label>${field.type === 'paragraph' ? 'Text' : 'Label'}</label>${field.type === 'paragraph' ? `<textarea data-field-prop="label" rows="4" maxlength="1000">${escapeHtml(field.label)}</textarea>` : `<input data-field-prop="label" type="text" maxlength="1000" value="${escapeHtml(field.label)}">`}</div>`;
+    const uploadControl = isUploadField(field) ? (() => {
+      const maxFiles = Number.isSafeInteger(field.validation?.max_files) ? field.validation.max_files : 1;
+      const maxMb = Math.max(1, Math.min(25, Math.ceil((Number(field.validation?.max_bytes) || 5 * UPLOAD_MIB) / UPLOAD_MIB)));
+      const extensions = Array.isArray(field.validation?.exts) && field.validation.exts.length ? field.validation.exts : (field.type === 'image' ? ['jpg','jpeg','png','webp'] : ['jpg','jpeg','png','webp','pdf']);
+      const previewMode = ['none','icon','real'].includes(field.settings?.preview_mode) ? field.settings.preview_mode : (field.type === 'image' ? 'real' : 'icon');
+      return `<div data-upload-editor-host></div><div class="fba-row2"><div class="fba-field"><label>${escapeHtml(UPLOAD_TEXT.maxFiles)}</label><input name="v_max_files" data-upload-prop="max_files" type="number" min="1" max="${UPLOAD_MAX_FILES}" step="1" value="${maxFiles}"></div><div class="fba-field"><label>${escapeHtml(UPLOAD_TEXT.maxSize)}</label><input name="v_maxmb" data-upload-prop="max_mb" type="number" min="1" max="25" step="1" value="${maxMb}"></div></div><div class="fba-field"><label>${escapeHtml(UPLOAD_TEXT.extensions)}</label><input name="v_exts" data-upload-prop="exts" type="text" value="${escapeHtml(extensions.join(', '))}"></div><div class="fba-field"><label>${escapeHtml(UPLOAD_TEXT.previewMode)}</label><select name="s_preview_mode" data-upload-prop="preview_mode"><option value="none"${previewMode === 'none' ? ' selected' : ''}>${escapeHtml(UPLOAD_TEXT.none)}</option><option value="icon"${previewMode === 'icon' ? ' selected' : ''}>${escapeHtml(UPLOAD_TEXT.icon)}</option><option value="real"${previewMode === 'real' ? ' selected' : ''}>${escapeHtml(UPLOAD_TEXT.real)}</option></select></div>`;
+    })() : '';
     const headingControl = field.type === 'heading' ? `<div class="fba-field"><label>Heading level</label><select data-setting-prop="level">${['h1','h2','h3','h4','h5','h6'].map((level) => `<option value="${level}"${(field.settings?.level || 'h2') === level ? ' selected' : ''}>${level.toUpperCase()}</option>`).join('')}</select></div>` : '';
     const inputControls = isInput ? `<div class="fba-field"><label>Field key</label><input class="fbv-inspector-key" type="text" value="${escapeHtml(field.key)}" readonly></div><div class="fba-field"><label>Placeholder</label><input data-field-prop="placeholder" type="text" maxlength="1000" value="${escapeHtml(field.placeholder || '')}"></div><div class="fba-field"><label>Help text</label><input data-field-prop="help" type="text" maxlength="2000" value="${escapeHtml(field.help || '')}"></div>${isChoice ? renderOptionEditor(field) : ''}<div class="fba-checks"><label class="fba-check"><input data-field-prop="required" type="checkbox"${field.required ? ' checked' : ''}> Required</label><label class="fba-check"><input data-field-prop="hidden" type="checkbox"${field.hidden ? ' checked' : ''}> Hidden</label></div>` : '';
     const siblings = ordered(currentFields().filter((candidate) => candidate.parent === field.parent && !['row', 'col'].includes(candidate.type)));
     const siblingIndex = siblings.findIndex((candidate) => candidate.key === field.key);
     const positionControls = `<div class="fba-field"><label>Column</label><select data-field-parent>${layoutColumns().map(({ row, column, rowIndex, columnIndex }) => `<option value="${escapeHtml(column.key)}"${column.key === field.parent ? ' selected' : ''}>Row ${rowIndex + 1}, column ${columnIndex + 1}</option>`).join('')}</select></div><div class="fbv-position-actions"><button class="fba-btn sm" type="button" data-field-move="up"${siblingIndex <= 0 ? ' disabled' : ''}>Move up</button><button class="fba-btn sm" type="button" data-field-move="down"${siblingIndex < 0 || siblingIndex >= siblings.length - 1 ? ' disabled' : ''}>Move down</button></div>`;
     const protectedType = ['richtext', 'raw_html'].includes(field.type) && !CAN_UNSAFE;
-    inspector.innerHTML = `<span class="fbv-inspector-type">${escapeHtml(meta.label)}</span>${labelControl}${headingControl}${inputControls}${positionControls}<div class="fbv-inspector-actions"><span class="fba-hint">Autosaved draft</span><button class="fba-btn danger sm" type="button" data-fbv-delete${protectedType ? ' disabled title="Unsafe-code permission required"' : ''}>Delete</button></div>`;
+    inspector.innerHTML = `<span class="fbv-inspector-type">${escapeHtml(meta.label)}</span>${labelControl}${uploadControl}${headingControl}${inputControls}${positionControls}<div class="fbv-inspector-actions"><span class="fba-hint">Autosaved draft</span><button class="fba-btn danger sm" type="button" data-fbv-delete${protectedType ? ' disabled title="Unsafe-code permission required"' : ''}>Delete</button></div>`;
+    if (isUploadField(field)) attachUploadDescriptionEditor(field);
   };
   const mutateDefinition = (callback, refreshInspector = false) => {
     if (!draft) return;
@@ -616,6 +740,15 @@ fb_admin_css();
       if (meta.options) field.options = [{ value: 'option_1', label: 'Option 1', price: 0 }];
       if (type === 'heading') field.settings.level = 'h2';
       if (type === 'intl_phone') field.settings.country_field = country.key;
+      if (type === 'file' || type === 'image') {
+        field.validation = {
+          max_files: 1,
+          max_bytes: 5 * UPLOAD_MIB,
+          exts: type === 'image' ? ['jpg', 'jpeg', 'png', 'webp'] : ['jpg', 'jpeg', 'png', 'webp', 'pdf']
+        };
+        field.settings.upload_description_html = '';
+        field.settings.preview_mode = type === 'image' ? 'real' : 'icon';
+      }
       fields.push(field);
       selectedKey = key;
     }, true);
@@ -706,6 +839,48 @@ fb_admin_css();
   window.addEventListener('fbv:draft-change', (event) => {
     if (event.detail?.definition) queueSave(event.detail.definition);
   });
+  if (uploadEditorRoot) {
+    try {
+      if (!window.JyavaniEditor || typeof window.JyavaniEditor.mount !== 'function') throw new Error(<?= json_encode(__('Core description editor is unavailable.')) ?>);
+      uploadDescriptionEditor = window.JyavaniEditor.mount(uploadEditorRoot, {
+        context: {
+          owner: 'plugin.form-builder',
+          resourceType: 'visual-upload-description',
+          operation: 'edit',
+          resourceId: FORM_ID,
+          canUpdate: true,
+          adminBasePath: window.ADMIN_PATH || ''
+        },
+        confirmLossy: () => window.FormBuilderConfirm({
+          variant: 'warning',
+          badgeText: <?= json_encode(__('Visual Builder')) ?>,
+          title: <?= json_encode(__('Switch to rich text?')) ?>,
+          message: <?= json_encode(__('Complex HTML will be simplified when switching to rich text. Continue?')) ?>,
+          confirmText: <?= json_encode(__('Switch editor')) ?>,
+          cancelText: <?= json_encode(__('Cancel')) ?>,
+          focus: 'cancel'
+        })
+      });
+      uploadDescriptionEditor.on('change', () => {
+        if (uploadEditorApplying || !uploadEditorFieldKey || selectedKey !== uploadEditorFieldKey) return;
+        const field = currentFields().find((candidate) => candidate.key === uploadEditorFieldKey);
+        if (!isUploadField(field)) return;
+        const content = uploadDescriptionEditor.sync();
+        if ([...content].length > UPLOAD_DESCRIPTION_MAX_LENGTH) {
+          uploadEditorApplying = true;
+          try { uploadDescriptionEditor.setContent(String(field.settings?.upload_description_html || ''), { source: 'length-rejected' }); }
+          finally { uploadEditorApplying = false; }
+          setStatus(<?= json_encode(__('Upload description is too long. The last change was rejected.')) ?>, 'error');
+          return;
+        }
+        storeUploadDescription(uploadEditorFieldKey, content);
+      });
+      uploadDescriptionEditor.on('error', (event) => showUploadEditorError(event.error?.message || <?= json_encode(__('Description editor action failed.')) ?>));
+    } catch (error) {
+      uploadDescriptionEditor = null;
+      showUploadEditorError(error?.message || <?= json_encode(__('The description editor could not be loaded.')) ?>);
+    }
+  }
   request('load').then((loaded) => {
     draft = loaded;
     workingDefinition = loaded.definition;
@@ -857,6 +1032,50 @@ fb_admin_css();
       saveInFlight = false;
       updateActions();
     }
+  });
+  inspector.addEventListener('change', (event) => {
+    const input = event.target.closest('[data-upload-prop]');
+    if (!input) return;
+    const field = currentField();
+    if (!isUploadField(field)) return;
+    const property = input.dataset.uploadProp;
+    const restore = (message) => {
+      if (property === 'max_files') input.value = String(field.validation?.max_files || 1);
+      else if (property === 'max_mb') input.value = String(Math.max(1, Math.min(25, Math.ceil((Number(field.validation?.max_bytes) || 5 * UPLOAD_MIB) / UPLOAD_MIB))));
+      else if (property === 'exts') input.value = (field.validation?.exts || (field.type === 'image' ? ['jpg','jpeg','png','webp'] : ['jpg','jpeg','png','webp','pdf'])).join(', ');
+      else input.value = ['none','icon','real'].includes(field.settings?.preview_mode) ? field.settings.preview_mode : (field.type === 'image' ? 'real' : 'icon');
+      input.setAttribute('aria-invalid', 'true');
+      input.focus({ preventScroll: true });
+      if (typeof input.select === 'function') input.select();
+      setStatus(message, 'error');
+    };
+    let value;
+    if (property === 'max_files' || property === 'max_mb') {
+      if (!/^\d+$/.test(input.value)) { restore(property === 'max_files' ? <?= json_encode(__('Max files must be a whole number.')) ?> : <?= json_encode(__('Max size must be a whole number of MB.')) ?>); return; }
+      value = Number(input.value);
+      const maximum = property === 'max_files' ? UPLOAD_MAX_FILES : 25;
+      if (!Number.isSafeInteger(value) || value < 1 || value > maximum) { restore(property === 'max_files' ? <?= json_encode(__('Max files is outside the allowed range.')) ?> : <?= json_encode(__('Max size must be between 1 and 25 MB.')) ?>); return; }
+    } else if (property === 'exts') {
+      const allowed = field.type === 'image' ? ['jpg','jpeg','png','webp'] : ['jpg','jpeg','png','webp','pdf'];
+      const parts = input.value.split(',').map((extension) => extension.trim().replace(/^\.+/, '').toLowerCase());
+      if (!parts.length || parts.some((extension) => !extension || !allowed.includes(extension))) { restore(<?= json_encode(__('Allowed extensions contain an unsupported value.')) ?>); return; }
+      value = [...new Set(parts)];
+      input.value = value.join(', ');
+    } else {
+      value = input.value;
+      if (!['none','icon','real'].includes(value)) { restore(<?= json_encode(__('Preview mode is invalid.')) ?>); return; }
+    }
+    input.removeAttribute('aria-invalid');
+    mutateDefinition((definition) => {
+      const target = definition.form.fields.find((candidate) => candidate.key === selectedKey);
+      if (!isUploadField(target)) return;
+      target.validation = target.validation || {};
+      target.settings = target.settings || {};
+      if (property === 'max_files') target.validation.max_files = value;
+      else if (property === 'max_mb') target.validation.max_bytes = value * UPLOAD_MIB;
+      else if (property === 'exts') target.validation.exts = value;
+      else target.settings.preview_mode = value;
+    });
   });
   inspector.addEventListener('input', (event) => {
     if (event.target.matches('[data-field-parent]')) {
@@ -1080,6 +1299,11 @@ fb_admin_css();
     event.preventDefault();
     event.returnValue = '';
   });
+  window.addEventListener('pagehide', () => {
+    syncUploadDescription();
+    if (uploadDescriptionEditor) uploadDescriptionEditor.destroy();
+    uploadDescriptionEditor = null;
+  }, { once: true });
 
   devices.forEach((button) => button.addEventListener('click', () => {
     devices.forEach((candidate) => {

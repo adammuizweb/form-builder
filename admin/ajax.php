@@ -250,9 +250,32 @@ try {
                 if ((int)($_POST['v_maxlength'] ?? 0) > 0) $validation['maxlength'] = (int)$_POST['v_maxlength'];
                 if (trim((string)($_POST['v_pattern'] ?? '')) !== '') $validation['pattern'] = trim((string)$_POST['v_pattern']);
             } elseif (in_array($type, ['file', 'image'], true)) {
-                $validation['max_bytes'] = max(1, (int)($_POST['v_maxmb'] ?? 5)) * 1024 * 1024;
-                $exts = array_values(array_filter(array_map(static fn($e) => strtolower(trim($e, " .")), explode(',', (string)($_POST['v_exts'] ?? '')))));
-                if ($exts) $validation['exts'] = $exts;
+                $maxMbRaw = $_POST['v_maxmb'] ?? null;
+                $maxFilesRaw = $_POST['v_max_files'] ?? null;
+                $extensionsRaw = $_POST['v_exts'] ?? null;
+                if (!is_string($maxMbRaw) || preg_match('/\A\d+\z/', $maxMbRaw) !== 1 || (int)$maxMbRaw < 1 || (int)$maxMbRaw > 25) {
+                    fb_json(['ok' => false, 'error' => __('Max size must be a whole number from 1 to 25 MB.')], 422);
+                }
+                if (!is_string($maxFilesRaw) || preg_match('/\A\d+\z/', $maxFilesRaw) !== 1 || (int)$maxFilesRaw < 1 || (int)$maxFilesRaw > FB_UPLOAD_MAX_FILES) {
+                    fb_json(['ok' => false, 'error' => __('Max files is invalid.')], 422);
+                }
+                if (!is_string($extensionsRaw)) fb_json(['ok' => false, 'error' => __('Allowed extensions are invalid.')], 422);
+                $extensionParts = explode(',', $extensionsRaw);
+                $exts = array_map(static fn(string $extension): string => strtolower(trim($extension, " .\t\n\r\0\x0B")), $extensionParts);
+                $allowedExtensions = $type === 'image' ? ['jpg', 'jpeg', 'png', 'webp'] : ['jpg', 'jpeg', 'png', 'webp', 'pdf'];
+                if ($exts === [] || in_array('', $exts, true) || array_diff($exts, $allowedExtensions) !== []) {
+                    fb_json(['ok' => false, 'error' => __('Allowed extensions contain an unsupported value.')], 422);
+                }
+                $validation = fb_field_validation($n);
+                $validation['max_bytes'] = (int)$maxMbRaw * 1024 * 1024;
+                $validation['max_files'] = (int)$maxFilesRaw;
+                $validation['exts'] = array_values(array_unique($exts));
+                if (is_array($validation['max_bytes_by_ext'] ?? null)) {
+                    $validation['max_bytes_by_ext'] = array_intersect_key($validation['max_bytes_by_ext'], array_fill_keys($validation['exts'], true));
+                    foreach ($validation['max_bytes_by_ext'] as &$extensionBytes) $extensionBytes = min((int)$extensionBytes, $validation['max_bytes']);
+                    unset($extensionBytes);
+                    if ($validation['max_bytes_by_ext'] === []) unset($validation['max_bytes_by_ext']);
+                }
             }
             // Type-specific element settings (merge: preserve existing keys)
             $settings = fb_field_settings($n);
@@ -275,6 +298,20 @@ try {
                 $settings['caption'] = trim((string)($_POST['s_caption'] ?? ''));
                 $w = trim((string)($_POST['s_width'] ?? ''));
                 if (in_array($w, ['25', '50', '75'], true)) $settings['width'] = $w; else unset($settings['width']);
+            } elseif (in_array($type, ['file', 'image'], true)) {
+                $previewMode = $_POST['s_preview_mode'] ?? null;
+                $description = $_POST['s_upload_description_html'] ?? null;
+                if (!is_string($previewMode) || !in_array($previewMode, ['none', 'icon', 'real'], true)) {
+                    fb_json(['ok' => false, 'error' => __('Preview mode is invalid.')], 422);
+                }
+                if (!is_string($description) || mb_strlen($description, 'UTF-8') > FB_UPLOAD_DESCRIPTION_MAX_LENGTH) {
+                    fb_json(['ok' => false, 'error' => __('Upload description is invalid or too long.')], 422);
+                }
+                if (!function_exists('fb_sanitize_upload_description')) {
+                    fb_json(['ok' => false, 'error' => __('Upload description sanitizer is unavailable.')], 500);
+                }
+                $settings['upload_description_html'] = fb_sanitize_upload_description($description);
+                $settings['preview_mode'] = $previewMode;
             }
             // Alignment (all fields & elements)
             $al = (string)($_POST['s_align'] ?? '');

@@ -91,6 +91,7 @@ $canViewSubmissions = fb_can_view_submissions($pdo, $form, $uid);
   var layout = document.getElementById('fbb3');
   var toastEl = document.getElementById('fbcToast');
   var toastTimer = null;
+  var uploadDescriptionEditor = null;
 
   function toast(msg, isErr) {
     toastEl.textContent = msg;
@@ -130,6 +131,59 @@ $canViewSubmissions = fb_can_view_submissions($pdo, $form, $uid);
       if (okMsg) toast(okMsg);
       return res;
     }).catch(function () { toast('Network error', true); });
+  }
+
+  function destroyUploadDescriptionEditor() {
+    if (!uploadDescriptionEditor) return;
+    try { uploadDescriptionEditor.destroy(); } catch (e) {}
+    uploadDescriptionEditor = null;
+  }
+
+  function mountUploadDescriptionEditor(fieldId) {
+    var root = panelBody.querySelector('[data-jyavani-editor-mount]');
+    var form = document.getElementById('fbcFieldForm');
+    if (!root) {
+      if (panelBody.querySelector('[data-upload-editor-error]') && form) {
+        var unavailableSave = form.querySelector('button[type="submit"]');
+        if (unavailableSave) unavailableSave.disabled = true;
+      }
+      return;
+    }
+    var saveButton = form && form.querySelector('button[type="submit"]');
+    try {
+      if (!window.JyavaniEditor || typeof window.JyavaniEditor.mount !== 'function') throw new Error(<?= json_encode(__('Core description editor is unavailable.')) ?>);
+      uploadDescriptionEditor = window.JyavaniEditor.mount(root, {
+        context: {
+          owner: 'plugin.form-builder',
+          resourceType: 'upload-field',
+          operation: 'edit',
+          resourceId: Number(fieldId),
+          canUpdate: true,
+          adminBasePath: ADMIN_BASE
+        },
+        confirmLossy: function () {
+          return window.FormBuilderConfirm({
+            variant: 'warning',
+            badgeText: <?= json_encode(__('Form Builder')) ?>,
+            title: <?= json_encode(__('Switch to rich text?')) ?>,
+            message: <?= json_encode(__('Complex HTML will be simplified when switching to rich text. Continue?')) ?>,
+            confirmText: <?= json_encode(__('Switch editor')) ?>,
+            cancelText: <?= json_encode(__('Cancel')) ?>,
+            focus: 'cancel'
+          });
+        }
+      });
+      uploadDescriptionEditor.on('error', function (event) {
+        toast(event.error && event.error.message ? event.error.message : <?= json_encode(__('Description editor action failed.')) ?>, true);
+      });
+    } catch (error) {
+      uploadDescriptionEditor = null;
+      root.insertAdjacentHTML('beforebegin', '<div class="fba-empty" role="alert"></div>');
+      root.previousElementSibling.textContent = error && error.message ? error.message : <?= json_encode(__('The description editor could not be loaded.')) ?>;
+      root.hidden = true;
+      if (saveButton) saveButton.disabled = true;
+      toast(<?= json_encode(__('The description editor could not be loaded.')) ?>, true);
+    }
   }
 
   // ---------------- Content editor overlay (Quill / CodeMirror) ----------------
@@ -391,11 +445,13 @@ $canViewSubmissions = fb_can_view_submissions($pdo, $form, $uid);
       if (Date.now() - dragJustEnded < 300) return; // was a drag, not a click
       ajax('field_form', { id: fieldId }).then(function (res) {
         if (!res.ok) { toast(res.error || 'Error', true); return; }
+        destroyUploadDescriptionEditor();
         panelBody.innerHTML = res.html;
         panel.style.display = '';
         panelBackdrop.style.display = window.matchMedia('(max-width: 1100px)').matches ? '' : 'none';
         layout.classList.add('has-panel');
         pinPanel();
+        mountUploadDescriptionEditor(fieldId);
       });
     }
   });
@@ -432,11 +488,15 @@ $canViewSubmissions = fb_can_view_submissions($pdo, $form, $uid);
   window.addEventListener('scroll', function () { if (panelPinned) pinPanel(); }, { passive: true });
   window.addEventListener('resize', function () { if (panel.style.display !== 'none') pinPanel(); });
 
-  function closePanel() { unpinPanel(); panel.style.display = 'none'; panelBackdrop.style.display = 'none'; layout.classList.remove('has-panel'); panelBody.innerHTML = ''; }
+  function closePanel() { destroyUploadDescriptionEditor(); unpinPanel(); panel.style.display = 'none'; panelBackdrop.style.display = 'none'; layout.classList.remove('has-panel'); panelBody.innerHTML = ''; }
   document.getElementById('fbcPanelClose').addEventListener('click', closePanel);
   panelBackdrop.addEventListener('click', closePanel);
   panelBody.addEventListener('submit', function (e) {
     e.preventDefault();
+    if (uploadDescriptionEditor) {
+      try { uploadDescriptionEditor.sync(); }
+      catch (error) { toast(error && error.message ? error.message : <?= json_encode(__('Description editor sync failed.')) ?>, true); return; }
+    }
     var fd = new FormData(e.target);
     var data = {};
     fd.forEach(function (v, k) { data[k] = v; });
