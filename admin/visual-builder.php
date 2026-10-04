@@ -504,12 +504,28 @@ fb_admin_css();
       }
     }, true);
   };
-  const setRowColumns = (rowKey, columnCount) => {
+  const setRowColumns = async (rowKey, columnCount) => {
     columnCount = Math.max(1, Math.min(4, Number(columnCount) || 1));
     const existingCount = currentFields().filter((field) => field.type === 'col' && field.parent === rowKey).length;
-    if ((existingCount < 1 || existingCount > 4) && columnCount !== existingCount && !window.confirm(`Convert this ${existingCount}-column advanced row to ${columnCount} columns?`)) {
-      renderLayout();
-      return;
+    if ((existingCount < 1 || existingCount > 4) && columnCount !== existingCount) {
+      const confirmed = await window.FormBuilderConfirm({
+        variant: 'warning',
+        badgeText: 'Visual Builder',
+        title: 'Convert advanced row',
+        message: `Convert this ${existingCount}-column advanced row to ${columnCount} columns?`,
+        confirmText: 'Convert row',
+        cancelText: 'Cancel',
+        focus: 'cancel'
+      });
+      if (!confirmed) {
+        renderLayout();
+        return;
+      }
+      const latestCount = currentFields().filter((field) => field.type === 'col' && field.parent === rowKey).length;
+      if (latestCount !== existingCount) {
+        renderLayout();
+        return;
+      }
     }
     if (columnCount > existingCount && currentFields().length + columnCount - existingCount > 300) {
       setStatus('This form has reached the 300-field limit', 'error');
@@ -676,6 +692,15 @@ fb_admin_css();
       if (nextDefinition) save(nextDefinition).catch(() => {});
     }, 700);
   };
+  const waitForSaveIdle = (timeout = 10000) => new Promise((resolve) => {
+    const started = Date.now();
+    const check = () => {
+      if (!saveInFlight && !pendingDefinition) { resolve(true); return; }
+      if (Date.now() - started >= timeout) { resolve(false); return; }
+      window.setTimeout(check, 100);
+    };
+    check();
+  });
 
   window.fbVisualDraft = { get current() { return draft ? { ...draft, definition: workingDefinition } : null; }, save, queueSave };
   window.addEventListener('fbv:draft-change', (event) => {
@@ -792,7 +817,26 @@ fb_admin_css();
     }
   });
   resetButton.addEventListener('click', async () => {
-    if (!draft || resetButton.disabled || !window.confirm('Discard the visual draft and reload the latest Classic version?')) return;
+    if (!draft || resetButton.disabled) return;
+    const confirmed = await window.FormBuilderConfirm({
+      variant: 'danger',
+      badgeText: 'Visual Builder',
+      title: 'Discard visual draft',
+      message: 'Discard the visual draft and reload the latest Classic version?',
+      confirmText: 'Discard draft',
+      cancelText: 'Cancel',
+      focus: 'cancel'
+    });
+    if (!confirmed || !draft) return;
+    if (saveInFlight || pendingDefinition) {
+      setStatus('Waiting for draft save before reset...', 'saving');
+      if (!await waitForSaveIdle()) {
+        setStatus('Reset paused - resolve the draft save before retrying', 'error');
+        updateActions();
+        return;
+      }
+    }
+    if (resetButton.disabled) return;
     saveInFlight = true;
     setStatus('Reloading Classic version...', 'saving');
     updateActions();

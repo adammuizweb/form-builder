@@ -288,17 +288,17 @@ $listUrl = static function (array $extra = []) use ($q, $pageNum): string {
 
   <?php /* standalone POST forms for row actions (referenced via form= attr, no nesting) */ ?>
   <?php foreach ($forms as $f): $fid = (int)$f['id']; if (!fb_can_access_form($pdo, $f, $uid)) continue; ?>
-  <form method="post" id="fba-dup-<?= $fid ?>" style="display:none" onsubmit="return confirm('Duplikat form ini?')">
+  <form method="post" id="fba-dup-<?= $fid ?>" style="display:none" data-fb-confirm-title="Duplicate form" data-fb-confirm-message="Duplikat form ini?" data-fb-confirm-text="Duplicate">
     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>">
     <input type="hidden" name="fb_action" value="duplicate_form">
     <input type="hidden" name="form_id" value="<?= $fid ?>">
   </form>
-  <form method="post" id="fba-arch-<?= $fid ?>" style="display:none" onsubmit="return confirm('Arsipkan form ini? Form berhenti menerima submission.')">
+  <form method="post" id="fba-arch-<?= $fid ?>" style="display:none" data-fb-confirm-title="Archive form" data-fb-confirm-message="Arsipkan form ini? Form berhenti menerima submission." data-fb-confirm-text="Archive">
     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>">
     <input type="hidden" name="fb_action" value="archive_form">
     <input type="hidden" name="form_id" value="<?= $fid ?>">
   </form>
-  <form method="post" id="fba-del-<?= $fid ?>" style="display:none" onsubmit="return confirm('Pindahkan form ini ke Bin? Admin masih bisa me-restore dari Bin.')">
+  <form method="post" id="fba-del-<?= $fid ?>" style="display:none" data-fb-confirm-title="Move form to Bin" data-fb-confirm-message="Pindahkan form ini ke Bin? Admin masih bisa me-restore dari Bin." data-fb-confirm-text="Move to Bin">
     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>">
     <input type="hidden" name="fb_action" value="delete_form">
     <input type="hidden" name="form_id" value="<?= $fid ?>">
@@ -322,11 +322,33 @@ $listUrl = static function (array $extra = []) use ($q, $pageNum): string {
       upd();
     });
     bulkForm.addEventListener('change', function (e) { if (e.target.name === 'ids[]') upd(); });
-    bulkForm.addEventListener('submit', function (e) {
+    var bulkConfirmed = false;
+    bulkForm.addEventListener('submit', async function (e) {
       var sel = bulkForm.querySelector('select[name="do"]').value;
       var n = bulkForm.querySelectorAll('input[name="ids[]"]:checked').length;
       if (!sel || n === 0) { e.preventDefault(); return; }
-      if (sel === 'delete' && !confirm('Pindahkan ' + n + ' form ke Bin? Admin masih bisa me-restore dari Bin.')) e.preventDefault();
+      if (bulkConfirmed) { bulkConfirmed = false; return; }
+      if (sel === 'delete') {
+        e.preventDefault();
+        var submitter = e.submitter;
+        var confirmed = await window.FormBuilderConfirm({
+          variant: 'warning',
+          badgeText: 'Form Builder',
+          title: 'Move forms to Bin',
+          message: 'Pindahkan ' + n + ' form ke Bin? Admin masih bisa me-restore dari Bin.',
+          confirmText: 'Move to Bin',
+          cancelText: 'Cancel',
+          focus: 'cancel'
+        });
+        if (!confirmed || !bulkForm.isConnected || !bulkForm.reportValidity()) return;
+        bulkConfirmed = true;
+        try {
+          if (submitter instanceof HTMLElement && submitter.form === bulkForm) bulkForm.requestSubmit(submitter);
+          else bulkForm.requestSubmit();
+        } finally {
+          queueMicrotask(function () { bulkConfirmed = false; });
+        }
+      }
     });
   }
   // Column visibility (persisted per browser)

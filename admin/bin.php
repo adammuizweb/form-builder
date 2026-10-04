@@ -233,7 +233,7 @@ fb_admin_css();
       <a class="fba-btn" href="?page=admin/bin/index">&larr; Bin Hub</a>
       <a class="fba-btn" href="?page=admin/tools/form-builder">Form Builder</a>
       <?php if ($items): ?>
-      <form method="post" style="display:inline" onsubmit="return confirm('Hapus permanen SEMUA field di Bin? Tindakan ini tidak bisa dibatalkan.')">
+      <form method="post" style="display:inline" data-fb-confirm-variant="danger" data-fb-confirm-title="Empty field Bin" data-fb-confirm-message="Hapus permanen SEMUA field di Bin? Tindakan ini tidak bisa dibatalkan." data-fb-confirm-text="Delete permanently">
         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>">
         <input type="hidden" name="fb_action" value="purge_all">
         <button class="fba-btn danger" type="submit">Kosongkan Bin Fields (<?= count($items) ?>)</button>
@@ -272,7 +272,7 @@ fb_admin_css();
               <input type="hidden" name="form_id" value="<?= $tfid ?>">
               <button class="fba-btn sm primary" type="submit">Restore</button>
             </form>
-            <form method="post" style="display:inline" onsubmit="return confirm('Hapus permanen form ini beserta fields, submissions & file upload-nya? Tindakan ini tidak bisa dibatalkan.')">
+            <form method="post" style="display:inline" data-fb-confirm-variant="danger" data-fb-confirm-title="Delete form permanently" data-fb-confirm-message="Hapus permanen form ini beserta fields, submissions &amp; file upload-nya? Tindakan ini tidak bisa dibatalkan." data-fb-confirm-text="Delete permanently">
               <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>">
               <input type="hidden" name="fb_action" value="purge_form">
               <input type="hidden" name="form_id" value="<?= $tfid ?>">
@@ -324,7 +324,7 @@ fb_admin_css();
             <?php elseif ($it['form_title'] !== null): ?>
             <span class="fba-hint">form di Bin</span>
             <?php endif; ?>
-            <form method="post" style="display:inline" onsubmit="return confirm('Hapus permanen field ini? Data submission lama tetap aman, tapi field tidak bisa dikembalikan.')">
+            <form method="post" style="display:inline" data-fb-confirm-variant="danger" data-fb-confirm-title="Delete field permanently" data-fb-confirm-message="Hapus permanen field ini? Data submission lama tetap aman, tapi field tidak bisa dikembalikan." data-fb-confirm-text="Delete permanently">
               <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>">
               <input type="hidden" name="fb_action" value="purge">
               <input type="hidden" name="field_id" value="<?= (int)$it['id'] ?>">

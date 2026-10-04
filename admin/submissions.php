@@ -471,7 +471,7 @@ if (isset($_GET['detail'])):
   <?php if (!$rows): ?>
     <div class="fba-empty">No submissions match.</div>
   <?php else: ?>
-  <form method="post">
+  <form method="post" id="fbaSubmissionsForm">
     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>">
     <div class="fba-table-wrap">
       <table class="fba-table">
@@ -509,7 +509,7 @@ if (isset($_GET['detail'])):
               <a class="fba-btn sm" href="<?= fb_url(['detail' => $sid]) ?>"><?= svg_ico('eye') ?> View</a>
               <?php if ($canManageSubmissions && (int)$r['is_deleted']): ?>
               <button class="fba-btn sm" name="fb_row_action" value="restore:<?= $sid ?>" type="submit">Restore</button>
-              <button class="fba-btn sm danger" name="fb_row_action" value="delete:<?= $sid ?>" type="submit" onclick="return confirm('Delete permanently?')">Delete</button>
+              <button class="fba-btn sm danger" name="fb_row_action" value="delete:<?= $sid ?>" type="submit" data-fb-confirm-variant="danger" data-fb-confirm-title="Delete submission permanently" data-fb-confirm-message="Delete this submission permanently? This action cannot be undone." data-fb-confirm-text="Delete permanently">Delete</button>
               <?php elseif ($canManageSubmissions): ?>
               <button class="fba-btn sm danger" name="fb_row_action" value="trash:<?= $sid ?>" type="submit">Trash</button>
               <?php endif; ?>
@@ -533,6 +533,40 @@ if (isset($_GET['detail'])):
       <button class="fba-btn" type="submit">Apply to selected</button>
     </div><?php endif; ?>
   </form>
+  <script>
+  (function () {
+    var form = document.getElementById('fbaSubmissionsForm');
+    if (!form) return;
+    var confirmedDelete = false;
+    form.addEventListener('submit', async function (event) {
+      var submitter = event.submitter;
+      if (submitter instanceof HTMLElement && (submitter.name === 'fb_row_action' || submitter.name === 'fb_action')) return;
+      var action = form.querySelector('select[name="fb_bulk_action"]');
+      if (!action || action.value !== 'delete') return;
+      if (confirmedDelete) { confirmedDelete = false; return; }
+      event.preventDefault();
+      var selected = form.querySelectorAll('.fba-row-check:checked').length;
+      if (selected < 1) return;
+      var confirmed = await window.FormBuilderConfirm({
+        variant: 'danger',
+        badgeText: 'Form Builder',
+        title: 'Delete submissions permanently',
+        message: 'Delete ' + selected + ' selected submission(s) permanently? Uploaded files will also be removed.',
+        confirmText: 'Delete permanently',
+        cancelText: 'Cancel',
+        focus: 'cancel'
+      });
+      if (!confirmed || !form.isConnected || !form.reportValidity()) return;
+      confirmedDelete = true;
+      try {
+        if (submitter instanceof HTMLElement && submitter.form === form) form.requestSubmit(submitter);
+        else form.requestSubmit();
+      } finally {
+        queueMicrotask(function () { confirmedDelete = false; });
+      }
+    });
+  })();
+  </script>
 
   <?php if ($totalPages > 1): ?>
   <div class="fba-pager">

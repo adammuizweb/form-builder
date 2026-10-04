@@ -280,5 +280,64 @@ function fb_admin_css(): void {
 .fba-pager a:hover { border-color: var(--adam-accent); }
 .fba-pager .cur { background: var(--adam-accent); border-color: var(--adam-accent); color: #fff; }
 </style>
+<script>
+(function () {
+  if (window.FormBuilderConfirm) return;
+  var bypassedForms = new WeakSet();
+  var confirmationQueue = Promise.resolve();
+  function options(element) {
+    return {
+      badgeText: element.dataset.fbConfirmBadge || 'Form Builder',
+      title: element.dataset.fbConfirmTitle || 'Confirm action',
+      message: element.dataset.fbConfirmMessage || 'Proceed with this action?',
+      confirmText: element.dataset.fbConfirmText || 'Continue',
+      cancelText: element.dataset.fbConfirmCancel || 'Cancel',
+      focus: 'cancel'
+    };
+  }
+  window.FormBuilderConfirm = function (settings) {
+    var decision = confirmationQueue.then(function () {
+      var component = window.NewNotifConfirm;
+      if (!component) return false;
+      var method = settings.variant === 'danger' ? 'danger' : 'warning';
+      if (typeof component[method] !== 'function') return false;
+      var request = Object.assign({}, settings);
+      delete request.variant;
+      return component[method](request);
+    });
+    confirmationQueue = decision.then(function () {}, function () {});
+    return decision;
+  };
+  function request(element) {
+    var settings = options(element);
+    settings.variant = element.dataset.fbConfirmVariant === 'danger' ? 'danger' : 'warning';
+    return window.FormBuilderConfirm(settings);
+  }
+  document.addEventListener('submit', function (event) {
+    var form = event.target.closest('form');
+    if (!form) return;
+    if (bypassedForms.has(form)) {
+      bypassedForms.delete(form);
+      return;
+    }
+    var submitter = event.submitter;
+    var source = submitter instanceof HTMLElement && submitter.matches('[data-fb-confirm-message]')
+      ? submitter
+      : (form.matches('[data-fb-confirm-message]') ? form : null);
+    if (!source) return;
+    event.preventDefault();
+    request(source).then(function (confirmed) {
+      if (!confirmed || !form.isConnected || !form.reportValidity()) return;
+      bypassedForms.add(form);
+      try {
+        if (submitter instanceof HTMLElement && submitter.form === form) form.requestSubmit(submitter);
+        else form.requestSubmit();
+      } finally {
+        queueMicrotask(function () { bypassedForms.delete(form); });
+      }
+    });
+  });
+})();
+</script>
     <?php
 }

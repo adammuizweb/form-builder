@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.1.3 - 2026-10-04
+
+- Replace native browser confirmation dialogs across Form Builder administration with the accessible Core confirmation component.
+
 ## 2.1.2 - 2026-10-04
 
 - Fix per-row submission Trash, Restore, and Delete actions being overridden by the bulk action selector.

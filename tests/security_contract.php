@@ -8,7 +8,7 @@ $permissions = array_column($manifest['permissions'] ?? [], null, 'key');
 $composer = json_decode((string)file_get_contents($root . '/composer.json'), true, 32, JSON_THROW_ON_ERROR);
 $lock = json_decode((string)file_get_contents($root . '/composer.lock'), true, 64, JSON_THROW_ON_ERROR);
 $lockedPackages = array_column($lock['packages'] ?? [], 'version', 'name');
-$check(($manifest['version'] ?? null) === '2.1.2' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.122' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
+$check(($manifest['version'] ?? null) === '2.1.3' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.122' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
 $check(($composer['require']['php'] ?? null) === '>=8.1' && ($composer['require']['phpoffice/phpspreadsheet'] ?? null) === '~5.8.1'
     && ($composer['config']['platform']['php'] ?? null) === '8.1.0'
     && ($lockedPackages['phpoffice/phpspreadsheet'] ?? null) === '5.8.1'
@@ -215,7 +215,7 @@ $check(str_contains($visualBuilder, 'id="fbvToggleLeft"')
 $check(str_contains($draftHelpers, 'data-fbv-row=')
     && str_contains($draftHelpers, 'data-fbv-col=')
     && str_contains($visualBuilder, 'id="fbvAddRow"')
-    && str_contains($visualBuilder, 'const setRowColumns = (rowKey, columnCount)')
+    && str_contains($visualBuilder, 'const setRowColumns = async (rowKey, columnCount)')
     && str_contains($visualBuilder, 'const moveRow = (rowKey, delta)')
     && str_contains($visualBuilder, 'const moveField = (fieldKey, parentKey, beforeKey = null)')
     && str_contains($visualBuilder, "preview.addEventListener('dragstart'")
@@ -305,6 +305,25 @@ $menuStart = strpos($adminIndex, '<div class="fba-more-menu">');
 $menuEnd = strpos($adminIndex, '</div>', $menuStart);
 $menu = $menuStart !== false && $menuEnd !== false ? substr($adminIndex, $menuStart, $menuEnd - $menuStart) : '';
 $check($menu !== '' && !preg_match('/[📋⚙⧉🗄🗑]/u', $menu) && str_contains($menu, "svg_ico('clipboard-list')") && str_contains($menu, "svg_ico('trash-2')"), 'overflow actions use Core Lucide icons without emoji symbols');
+$adminConfirmSource = '';
+foreach (glob($root . '/admin/*.php') ?: [] as $adminFile) $adminConfirmSource .= (string)file_get_contents($adminFile);
+$adminUi = (string)file_get_contents($root . '/admin/_ui.php');
+$check(preg_match('/(?:window\.)?(?:confirm|alert)\s*\(/', $adminConfirmSource) !== 1
+    && str_contains($adminUi, 'window.NewNotifConfirm')
+    && str_contains($adminUi, 'window.FormBuilderConfirm')
+    && str_contains($adminUi, "focus: 'cancel'")
+    && str_contains($adminUi, 'if (!component) return false')
+    && str_contains($adminUi, 'confirmationQueue = decision.then')
+    && str_contains($adminUi, 'var submitter = event.submitter')
+    && str_contains($adminUi, 'queueMicrotask(function () { bypassedForms.delete(form); })'),
+    'all Form Builder confirmations use the accessible Core component and fail closed without native dialogs');
+$check(str_contains($submissions, 'data-fb-confirm-title="Delete submission permanently"')
+    && str_contains($submissions, "title: 'Delete submissions permanently'")
+    && str_contains($submissions, "submitter.name === 'fb_row_action' || submitter.name === 'fb_action'")
+    && str_contains((string)file_get_contents($root . '/admin/bin.php'), 'data-fb-confirm-variant="danger"')
+    && str_contains($visualBuilder, 'await window.FormBuilderConfirm(')
+    && str_contains($visualBuilder, 'await waitForSaveIdle()'),
+    'destructive forms, submission deletion, and Visual Builder decisions use the shared confirmation adapter');
 $triggerStart = strpos($adminIndex, '<summary class="fba-btn sm"');
 $triggerEnd = strpos($adminIndex, '</summary>', $triggerStart);
 $trigger = $triggerStart !== false && $triggerEnd !== false ? substr($adminIndex, $triggerStart, $triggerEnd - $triggerStart) : '';

@@ -307,7 +307,7 @@ $canViewSubmissions = fb_can_view_submissions($pdo, $form, $uid);
   });
 
   // ---------------- Click actions (delegated) ----------------
-  document.addEventListener('click', function (e) {
+  document.addEventListener('click', async function (e) {
     // Add Row
     if (e.target.closest('#fbcAddRow')) { run('add_row', { cols: 2 }, 'Row added'); return; }
 
@@ -367,8 +367,17 @@ $canViewSubmissions = fb_can_view_submissions($pdo, $form, $uid);
     if (del) {
       var id = del.getAttribute('data-del');
       var isRow = del.classList.contains('fbc-row-del');
-      if (del.id === 'fbcFieldDelete') { closePanel(); }
-      if (confirm(isRow ? 'Pindahkan row ini (beserta semua field di dalamnya) ke Bin?' : 'Pindahkan field ini ke Bin?')) {
+      var confirmed = await window.FormBuilderConfirm({
+        variant: 'warning',
+        badgeText: 'Form Builder',
+        title: isRow ? 'Move row to Bin' : 'Move field to Bin',
+        message: isRow ? 'Pindahkan row ini (beserta semua field di dalamnya) ke Bin?' : 'Pindahkan field ini ke Bin?',
+        confirmText: 'Move to Bin',
+        cancelText: 'Cancel',
+        focus: 'cancel'
+      });
+      if (confirmed) {
+        if (del.id === 'fbcFieldDelete') closePanel();
         run('delete', { id: id }, 'Dipindahkan ke Bin');
       }
       return;
