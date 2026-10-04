@@ -76,6 +76,7 @@ function fb_render_field_html(array $f, string $slug, string $instance, bool $un
           <div class="up-t"><?= fb_h(fb_message($publicSettings, 'dropzone_prompt')) ?></div>
           <div class="up-s"><?= fb_h(fb_message($publicSettings, 'max_size', ['size'=>round($maxBytes / 1048576, 1)])) ?><?= $maxFiles > 1 ? ' · ' . fb_h(fb_message($publicSettings, 'max_files', ['max'=>$maxFiles])) : '' ?></div>
           <div class="up-items" aria-live="polite"></div>
+          <div class="up-error" data-fb-upload-error role="alert"></div>
         </div>
         <?php if (!empty($f['help_text'])): ?><div class="fb-help"><?= fb_h($f['help_text']) ?></div><?php endif; ?>
       <?php elseif ($type === 'country'): ?>
@@ -252,17 +253,22 @@ function fb_render_form(PDO $pdo, array $form): string {
 .fb-drop { position: relative; border: 2px dashed var(--fb-border); border-radius: var(--fb-radius); padding: 1.5rem 1rem; text-align: center; background: var(--fb-surface); transition: border-color .25s, background .25s; cursor: pointer; }
 .fb-drop:hover, .fb-drop.dragover { border-color: var(--fb-accent); background: var(--fb-accent-soft, rgba(43 122 74 / .05)); }
 .fb-drop input[type=file] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 2; }
-.fb-drop .up-t, .fb-drop .up-s, .fb-drop .up-ic, .fb-drop .up-items { position: relative; z-index: 1; pointer-events: none; }
+.fb-drop .up-t, .fb-drop .up-s, .fb-drop .up-ic { position: relative; z-index: 1; pointer-events: none; }
 .fb-drop .up-ic { font-size: 1.5rem; margin-bottom: .35rem; }
 .fb-drop .up-t { font-weight: 600; font-size: .92rem; }
 .fb-drop .up-s { font-size: .74rem; color: var(--fb-muted); margin-top: .2rem; }
+.fb-drop .up-items, .fb-drop .up-error { position: relative; z-index: 3; pointer-events: none; }
 .fb-drop .up-items { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: .55rem; margin-top: .75rem; }
 .fb-drop .up-items:empty { display: none; }
-.fb-drop .up-item { min-width: 0; padding: .55rem; border: 1px solid var(--fb-border); border-radius: 10px; background: var(--fb-surface); }
+.fb-drop .up-item { position: relative; min-width: 0; padding: .75rem .55rem .55rem; border: 1px solid var(--fb-border); border-radius: 10px; background: var(--fb-surface); }
 .fb-drop .up-item img { display: block; width: 100%; height: 82px; margin-bottom: .4rem; border-radius: 7px; object-fit: cover; }
 .fb-drop .up-item svg { display: block; width: 34px; height: 34px; margin: 0 auto .4rem; color: var(--fb-accent-deep); }
 .fb-drop .up-name { display: block; overflow: hidden; font-size: .75rem; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .fb-drop .up-size { display: block; font-size: .68rem; color: var(--fb-muted); }
+.fb-drop .up-remove { position: absolute; top: .25rem; right: .25rem; z-index: 1; width: 1.55rem; height: 1.55rem; border: 1px solid var(--fb-border); border-radius: 999px; color: var(--fb-danger); background: var(--fb-surface); font: 700 1rem/1 sans-serif; cursor: pointer; pointer-events: auto; }
+.fb-drop .up-remove:hover, .fb-drop .up-remove:focus-visible { border-color: var(--fb-danger); outline: 2px solid rgba(190 45 45 / .2); outline-offset: 1px; }
+.fb-drop .up-error { display: none; margin-top: .55rem; color: var(--fb-danger); font-size: .76rem; font-weight: 650; }
+.fb-drop .up-error:not(:empty) { display: block; }
 .fb-drop.has-file { border-style: solid; border-color: var(--fb-accent); background: var(--fb-accent-soft, rgba(43 122 74 / .06)); }
 .fb-total { display: flex; justify-content: space-between; align-items: center; gap: 1rem; background: var(--fb-accent-soft, rgba(43 122 74 / .07)); border: 1.5px dashed var(--fb-accent); border-radius: var(--fb-radius); padding: .9rem 1.2rem; margin-top: 1rem; }
 .fb-total .lbl { font-size: .72rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--fb-accent-deep); }
@@ -346,7 +352,7 @@ function fb_render_form(PDO $pdo, array $form): string {
   if (!root) return;
   var form = root.querySelector('form[data-fb-form]');
   if (!form) return;
-  var I18N = <?= json_encode(['choose_image'=>fb_message($settings,'choose_image'),'file_too_large'=>fb_message($settings,'file_too_large'),'ready_to_upload'=>fb_message($settings,'ready_to_upload'),'too_many_files'=>fb_message($settings,'too_many_files'),'files_ready'=>fb_message($settings,'files_ready'),'submitting'=>fb_message($settings,'submitting')], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>;
+  var I18N = <?= json_encode(['choose_image'=>fb_message($settings,'choose_image'),'file_too_large'=>fb_message($settings,'file_too_large'),'ready_to_upload'=>fb_message($settings,'ready_to_upload'),'too_many_files'=>fb_message($settings,'too_many_files'),'files_ready'=>fb_message($settings,'files_ready'),'files_selected'=>fb_message($settings,'files_selected'),'add_more_files'=>fb_message($settings,'add_more_files'),'remove_file'=>fb_message($settings,'remove_file'),'selection_update_failed'=>fb_message($settings,'selection_update_failed'),'submitting'=>fb_message($settings,'submitting')], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>;
 
   // ---- Live total ----
   var PRICES = <?= json_encode($priceMap, JSON_UNESCAPED_UNICODE) ?>;
@@ -398,24 +404,45 @@ function fb_render_form(PDO $pdo, array $form): string {
     var title = zone.querySelector('.up-t');
     var sub = zone.querySelector('.up-s');
     var items = zone.querySelector('.up-items');
+    var uploadError = zone.querySelector('[data-fb-upload-error]');
     var countInput = zone.parentNode.querySelector('[data-fb-upload-count]');
     var max = parseInt(zone.getAttribute('data-max') || '5242880', 10);
     var maxFiles = parseInt(zone.getAttribute('data-max-files') || '1', 10);
     var isImage = zone.getAttribute('data-image') === '1';
     var previewMode = zone.getAttribute('data-preview-mode') || (isImage ? 'real' : 'icon');
+    var initialTitle = title.textContent;
+    var initialSub = sub.textContent;
+    var selectedFiles = [];
     var objectUrls = [];
     function fmt(b) { return b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB'; }
+    function message(template, values) {
+      return Object.keys(values).reduce(function (text, key) { return text.replace('{' + key + '}', String(values[key])); }, template);
+    }
     function revokePreviews() {
       objectUrls.forEach(function (url) { URL.revokeObjectURL(url); });
       objectUrls = [];
     }
-    function clearSelection(message) {
-      revokePreviews();
-      input.value = '';
-      if (items) items.replaceChildren();
-      if (countInput) countInput.value = '0';
-      title.textContent = message;
-      zone.classList.remove('has-file');
+    function showError(text) {
+      if (uploadError) uploadError.textContent = text;
+    }
+    function assignFiles(files) {
+      if (!files.length) { input.value = ''; return true; }
+      try {
+        var transfer = new DataTransfer();
+        files.forEach(function (file) { transfer.items.add(file); });
+        input.files = transfer.files;
+        return input.files.length === files.length;
+      } catch (error) { return false; }
+    }
+    function fileKey(file) {
+      return [file.name, file.size, file.type, file.lastModified].join('\u0000');
+    }
+    function validationError(files) {
+      for (var i = 0; i < files.length; i++) {
+        if (isImage && files[i].type.indexOf('image/') !== 0) return I18N.choose_image;
+        if (files[i].size > max) return message(I18N.file_too_large, {size:fmt(files[i].size)});
+      }
+      return '';
     }
     function appendIcon(target, file) {
       var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -427,8 +454,8 @@ function fb_render_form(PDO $pdo, array $form): string {
       svg.appendChild(path);
       target.appendChild(svg);
     }
-    function appendPreview(file) {
-      if (!items || previewMode === 'none') return;
+    function appendPreview(file, index) {
+      if (!items) return;
       var item = document.createElement('div');
       item.className = 'up-item';
       if (previewMode === 'real' && file.type.indexOf('image/') === 0) {
@@ -440,7 +467,7 @@ function fb_render_form(PDO $pdo, array $form): string {
           image.alt = '';
           item.appendChild(image);
         } catch (error) { appendIcon(item, file); }
-      } else {
+      } else if (previewMode !== 'none') {
         appendIcon(item, file);
       }
       var name = document.createElement('span');
@@ -452,37 +479,97 @@ function fb_render_form(PDO $pdo, array $form): string {
       size.textContent = fmt(file.size);
       item.appendChild(name);
       item.appendChild(size);
+      var remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'up-remove';
+      remove.setAttribute('data-fb-remove-file', '');
+      remove.setAttribute('aria-label', message(I18N.remove_file, {file:file.name}));
+      remove.title = message(I18N.remove_file, {file:file.name});
+      remove.textContent = '\u00d7';
+      remove.addEventListener('click', function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        var next = selectedFiles.filter(function (_, selectedIndex) { return selectedIndex !== index; });
+        if (!assignFiles(next)) { showError(I18N.selection_update_failed); return; }
+        selectedFiles = next;
+        showError('');
+        renderFiles();
+      });
+      item.appendChild(remove);
       items.appendChild(item);
     }
-    function setFiles() {
+    function renderFiles() {
       revokePreviews();
       if (items) items.replaceChildren();
-      var selected = Array.prototype.slice.call(input.files || []);
-      if (selected.length > maxFiles) { clearSelection(I18N.too_many_files.replace('{field}', '').replace('{max}', String(maxFiles)).trim()); return; }
-      for (var i = 0; i < selected.length; i++) {
-        if (isImage && selected[i].type.indexOf('image/') !== 0) { clearSelection(I18N.choose_image); return; }
-        if (selected[i].size > max) { clearSelection(I18N.file_too_large.replace('{size}', fmt(selected[i].size))); return; }
+      if (countInput) countInput.value = String(selectedFiles.length);
+      zone.classList.toggle('has-file', selectedFiles.length > 0);
+      if (!selectedFiles.length) {
+        title.textContent = initialTitle;
+        sub.textContent = initialSub;
+        showError('');
+        return;
       }
-      if (countInput) countInput.value = String(selected.length);
-      zone.classList.toggle('has-file', selected.length > 0);
-      if (!selected.length) return;
-      title.textContent = selected.length === 1 ? selected[0].name : I18N.files_ready.replace('{count}', String(selected.length));
-      sub.textContent = selected.length === 1 ? I18N.ready_to_upload.replace('{size}', fmt(selected[0].size)) : selected.map(function (file) { return fmt(file.size); }).join(' · ');
-      selected.forEach(appendPreview);
+      if (maxFiles > 1) {
+        title.textContent = message(I18N.files_selected, {count:selectedFiles.length, max:maxFiles});
+        var remaining = maxFiles - selectedFiles.length;
+        var sizes = selectedFiles.map(function (file) { return fmt(file.size); }).join(' · ');
+        sub.textContent = remaining > 0 ? message(I18N.add_more_files, {remaining:remaining}) + ' · ' + sizes : sizes;
+      } else {
+        title.textContent = selectedFiles[0].name;
+        sub.textContent = message(I18N.ready_to_upload, {size:fmt(selectedFiles[0].size)});
+      }
+      selectedFiles.forEach(appendPreview);
     }
-    input.addEventListener('change', setFiles);
+    function restoreFiles(errorText) {
+      if (!assignFiles(selectedFiles)) {
+        input.value = '';
+        selectedFiles = [];
+        renderFiles();
+        showError(I18N.selection_update_failed);
+        return;
+      }
+      showError(errorText);
+    }
+    function addFiles(incoming) {
+      var invalid = validationError(incoming);
+      if (invalid !== '') {
+        restoreFiles(invalid);
+        return;
+      }
+      var next = maxFiles > 1 ? selectedFiles.slice() : [];
+      var known = {};
+      next.forEach(function (file) { known[fileKey(file)] = true; });
+      incoming.forEach(function (file) {
+        var key = fileKey(file);
+        if (!known[key]) { known[key] = true; next.push(file); }
+      });
+      if (next.length > maxFiles) {
+        restoreFiles(message(I18N.too_many_files, {field:'', max:maxFiles}).trim());
+        return;
+      }
+      if (!assignFiles(next)) {
+        selectedFiles = Array.prototype.slice.call(input.files || []);
+        renderFiles();
+        showError(I18N.selection_update_failed);
+        return;
+      }
+      selectedFiles = next;
+      showError('');
+      renderFiles();
+    }
+    input.addEventListener('change', function () {
+      var incoming = Array.prototype.slice.call(input.files || []);
+      if (incoming.length) addFiles(incoming);
+      else assignFiles(selectedFiles);
+    });
     ['dragenter', 'dragover'].forEach(function (ev) { zone.addEventListener(ev, function (e) { e.preventDefault(); zone.classList.add('dragover'); }); });
     ['dragleave', 'drop'].forEach(function (ev) { zone.addEventListener(ev, function (e) { e.preventDefault(); zone.classList.remove('dragover'); }); });
     zone.addEventListener('drop', function (e) {
       var dropped = Array.prototype.slice.call(e.dataTransfer.files || []);
       if (!dropped.length) return;
-      try {
-        var dt = new DataTransfer();
-        dropped.forEach(function (file) { dt.items.add(file); });
-        input.files = dt.files;
-      } catch (error) {}
-      setFiles();
+      addFiles(dropped);
     });
+    form.addEventListener('reset', function () { selectedFiles = []; setTimeout(renderFiles, 0); });
     window.addEventListener('pagehide', revokePreviews, { once: true });
     form.addEventListener('submit', revokePreviews);
   });

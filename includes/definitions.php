@@ -19,6 +19,10 @@ function fb_public_message_defaults(string $locale): array {
         'too_many_uploads' => 'Too many files were uploaded in this request',
         'upload_count_mismatch' => '{field} upload was truncated; please choose the files again',
         'files_ready' => '{count} files ready',
+        'files_selected' => '{count} of {max} files selected',
+        'add_more_files' => 'Choose {remaining} more; new choices will be added',
+        'remove_file' => 'Remove {file}',
+        'selection_update_failed' => 'Could not update the selected files. Please choose them again.',
         'max_files' => '{max} files max',
     ];
     if (!function_exists('apply_filters')) return $defaults;

@@ -296,9 +296,19 @@ $check($decodedUploadField['validation']['max_files'] === 3
     && str_contains($uploadHtml, 'data-max-files="3"')
     && str_contains($uploadHtml, 'name="fb_upload_count[attachment]"')
     && str_contains($uploadHtml, 'data-preview-mode="real"')
+    && str_contains($uploadHtml, 'data-fb-upload-error')
     && count($normalizedUploads) === 2
     && $normalizedUploads[1]['name'] === 'two.jpg',
-    'upload definitions sanitize descriptions and render bounded multi-file preview controls');
+    'upload definitions sanitize descriptions and render additive removable multi-file controls');
+$publicRenderer = (string)file_get_contents(dirname(__DIR__) . '/public/render.php');
+$check(str_contains($publicRenderer, "var selectedFiles = []")
+    && str_contains($publicRenderer, 'selectedFiles.slice()')
+    && str_contains($publicRenderer, 'transfer.items.add(file)')
+    && str_contains($publicRenderer, "remove.setAttribute('data-fb-remove-file', '')")
+    && str_contains($publicRenderer, 'selectedIndex !== index')
+    && str_contains($publicRenderer, "restoreFiles(message(I18N.too_many_files")
+    && str_contains($publicRenderer, "assignFiles(selectedFiles)"),
+    'public upload controls append sequential choices, remove individual files, and preserve valid selections after errors');
 $invalid = $uploadDefinition; $invalid['form']['fields'][5]['validation']['max_files'] = FB_UPLOAD_MAX_FILES + 1;
 $check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects excessive upload counts');
 $invalid = $uploadDefinition; $invalid['form']['fields'][5]['settings']['preview_mode'] = 'embed';

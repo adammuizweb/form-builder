@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.1 - 2026-10-04
+
+- Add files from successive picker or drop actions instead of replacing earlier valid multi-file selections.
+- Show selected-file progress and provide an accessible remove control for each file, including uploads without visual previews.
+- Preserve valid files when a later choice is invalid or exceeds the configured file-count limit.
+
 ## 2.2.0 - 2026-10-04
 
 - Add Core-editor upload descriptions, configurable file counts, and `none`, `icon`, or safe real-image preview modes to Classic and Visual Builder.
