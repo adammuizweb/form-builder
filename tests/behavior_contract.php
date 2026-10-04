@@ -325,10 +325,10 @@ $uploadDefinition = $definition;
 $uploadDefinition['form']['fields'][] = ['key'=>'attachment','parent'=>'col_main','type'=>'file','label'=>'Attachment','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>40,'hidden'=>false,'options'=>[],'validation'=>['max_bytes'=>5242880,'max_files'=>3,'exts'=>['pdf','jpg']],'settings'=>['upload_description_html'=>'<p>Attach <strong>records</strong>.</p><script>unsafe()</script><a href="javascript:unsafe()">bad</a>','preview_mode'=>'real']];
 $decodedUpload = fb_definition_decode($uploadDefinition);
 $decodedUploadField = $decodedUpload['form']['fields'][5];
-$uploadDbField = ['type'=>'file','field_key'=>'attachment','label'=>'Attachment','required'=>0,'is_hidden'=>0,'help_text'=>'','validation_json'=>fb_json_encode($decodedUploadField['validation']),'settings_json'=>fb_json_encode($decodedUploadField['settings'])];
+$uploadDbField = ['type'=>'file','field_key'=>'attachment','label'=>'Attachment','required'=>0,'is_hidden'=>0,'help_text'=>'Additional help below upload.','validation_json'=>fb_json_encode($decodedUploadField['validation']),'settings_json'=>fb_json_encode($decodedUploadField['settings'])];
 $uploadHtml = fb_render_field_html($uploadDbField, 'contract', 'i4', false, fb_default_settings());
 $legacyUploadField = $uploadDbField;
-$legacyUploadField['help_text'] = 'Upload proof below the label.';
+$legacyUploadField['help_text'] = 'Legacy help below upload.';
 $legacyUploadField['settings_json'] = fb_json_encode(['preview_mode'=>'icon']);
 $legacyUploadHtml = fb_render_field_html($legacyUploadField, 'contract', 'i5', false, fb_default_settings());
 $sanitizedUploadDescription = fb_sanitize_upload_description('<?xml encoding="utf-8" ?><p>Stable <strong>description</strong>.</p>');
@@ -339,6 +339,10 @@ $check($decodedUploadField['validation']['max_files'] === 3
     && !str_contains($decodedUploadField['settings']['upload_description_html'], 'javascript:')
     && str_contains($uploadHtml, 'class="fb-upload-description"')
     && str_contains($uploadHtml, 'Attach <strong>records</strong>.')
+    && strpos($uploadHtml, 'fb-label') < strpos($uploadHtml, 'fb-upload-description')
+    && strpos($uploadHtml, 'fb-upload-description') < strpos($uploadHtml, 'fb-drop')
+    && strpos($uploadHtml, 'fb-drop') < strpos($uploadHtml, 'class="fb-help"')
+    && str_contains($uploadHtml, 'Additional help below upload.')
     && str_contains($uploadHtml, 'name="attachment[]"')
     && str_contains($uploadHtml, 'data-max-files="3"')
     && str_contains($uploadHtml, 'name="fb_upload_count[attachment]"')
@@ -347,11 +351,10 @@ $check($decodedUploadField['validation']['max_files'] === 3
     && count($normalizedUploads) === 2
     && $normalizedUploads[1]['name'] === 'two.jpg',
     'upload definitions sanitize descriptions and render additive removable multi-file controls');
-$check(strpos($legacyUploadHtml, 'fb-label') < strpos($legacyUploadHtml, 'fb-upload-description')
-    && strpos($legacyUploadHtml, 'fb-upload-description') < strpos($legacyUploadHtml, 'fb-drop')
-    && substr_count($legacyUploadHtml, 'Upload proof below the label.') === 1
-    && !str_contains($legacyUploadHtml, 'class="fb-help"'),
-    'legacy plain upload help falls back to one description directly below the field label');
+$check(!str_contains($legacyUploadHtml, 'fb-upload-description')
+    && strpos($legacyUploadHtml, 'fb-drop') < strpos($legacyUploadHtml, 'class="fb-help"')
+    && substr_count($legacyUploadHtml, 'Legacy help below upload.') === 1,
+    'upload help remains independent below the upload control when no description exists');
 $check($sanitizedUploadDescription === fb_sanitize_upload_description($sanitizedUploadDescription)
     && !str_contains($sanitizedUploadDescription, '<?xml')
     && str_contains($sanitizedUploadDescription, '<strong>description</strong>'),

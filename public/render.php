@@ -85,12 +85,10 @@ function fb_render_field_html(array $f, string $slug, string $instance, bool $un
         <?php
           $descriptionHtml = '';
           try { $descriptionHtml = fb_sanitize_upload_description((string)$uploadPolicy['description_html']); } catch (InvalidArgumentException) {}
-          $plainUploadDescription = $descriptionHtml === '' ? trim((string)($f['help_text'] ?? '')) : '';
           $maxFiles = (int)$uploadPolicy['max_files'];
           $inputName = $key . ($maxFiles > 1 ? '[]' : '');
         ?>
         <?php if ($descriptionHtml !== ''): ?><div class="fb-upload-description"><?= $descriptionHtml ?></div><?php endif; ?>
-        <?php if ($plainUploadDescription !== ''): ?><div class="fb-upload-description"><?= nl2br(fb_h($plainUploadDescription)) ?></div><?php endif; ?>
         <input type="hidden" name="fb_upload_count[<?= fb_h($key) ?>]" value="0" data-fb-upload-count>
         <div class="fb-drop" data-max="<?= $maxBytes ?>" data-max-files="<?= $maxFiles ?>" data-image="<?= !empty($meta['image']) ? '1' : '0' ?>" data-preview-mode="<?= fb_h((string)$uploadPolicy['preview_mode']) ?>">
           <input type="file" name="<?= fb_h($inputName) ?>" accept="<?= fb_h(implode(',', array_map(static fn(string $ext): string => '.' . $ext, $uploadPolicy['exts']))) ?>" <?= $maxFiles > 1 ? 'multiple' : '' ?> <?= $req ? 'required' : '' ?>>
@@ -100,7 +98,7 @@ function fb_render_field_html(array $f, string $slug, string $instance, bool $un
           <div class="up-items" aria-live="polite"></div>
           <div class="up-error" data-fb-upload-error role="alert"></div>
         </div>
-        <?php if ($descriptionHtml !== '' && !empty($f['help_text'])): ?><div class="fb-help"><?= fb_h($f['help_text']) ?></div><?php endif; ?>
+        <?php if (!empty($f['help_text'])): ?><div class="fb-help"><?= fb_h($f['help_text']) ?></div><?php endif; ?>
       <?php elseif ($type === 'country'): ?>
         <label class="fb-label" for="<?= fb_h($id) ?>"><?= fb_h($label) ?> <?= $req ? '<span class="req">*</span>' : '' ?></label>
         <select id="<?= fb_h($id) ?>" name="<?= fb_h($key) ?>" data-fb-country <?= $req ? 'required' : '' ?>>

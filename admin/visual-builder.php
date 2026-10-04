@@ -369,6 +369,7 @@ fb_admin_css();
   const currentFields = () => workingDefinition?.form?.fields || [];
   const currentField = () => currentFields().find((field) => field.key === selectedKey) || null;
   const isUploadField = (field) => field && ['file', 'image'].includes(field.type);
+  const mutableRecord = (value) => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   const ordered = (fields) => [...fields].sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0) || a.key.localeCompare(b.key));
   const layoutRows = () => ordered(currentFields().filter((field) => field.type === 'row'));
   const layoutColumns = () => layoutRows().flatMap((row, rowIndex) => ordered(currentFields().filter((field) => field.type === 'col' && field.parent === row.key)).map((column, columnIndex) => ({ row, column, rowIndex, columnIndex })));
@@ -461,7 +462,7 @@ fb_admin_css();
     mutateDefinition((definition) => {
       const target = definition.form.fields.find((candidate) => candidate.key === fieldKey);
       if (!isUploadField(target)) return;
-      target.settings = target.settings || {};
+      target.settings = mutableRecord(target.settings);
       target.settings.upload_description_html = content;
     });
   };
@@ -862,11 +863,11 @@ fb_admin_css();
           focus: 'cancel'
         })
       });
-      uploadDescriptionEditor.on('change', () => {
+      uploadDescriptionEditor.on('change', (event) => {
         if (uploadEditorApplying || !uploadEditorFieldKey || selectedKey !== uploadEditorFieldKey) return;
         const field = currentFields().find((candidate) => candidate.key === uploadEditorFieldKey);
         if (!isUploadField(field)) return;
-        const content = uploadDescriptionEditor.sync();
+        const content = String(event?.content ?? uploadDescriptionEditor.sync());
         if ([...content].length > UPLOAD_DESCRIPTION_MAX_LENGTH) {
           uploadEditorApplying = true;
           try { uploadDescriptionEditor.setContent(String(field.settings?.upload_description_html || ''), { source: 'length-rejected' }); }
@@ -887,6 +888,11 @@ fb_admin_css();
   } else {
     mountUploadDescriptionEditor();
   }
+  uploadEditorRoot?.addEventListener('input', () => {
+    if (uploadEditorApplying) return;
+    window.queueMicrotask(() => syncUploadDescription());
+  });
+  uploadEditorRoot?.addEventListener('focusout', () => syncUploadDescription());
   request('load').then((loaded) => {
     draft = loaded;
     workingDefinition = loaded.definition;
@@ -977,6 +983,15 @@ fb_admin_css();
   });
   publishButton.addEventListener('click', async () => {
     if (publishButton.disabled || !draft) return;
+    if (!syncUploadDescription()) return;
+    if (saveInFlight || pendingDefinition) {
+      setStatus('Saving description before publish...', 'saving');
+      if (!await waitForSaveIdle()) {
+        setStatus('Publish paused - resolve the draft save before retrying', 'error');
+        updateActions();
+        return;
+      }
+    }
     saveInFlight = true;
     setStatus('Publishing draft...', 'saving');
     updateActions();
@@ -1075,8 +1090,8 @@ fb_admin_css();
     mutateDefinition((definition) => {
       const target = definition.form.fields.find((candidate) => candidate.key === selectedKey);
       if (!isUploadField(target)) return;
-      target.validation = target.validation || {};
-      target.settings = target.settings || {};
+      target.validation = mutableRecord(target.validation);
+      target.settings = mutableRecord(target.settings);
       if (property === 'max_files') target.validation.max_files = value;
       else if (property === 'max_mb') target.validation.max_bytes = value * UPLOAD_MIB;
       else if (property === 'exts') target.validation.exts = value;
@@ -1213,7 +1228,10 @@ fb_admin_css();
     mutateDefinition((definition) => {
       const field = definition.form.fields.find((candidate) => candidate.key === selectedKey);
       if (!field) return;
-      if (setting) field.settings[setting] = value;
+      if (setting) {
+        field.settings = mutableRecord(field.settings);
+        field.settings[setting] = value;
+      }
       else {
         field[property] = value;
         if (property === 'hidden' && value && definition.form.settings.success_detail_field === field.key) definition.form.settings.success_detail_field = '';
@@ -1302,6 +1320,7 @@ fb_admin_css();
   });
 
   window.addEventListener('beforeunload', (event) => {
+    syncUploadDescription();
     if (!hasUnsavedChanges && !saveInFlight) return;
     event.preventDefault();
     event.returnValue = '';
