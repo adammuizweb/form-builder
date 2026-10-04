@@ -88,7 +88,8 @@ $whereSql = 'WHERE ' . implode(' AND ', $where);
 
 // ---------------- Spreadsheet export ----------------
 if ($isExport) {
-    if (!function_exists('csrf_check') || !csrf_check((string)($_POST['csrf_token'] ?? ''))) {
+    $exportCsrf = $_POST['csrf_token'] ?? '';
+    if (!is_string($exportCsrf) || !function_exists('csrf_check') || !csrf_check($exportCsrf)) {
         http_response_code(403);
         exit('Invalid CSRF token');
     }
@@ -202,17 +203,25 @@ if ($isExport) {
 
 // ---------------- Bulk POST ----------------
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
-    if (!function_exists('csrf_check') || !csrf_check($_POST['csrf_token'] ?? '')) {
+    $csrfInput = $_POST['csrf_token'] ?? '';
+    if (!is_string($csrfInput) || !function_exists('csrf_check') || !csrf_check($csrfInput)) {
         echo '<div class="fba-empty">Invalid CSRF token.</div>';
         return;
     }
-    $act = (string)($_POST['fb_action'] ?? '');
+    $actionInput = $_POST['fb_action'] ?? $_POST['fb_bulk_action'] ?? '';
+    $act = is_string($actionInput) ? $actionInput : '';
     if (!$canManageSubmissions) {
         echo '<div class="fba-empty">Access denied.</div>';
         return;
     }
     $ids = array_slice(array_values(array_unique(array_filter(array_map('intval', (array)($_POST['ids'] ?? []))))), 0, 200);
-    if (!$ids && isset($_POST['id_one'])) $ids = [(int)$_POST['id_one']];
+    $idOne = $_POST['id_one'] ?? '';
+    if (!$ids && is_string($idOne) && preg_match('/\A[1-9][0-9]*\z/D', $idOne) === 1) $ids = [(int)$idOne];
+    $rowAction = $_POST['fb_row_action'] ?? '';
+    if (is_string($rowAction) && preg_match('/\A(trash|restore|delete):([1-9][0-9]*)\z/D', $rowAction, $rowMatch) === 1) {
+        $act = $rowMatch[1];
+        $ids = [(int)$rowMatch[2]];
+    }
     if ($ids && in_array($act, ['read', 'unread', 'trash', 'restore', 'delete'], true)) {
         $in = implode(',', array_fill(0, count($ids), '?'));
         $args = array_merge($ids, [$formId]);
@@ -499,10 +508,10 @@ if (isset($_GET['detail'])):
             <td><div class="fba-row-actions">
               <a class="fba-btn sm" href="<?= fb_url(['detail' => $sid]) ?>"><?= svg_ico('eye') ?> View</a>
               <?php if ($canManageSubmissions && (int)$r['is_deleted']): ?>
-              <button class="fba-btn sm" name="fb_action" value="restore" onclick="this.form.querySelectorAll('.fba-row-check').forEach(c=>c.checked=false);this.closest('tr').querySelector('.fba-row-check').checked=true">Restore</button>
-              <button class="fba-btn sm danger" name="fb_action" value="delete" onclick="return confirm('Delete permanently?')&&(this.form.querySelectorAll('.fba-row-check').forEach(c=>c.checked=false),this.closest('tr').querySelector('.fba-row-check').checked=true,true)">Delete</button>
+              <button class="fba-btn sm" name="fb_row_action" value="restore:<?= $sid ?>" type="submit">Restore</button>
+              <button class="fba-btn sm danger" name="fb_row_action" value="delete:<?= $sid ?>" type="submit" onclick="return confirm('Delete permanently?')">Delete</button>
               <?php elseif ($canManageSubmissions): ?>
-              <button class="fba-btn sm danger" name="fb_action" value="trash" onclick="this.form.querySelectorAll('.fba-row-check').forEach(c=>c.checked=false);this.closest('tr').querySelector('.fba-row-check').checked=true">Trash</button>
+              <button class="fba-btn sm danger" name="fb_row_action" value="trash:<?= $sid ?>" type="submit">Trash</button>
               <?php endif; ?>
             </div></td>
           </tr>
@@ -511,7 +520,7 @@ if (isset($_GET['detail'])):
       </table>
     </div>
     <?php if ($canManageSubmissions): ?><div class="fba-toolbar fba-bulk-actions">
-      <select name="fb_action" aria-label="Bulk action">
+      <select name="fb_bulk_action" aria-label="Bulk action">
         <option value="read">Mark read</option>
         <option value="unread">Mark unread</option>
         <option value="trash">Move to trash</option>

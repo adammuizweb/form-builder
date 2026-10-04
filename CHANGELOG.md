@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.1.2 - 2026-10-04
+
+- Fix per-row submission Trash, Restore, and Delete actions being overridden by the bulk action selector.
+
 ## 2.1.1 - 2026-10-04
 
 - Replace Visual Builder's pipe-delimited option textarea with structured choice cards for display text, stored values, pricing, and optional capacities.

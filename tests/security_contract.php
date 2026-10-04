@@ -8,7 +8,7 @@ $permissions = array_column($manifest['permissions'] ?? [], null, 'key');
 $composer = json_decode((string)file_get_contents($root . '/composer.json'), true, 32, JSON_THROW_ON_ERROR);
 $lock = json_decode((string)file_get_contents($root . '/composer.lock'), true, 64, JSON_THROW_ON_ERROR);
 $lockedPackages = array_column($lock['packages'] ?? [], 'version', 'name');
-$check(($manifest['version'] ?? null) === '2.1.1' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.122' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
+$check(($manifest['version'] ?? null) === '2.1.2' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.122' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
 $check(($composer['require']['php'] ?? null) === '>=8.1' && ($composer['require']['phpoffice/phpspreadsheet'] ?? null) === '~5.8.1'
     && ($composer['config']['platform']['php'] ?? null) === '8.1.0'
     && ($lockedPackages['phpoffice/phpspreadsheet'] ?? null) === '5.8.1'
@@ -278,9 +278,18 @@ $check(str_contains($submissions, "case 'restore':")
     && str_contains($importSource, 'fb_acquire_form_mutation_lock($pdo, $formId)')
     && str_contains($importSource, 'fb_select_capacity_errors($pdo, $formId, $fields'),
     'restore and legacy import share transactional capacity enforcement while trash and delete release derived usage');
+$check(str_contains($submissions, "\$_POST['fb_action'] ?? \$_POST['fb_bulk_action'] ?? ''")
+    && str_contains($submissions, 'name="fb_bulk_action" aria-label="Bulk action"')
+    && str_contains($submissions, "preg_match('/\\A(trash|restore|delete):([1-9][0-9]*)\\z/D'")
+    && str_contains($submissions, 'name="fb_row_action" value="trash:<?= $sid ?>"')
+    && !str_contains($submissions, "this.closest('tr').querySelector('.fba-row-check').checked=true"),
+    'per-row submission actions bind an exact row without JavaScript and take precedence over the separate bulk selector');
+$check(str_contains($submissions, '!is_string($csrfInput)') && str_contains($submissions, '!is_string($exportCsrf)')
+    && str_contains($submissions, '$act = is_string($actionInput) ? $actionInput :'),
+    'submission mutations reject malformed non-scalar CSRF and action inputs');
 $check(str_contains($adminIndex, "\$_POST['fb_action'] ?? '') === 'export'")
     && str_contains($submissions, "['xlsx', 'csv']")
-    && str_contains($submissions, 'csrf_check((string)($_POST')
+    && str_contains($submissions, 'csrf_check($exportCsrf)')
     && str_contains($submissions, 'name="action" value="export"')
     && !str_contains($submissions, "(\$_GET['action'] ?? '') === 'export'"),
     'submission exports enter the Core raw-response dispatcher and require POST, CSRF, an allowlisted format, and the scoped route guard');
