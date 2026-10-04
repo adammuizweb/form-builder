@@ -1,6 +1,6 @@
 {
     "name": "form-builder",
-    "version": "2.2.1",
+    "version": "2.2.2",
     "title": "Form Builder",
     "icon": "icon.png",
     "description": "Production form builder with multilingual definitions, configurable private multi-file uploads, protected attachment exports, idempotent submissions, review workflows, Core Mail, and shortcode/theme-section embedding.",
@@ -9,7 +9,7 @@
     "plugin_uri": "https://jyavani.com/plugin/form-builder/",
     "homepage": "https://jyavani.com/plugin/form-builder/",
     "requires": {
-        "jyavani": ">=2.3.122",
+        "jyavani": ">=2.3.140",
         "php": ">=8.1",
         "extensions": [
             "pdo",

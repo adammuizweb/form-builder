@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.2 - 2026-10-04
+
+- Mount Visual Builder upload descriptions only after Core editor dependencies are ready and preserve mounted editors across back-forward cache navigation.
+- Explain the independent bulk workflow-status action with the accessible Core field-help tooltip.
+- Require Jyavani Core 2.3.140, the first release providing the scoped content-editor mount API used by upload descriptions.
+
 ## 2.2.1 - 2026-10-04
 
 - Add files from successive picker or drop actions instead of replacing earlier valid multi-file selections.

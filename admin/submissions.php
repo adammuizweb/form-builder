@@ -547,7 +547,7 @@ if (isset($_GET['detail'])):
         <option value="delete">Delete permanently</option>
         <?php endif; ?>
       </select>
-      <?php if ($canWorkflow): ?><select name="workflow_status" aria-label="New workflow status"><?php foreach ($workflowStatuses as $ws): ?><option value="<?= htmlspecialchars($ws, ENT_QUOTES) ?>"><?= htmlspecialchars(ucfirst($ws), ENT_QUOTES) ?></option><?php endforeach; ?></select><button class="fba-btn" name="fb_action" value="workflow" type="submit">Set workflow status</button><?php endif; ?>
+      <?php if ($canWorkflow): ?><select name="workflow_status" aria-label="New workflow status"><?php foreach ($workflowStatuses as $ws): ?><option value="<?= htmlspecialchars($ws, ENT_QUOTES) ?>"><?= htmlspecialchars(ucfirst($ws), ENT_QUOTES) ?></option><?php endforeach; ?></select><button class="fba-btn" name="fb_action" value="workflow" type="submit">Set workflow status</button><span class="field-help"><button type="button" class="field-help__trigger" aria-label="<?= htmlspecialchars((string)__('About Set workflow status'), ENT_QUOTES, 'UTF-8') ?>" aria-describedby="fba-workflow-status-help" aria-controls="fba-workflow-status-help" aria-expanded="false">?</button><span id="fba-workflow-status-help" class="field-help__tooltip" role="tooltip"><?= htmlspecialchars((string)__('Changes the workflow stage for every checked submission. It does not mark items read, move them to trash, or run the separate Bulk action.'), ENT_QUOTES, 'UTF-8') ?></span></span><?php endif; ?>
       <button class="fba-btn" type="submit">Apply to selected</button>
     </div><?php endif; ?>
   </form>

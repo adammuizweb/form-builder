@@ -1,10 +1,10 @@
 # Form Builder
 
-Form Builder 2.2.1 is a Jyavani Core 2.3.122 plugin for reusable public forms, configurable private multi-file uploads, multilingual definitions, review workflows, and revision-safe visual editing.
+Form Builder 2.2.2 is a Jyavani Core 2.3.140 plugin for reusable public forms, configurable private multi-file uploads, multilingual definitions, review workflows, and revision-safe visual editing.
 
 ## Requirements
 
-- Jyavani Core 2.3.122 or newer
+- Jyavani Core 2.3.140 or newer
 - PHP 8.1 or newer with `pdo_mysql`, `fileinfo`, `dom`, `json`, and `mbstring`
 - A project root where the PHP runtime can safely create or write the Core-owned `private_files` directory
 

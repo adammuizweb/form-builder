@@ -8,7 +8,7 @@ $permissions = array_column($manifest['permissions'] ?? [], null, 'key');
 $composer = json_decode((string)file_get_contents($root . '/composer.json'), true, 32, JSON_THROW_ON_ERROR);
 $lock = json_decode((string)file_get_contents($root . '/composer.lock'), true, 64, JSON_THROW_ON_ERROR);
 $lockedPackages = array_column($lock['packages'] ?? [], 'version', 'name');
-$check(($manifest['version'] ?? null) === '2.2.1' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.122' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
+$check(($manifest['version'] ?? null) === '2.2.2' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.140' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
 $check(in_array('content-editor', $manifest['dependencies']['js'] ?? [], true), 'upload descriptions declare the Core content-editor dependency');
 $check(($composer['require']['php'] ?? null) === '>=8.1' && ($composer['require']['phpoffice/phpspreadsheet'] ?? null) === '~5.8.1'
     && ($composer['config']['platform']['php'] ?? null) === '8.1.0'
@@ -120,10 +120,14 @@ $check(str_contains($classicCanvas, 'content_editor_render_mount([')
     && str_contains($classicBuilder, 'uploadDescriptionEditor.sync()')
     && str_contains($classicBuilder, 'uploadDescriptionEditor.destroy()')
     && str_contains($visualBuilder, 'id="fbvUploadEditorParking"')
+    && str_contains($visualBuilder, 'const mountUploadDescriptionEditor = () =>')
+    && str_contains($visualBuilder, "document.readyState === 'loading'")
+    && str_contains($visualBuilder, "document.addEventListener('DOMContentLoaded', mountUploadDescriptionEditor, { once: true })")
     && str_contains($visualBuilder, 'window.JyavaniEditor.mount(uploadEditorRoot')
     && str_contains($visualBuilder, 'uploadDescriptionEditor.setContent(')
-    && str_contains($visualBuilder, 'uploadDescriptionEditor.destroy()'),
-    'Classic and Visual upload descriptions use scoped Core editor mounts with explicit lifecycle management');
+    && str_contains($visualBuilder, 'uploadDescriptionEditor.destroy()')
+    && str_contains($visualBuilder, 'if (event.persisted) return;'),
+    'Classic and Visual upload descriptions use dependency-safe scoped Core editor mounts with BFCache-safe lifecycle management');
 $check(str_contains($classicCanvas, 'name="v_max_files"')
     && str_contains($classicCanvas, 'name="s_preview_mode"')
     && str_contains($visualBuilder, 'data-upload-prop="max_files"')
@@ -303,6 +307,13 @@ $check(str_contains($submissions, "\$_POST['fb_action'] ?? \$_POST['fb_bulk_acti
     && str_contains($submissions, 'name="fb_row_action" value="trash:<?= $sid ?>"')
     && !str_contains($submissions, "this.closest('tr').querySelector('.fba-row-check').checked=true"),
     'per-row submission actions bind an exact row without JavaScript and take precedence over the separate bulk selector');
+$check(str_contains($submissions, 'type="button" class="field-help__trigger"')
+    && str_contains($submissions, 'aria-describedby="fba-workflow-status-help"')
+    && str_contains($submissions, 'aria-controls="fba-workflow-status-help"')
+    && substr_count($submissions, 'id="fba-workflow-status-help"') === 1
+    && str_contains($submissions, 'class="field-help__tooltip" role="tooltip"')
+    && str_contains($submissions, "__('Changes the workflow stage for every checked submission. It does not mark items read, move them to trash, or run the separate Bulk action.')"),
+    'workflow bulk action uses the accessible Core tooltip and explains its independent behavior');
 $check(str_contains($submissions, '!is_string($csrfInput)') && str_contains($submissions, '!is_string($exportCsrf)')
     && str_contains($submissions, '$act = is_string($actionInput) ? $actionInput :'),
     'submission mutations reject malformed non-scalar CSRF and action inputs');

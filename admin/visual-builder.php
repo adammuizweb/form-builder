@@ -839,7 +839,8 @@ fb_admin_css();
   window.addEventListener('fbv:draft-change', (event) => {
     if (event.detail?.definition) queueSave(event.detail.definition);
   });
-  if (uploadEditorRoot) {
+  const mountUploadDescriptionEditor = () => {
+    if (!uploadEditorRoot || uploadDescriptionEditor) return;
     try {
       if (!window.JyavaniEditor || typeof window.JyavaniEditor.mount !== 'function') throw new Error(<?= json_encode(__('Core description editor is unavailable.')) ?>);
       uploadDescriptionEditor = window.JyavaniEditor.mount(uploadEditorRoot, {
@@ -880,6 +881,11 @@ fb_admin_css();
       uploadDescriptionEditor = null;
       showUploadEditorError(error?.message || <?= json_encode(__('The description editor could not be loaded.')) ?>);
     }
+  };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', mountUploadDescriptionEditor, { once: true });
+  } else {
+    mountUploadDescriptionEditor();
   }
   request('load').then((loaded) => {
     draft = loaded;
@@ -1299,11 +1305,12 @@ fb_admin_css();
     event.preventDefault();
     event.returnValue = '';
   });
-  window.addEventListener('pagehide', () => {
+  window.addEventListener('pagehide', (event) => {
+    if (event.persisted) return;
     syncUploadDescription();
     if (uploadDescriptionEditor) uploadDescriptionEditor.destroy();
     uploadDescriptionEditor = null;
-  }, { once: true });
+  });
 
   devices.forEach((button) => button.addEventListener('click', () => {
     devices.forEach((candidate) => {
