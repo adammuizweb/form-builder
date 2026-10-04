@@ -197,6 +197,7 @@ try {
             }
             $currentFields = fb_get_fields($pdo, $formId);
             $nextFields = array_values(array_filter($currentFields, static fn(array $field): bool => !isset($deleting[(int)$field['id']])));
+            $deletedFieldKeys = array_map(static fn(array $field): string => (string)$field['field_key'], array_values(array_filter($currentFields, static fn(array $field): bool => isset($deleting[(int)$field['id']]))));
             fb_assert_capacity_configuration($pdo, $formId, $currentFields, $nextFields);
             $trashSubtree = static function (int $rootId) use ($pdo, $formId, &$trashSubtree): void {
                 $st = $pdo->prepare('SELECT id, type FROM `fb_fields` WHERE form_id = ? AND parent_id = ?');
@@ -208,6 +209,11 @@ try {
             };
             if (in_array($n['type'], ['row', 'col'], true)) $trashSubtree($id);
             $pdo->prepare('UPDATE `fb_fields` SET deleted_at = NOW() WHERE id = ? AND form_id = ?')->execute([$id, $formId]);
+            $formSettings = fb_form_settings($form);
+            if (in_array((string)$formSettings['success_detail_field'], $deletedFieldKeys, true)) {
+                $formSettings['success_detail_field'] = '';
+                $pdo->prepare('UPDATE fb_forms SET settings_json = ? WHERE id = ?')->execute([fb_json_encode($formSettings), $formId]);
+            }
             $touch();
             fb_json(['ok' => true, 'html' => fb_render_canvas($form, fb_get_tree($pdo, $formId))]);
         }
@@ -340,6 +346,11 @@ try {
                 if ($type === 'country' && $key !== $n['field_key']) foreach ($dependants as $dependant) {
                     $dependentSettings = fb_field_settings($dependant); $dependentSettings['country_field'] = $key;
                     $pdo->prepare('UPDATE fb_fields SET settings_json = ? WHERE id = ? AND form_id = ?')->execute([fb_json_encode($dependentSettings),(int)$dependant['id'],$formId]);
+                }
+                $formSettings = fb_form_settings($form);
+                if ((string)$formSettings['success_detail_field'] === (string)$n['field_key']) {
+                    $formSettings['success_detail_field'] = $hidden ? '' : $key;
+                    $pdo->prepare('UPDATE fb_forms SET settings_json = ? WHERE id = ?')->execute([fb_json_encode($formSettings), $formId]);
                 }
                 $touch();
                 $pdo->commit();

@@ -43,9 +43,21 @@ $check(str_contains($visualAjax, "\$action === 'publish' || \$action === 'reset'
     && str_contains($ajax, "['add_row', 'set_cols', 'add_field', 'move', 'delete', 'save_field']"),
     'Visual publish/reset and every Classic field mutation share a form-scoped lock');
 $submit = (string)file_get_contents($root . '/public/submit.php');
+$publicHelpers = (string)file_get_contents($root . '/public/_helpers.php');
+$publicRenderer = (string)file_get_contents($root . '/public/render.php');
 $plugin = (string)file_get_contents($root . '/plugin.php');
 $check(!preg_match('/(?<!jy_)mail\s*\(/', $submit) && strpos($submit, '$pdo->commit()') < strpos($submit, 'jy_mail_send'), 'Core mail executes only after persistence');
 $check(!str_contains($submit, 'HTTP_X_FORWARDED_FOR') && str_contains($submit, 'do_action_isolated'), 'submission path retains trusted IP and isolated observer contracts');
+$check(substr_count($submit, 'fb_success_redirect($pdo, $return, $form,') === 3
+    && str_contains($publicHelpers, 'function fb_success_token(')
+    && str_contains($publicHelpers, "hash_hmac('sha256', \"success\\0")
+    && str_contains($publicHelpers, 'function fb_success_token_check(')
+    && str_contains($publicHelpers, "unset(\$qs['fb_status'], \$qs['fb_ref'], \$qs['fb_form'], \$qs['fb_msg'], \$qs['fb_success'])")
+    && str_contains($publicRenderer, 'fb_success_token_check($pdo, $formId, $ref, $successToken)')
+    && str_contains($publicRenderer, 'WHERE form_id = ? AND reference_code = ? AND is_deleted = 0 LIMIT 1')
+    && str_contains($publicRenderer, 'fb_success_value_text($successField')
+    && str_contains($publicRenderer, 'class="fb-success-detail"'),
+    'custom success details use a short-lived signed PRG lookup instead of exposing submission values in the URL');
 $check(str_contains($submit, 'if ($uploadFields !== [])')
     && str_contains($submit, 'fb_prepare_files_base_dir($form)')
     && str_contains($submit, 'chmod($path, 0640)'),
@@ -102,6 +114,13 @@ $check(str_contains($adminUi, 'function fb_visual_builder_url(')
     && str_contains($classicBuilder, 'Classic Builder:')
     && str_contains($classicBuilder, 'fb_visual_builder_url($formId)'),
     'new forms default to Visual Builder while Classic remains explicitly available');
+$check(str_contains($settings, 'name="success_detail_template"')
+    && str_contains($settings, 'name="success_detail_field"')
+    && str_contains($settings, '{value}')
+    && str_contains($settings, '{label}')
+    && str_contains($visualBuilder, "'success_detail_field'")
+    && str_contains($ajax, "\$formSettings['success_detail_field']"),
+    'shared settings and both builder lifecycles preserve valid custom success notification references');
 $check(str_contains($visualBuilder, "adiwira_require_permission(\$pdo, 'plugin.form-builder.workspace.access'")
     && str_contains($visualBuilder, 'fb_can_access_form($pdo, $form, $uid)')
     && str_contains($visualBuilder, 'id="fbvPreviewFrame"')

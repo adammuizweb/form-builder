@@ -45,6 +45,30 @@ function fb_started_check(PDO $pdo, int $formId, string $token, int $minimum, st
         && hash_equals(hash_hmac('sha256', $formId . ':' . $time . ':' . $locale, fb_get_secret($pdo)), $parts[1]);
 }
 
+function fb_success_token(PDO $pdo, int $formId, string $reference, ?int $issuedAt = null): string {
+    $issuedAt ??= time();
+    if ($formId < 1 || $reference === '' || strlen($reference) > 64 || $issuedAt < 1) return '';
+    $signature = hash_hmac('sha256', "success\0{$formId}\0{$reference}\0{$issuedAt}", fb_get_secret($pdo));
+    return $issuedAt . '.' . $signature;
+}
+
+function fb_success_token_check(PDO $pdo, int $formId, string $reference, string $token, int $ttl = 7200): bool {
+    $parts = explode('.', $token, 2);
+    if (count($parts) !== 2 || !ctype_digit($parts[0]) || preg_match('/\A[a-f0-9]{64}\z/', $parts[1]) !== 1) return false;
+    $issuedAt = (int)$parts[0];
+    if ($issuedAt > time() + 60 || $issuedAt < time() - max(60, min(86400, $ttl))) return false;
+    return hash_equals(fb_success_token($pdo, $formId, $reference, $issuedAt), $token);
+}
+
+function fb_success_redirect(PDO $pdo, string $return, array $form, string $reference): never {
+    fb_redirect($return, [
+        'fb_status'=>'ok',
+        'fb_form'=>(string)($form['slug'] ?? ''),
+        'fb_ref'=>$reference,
+        'fb_success'=>fb_success_token($pdo, (int)($form['id'] ?? 0), $reference),
+    ]);
+}
+
 function fb_contained_path(string $base, string $relative, bool $mustExist = true): ?string {
     if ($relative === '' || str_contains($relative, "\0") || str_contains($relative, '..') || str_starts_with($relative, '/') || str_contains($relative, '\\')) return null;
     $realBase = realpath($base);
@@ -70,7 +94,7 @@ function fb_safe_return_url(string $raw): string {
     $qs = [];
     if (isset($parts[1])) {
         parse_str($parts[1], $qs);
-        unset($qs['fb_status'], $qs['fb_ref'], $qs['fb_form'], $qs['fb_msg']);
+        unset($qs['fb_status'], $qs['fb_ref'], $qs['fb_form'], $qs['fb_msg'], $qs['fb_success']);
     }
     return $parts[0] . ($qs ? ('?' . http_build_query($qs)) : '');
 }

@@ -184,6 +184,14 @@ $symlinkTarget = $sandbox . '/symlink-target'; mkdir($symlinkTarget, 0700); syml
 try { fb_ensure_storage_directory($pathBase, ['3', '2026']); $symlinkRejected = false; } catch (RuntimeException) { $symlinkRejected = true; }
 $check($symlinkRejected, 'private upload directory creation rejects symlinked components');
 $check(fb_rate_limit_check(new PDO('sqlite::memory:'), '203.0.113.10', 'test', 60, 1)['allowed'] === false, 'rate limiting fails closed on storage errors');
+$GLOBALS['_settings'][FB_SECRET_KEY] = str_repeat('s', 64);
+$successTokenPdo = new PDO('sqlite::memory:');
+$successToken = fb_success_token($successTokenPdo, 7, 'FB-ABC123', time());
+$check(fb_success_token_check($successTokenPdo, 7, 'FB-ABC123', $successToken)
+    && !fb_success_token_check($successTokenPdo, 7, 'FB-DIFFERENT', $successToken)
+    && !fb_success_token_check($successTokenPdo, 7, 'FB-ABC123', fb_success_token($successTokenPdo, 7, 'FB-ABC123', time() - 7201))
+    && fb_safe_return_url('/apply/?fb_status=ok&fb_success=secret&keep=yes') === '/apply/?keep=yes',
+    'success detail tokens bind the form and reference, expire, and are removed from return URLs');
 $relocatedParent = $sandbox . '/relocated'; mkdir($relocatedParent, 0700);
 add_filter('fb_files_base_dir', static fn(string $base): string => $relocatedParent . '/form-builder', 50);
 $check(fb_prepare_files_base_dir([]) === realpath($relocatedParent) . '/form-builder', 'trusted storage filter provisions a normalized dedicated relocation');
@@ -238,6 +246,9 @@ $invalid = $definition; $invalid['form']['fields'][3]['validation']['unknown_rul
 $check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects unknown nested keys');
 $selectDefinition = $definition;
 $selectDefinition['form']['fields'][] = ['key'=>'choice','parent'=>'col_main','type'=>'select','label'=>'Choice','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>40,'hidden'=>false,'options'=>[['value'=>'one','label'=>'One','price'=>0,'capacity'=>3]],'validation'=>[],'settings'=>[]];
+$selectDefinition['form']['settings']['success_detail_template'] = 'Registered for {value} ({label})';
+$selectDefinition['form']['settings']['success_detail_field'] = 'choice';
+$selectDefinition['form']['settings']['translations']['fr-ca']['form']['success_detail_template'] = 'Inscrit a {value}';
 $decodedCapacity = fb_definition_decode($selectDefinition);
 $capacityField = ['type'=>'select','field_key'=>'choice','label'=>'Choice','required'=>1,'is_hidden'=>0,'placeholder'=>'','help_text'=>'','options_json'=>fb_json_encode($decodedCapacity['form']['fields'][5]['options']),'validation_json'=>null,'settings_json'=>null];
 $capacityOptions = fb_field_options($capacityField);
@@ -248,6 +259,21 @@ $check(($capacityOptions[0]['capacity'] ?? null) === 3
     && str_contains($fullOptionHtml, 'One — Full')
     && !str_contains($availableOptionHtml, 'value="one" disabled'),
     'select capacity round-trips through definitions and disables only a full public option');
+$localizedSuccessSettings = array_merge(fb_default_settings(), $decodedCapacity['form']['settings']);
+$successValue = fb_success_value_text($capacityField, 'one');
+$successDetailHtml = fb_success_detail_html($localizedSuccessSettings['success_detail_template'], 'Choice <unsafe>', $successValue);
+$check($decodedCapacity['form']['settings']['success_detail_field'] === 'choice'
+    && fb_localized_form(['title'=>'Contact'], $localizedSuccessSettings)[1]['success_detail_template'] === 'Inscrit a {value}'
+    && $successValue === 'One'
+    && str_contains($successDetailHtml, 'fb-success-value')
+    && str_contains($successDetailHtml, 'One')
+    && str_contains($successDetailHtml, 'Choice &lt;unsafe&gt;')
+    && !str_contains($successDetailHtml, '<unsafe>'),
+    'custom success notifications localize templates and prominently render safe visitor-facing choice labels');
+$invalid = $selectDefinition; $invalid['form']['settings']['success_detail_field'] = 'missing';
+$check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects unknown success detail references');
+$invalid = $selectDefinition; $invalid['form']['fields'][5]['hidden'] = true;
+$check($rejects(static fn() => fb_definition_decode($invalid)), 'deep validation rejects hidden success detail references');
 $displayLabel = 'Kebidanan : "Midwife Challenge" | Sesi A';
 $labelDefinition = $selectDefinition;
 $labelDefinition['form']['fields'][5]['options'][0]['label'] = $displayLabel;

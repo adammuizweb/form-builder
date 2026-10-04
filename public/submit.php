@@ -131,7 +131,7 @@ try {
     $existingRef = $existing->fetchColumn();
     if (is_string($existingRef) && $existingRef !== '') {
         $pdo->commit(); $cleanup($stagedPaths, $stageDir);
-        fb_redirect($return, ['fb_status'=>'ok','fb_form'=>(string)$form['slug'],'fb_ref'=>$existingRef]);
+        fb_success_redirect($pdo, $return, $form, $existingRef);
     }
     $capacityErrors = fb_select_capacity_errors($pdo, $formId, $localizedFields, [$data], $settings);
     if ($capacityErrors !== []) {
@@ -180,7 +180,7 @@ try {
         $replay = $pdo->prepare('SELECT reference_code FROM fb_submissions WHERE form_id = ? AND idempotency_key = ? LIMIT 1');
         $replay->execute([$formId, $idempotency]);
         $replayRef = $replay->fetchColumn();
-        if (is_string($replayRef) && $replayRef !== '') fb_redirect($return, ['fb_status'=>'ok','fb_form'=>(string)$form['slug'],'fb_ref'=>$replayRef]);
+        if (is_string($replayRef) && $replayRef !== '') fb_success_redirect($pdo, $return, $form, $replayRef);
     }
     error_log('[form-builder] submission failed: ' . $error->getMessage());
     $fail(fb_message($settings, 'save_failed'), 503);
@@ -219,4 +219,4 @@ $confirmKey = (string)$settings['confirmation_email_field'];
 $applicant = isset($data[$confirmKey]) && is_string($data[$confirmKey]) && filter_var($data[$confirmKey], FILTER_VALIDATE_EMAIL) ? $data[$confirmKey] : null;
 if ($applicant !== null && function_exists('jy_mail_send')) jy_mail_send($pdo, ['to'=>[$applicant],'subject'=>fb_email_text($settings,'applicant_subject',$mailValues),'body'=>fb_email_text($settings,'applicant_body',$mailValues)]);
 
-fb_redirect($return, ['fb_status'=>'ok','fb_form'=>(string)$form['slug'],'fb_ref'=>$reference]);
+fb_success_redirect($pdo, $return, $form, $reference);

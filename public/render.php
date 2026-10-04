@@ -8,6 +8,26 @@ function fb_h(?string $v): string {
     return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
 }
 
+function fb_success_detail_html(string $template, string $label, string $value): string {
+    if ($value === '') return '';
+    $parts = preg_split('/(\{value\}|\{label\})/', mb_substr($template, 0, 2000), -1, PREG_SPLIT_DELIM_CAPTURE);
+    if (!is_array($parts)) return '';
+    $html = '';
+    $hasValue = false;
+    foreach ($parts as $part) {
+        if ($part === '{value}') {
+            $html .= '<strong class="fb-success-value">' . fb_h($value) . '</strong>';
+            $hasValue = true;
+        } elseif ($part === '{label}') {
+            $html .= fb_h($label);
+        } else {
+            $html .= nl2br(fb_h($part), false);
+        }
+    }
+    if (!$hasValue) $html .= ($html !== '' ? '<br>' : '') . '<strong class="fb-success-value">' . fb_h($value) . '</strong>';
+    return $html;
+}
+
 // Render a single (non-container) field. Returns '' for hidden/unknown types.
 function fb_render_field_html(array $f, string $slug, string $instance, bool $unsafeCode, array $publicSettings, array $capacityUsage = []): string {
     $types = fb_field_types();
@@ -166,6 +186,23 @@ function fb_render_form(PDO $pdo, array $form): string {
     unset($localizedField);
     foreach ($tree as &$treeRow) foreach ($treeRow['cols'] as &$treeCol) foreach ($treeCol['fields'] as &$treeField) $treeField = fb_localized_field($treeField, $settings);
     unset($treeRow, $treeCol, $treeField);
+    $successDetail = '';
+    $successField = fb_success_value_field($allFields, (string)$settings['success_detail_field']);
+    $successToken = is_string($_GET['fb_success'] ?? null) ? $_GET['fb_success'] : '';
+    if ($flash === 'ok' && $successField !== null && $ref !== '' && $successToken !== '') {
+        try {
+            if (fb_success_token_check($pdo, $formId, $ref, $successToken)) {
+                $submission = $pdo->prepare('SELECT data_json FROM fb_submissions WHERE form_id = ? AND reference_code = ? AND is_deleted = 0 LIMIT 1');
+                $submission->execute([$formId, $ref]);
+                $data = json_decode((string)($submission->fetchColumn() ?: ''), true);
+                $fieldKey = (string)$successField['field_key'];
+                $value = is_array($data) ? fb_success_value_text($successField, $data[$fieldKey] ?? '') : '';
+                $successDetail = fb_success_detail_html((string)$settings['success_detail_template'], (string)$successField['label'], $value);
+            }
+        } catch (Throwable $error) {
+            error_log('[form-builder] success detail unavailable: ' . $error->getMessage());
+        }
+    }
     $capacityUsage = fb_select_capacity_usage($pdo, $formId, $allFields);
     foreach ($allFields as $f) {
         if (!in_array($f['type'], ['select', 'radio', 'checkbox'], true)) continue;
@@ -282,6 +319,8 @@ function fb_render_form(PDO $pdo, array $form): string {
 .fb-success .check { width: 72px; height: 72px; margin: 0 auto 1rem; border-radius: 50%; background: linear-gradient(135deg, var(--fb-accent), var(--fb-accent-deep)); color: var(--fb-on-accent, #fff); display: grid; place-items: center; font-size: 2rem; animation: fb-pop .55s cubic-bezier(.34,1.56,.64,1); }
 .fb-success h3 { font-size: 1.4rem; margin-bottom: .5rem; }
 .fb-success p { color: var(--fb-muted); max-width: 44ch; margin: 0 auto 1.2rem; }
+.fb-success-detail { max-width: 52ch; margin: 0 auto 1.5rem; color: var(--fb-text); font-size: 1rem; line-height: 1.55; overflow-wrap: anywhere; }
+.fb-success-value { color: var(--fb-accent-deep); font-size: clamp(1.45rem, 4vw, 2.15rem); font-weight: 800; line-height: 1.2; }
 .fb-ref { display: inline-block; font-family: ui-monospace, monospace; font-weight: 700; letter-spacing: .08em; background: var(--fb-surface); border: 1.5px dashed var(--fb-accent); color: var(--fb-accent-deep); border-radius: 10px; padding: .5rem 1.1rem; }
 @keyframes fb-pop { 0% { transform: scale(.7); } 60% { transform: scale(1.12); } 100% { transform: scale(1); } }
 </style>
@@ -299,6 +338,7 @@ function fb_render_form(PDO $pdo, array $form): string {
     <div class="check">&#10003;</div>
     <h3><?= fb_h(fb_message($settings, 'success_heading')) ?></h3>
     <p><?= nl2br(fb_h($settings['success_message'])) ?></p>
+    <?php if ($successDetail !== ''): ?><div class="fb-success-detail"><?= $successDetail ?></div><?php endif; ?>
     <?php if ($ref !== ''): ?><div><?= fb_h(fb_message($settings, 'reference_label')) ?></div><span class="fb-ref"><?= fb_h($ref) ?></span><?php endif; ?>
   </div>
 <?php else: ?>

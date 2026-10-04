@@ -8,6 +8,7 @@ $access = fb_form_access($form);
 $fields = fb_flat_fields(fb_get_fields($pdo, $formId));
 $types = fb_field_types();
 $inputFields = array_values(array_filter($fields, static fn($f) => !empty($types[$f['type']]['input']) && empty($types[$f['type']]['file'])));
+$successValueFields = array_values(array_filter($inputFields, static fn(array $field): bool => empty($field['is_hidden'])));
 
 $saved = false;
 $canDelegate = user_can($pdo, $uid, 'plugin.form-builder.forms.manage-any') || $access['owner'] === $uid;
@@ -33,6 +34,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     $access = fb_form_access($form);
     $fields = fb_flat_fields(fb_get_fields($pdo, $formId));
     $inputFields = array_values(array_filter($fields, static fn($field) => !empty($types[$field['type']]['input']) && empty($types[$field['type']]['file'])));
+    $successValueFields = array_values(array_filter($inputFields, static fn(array $field): bool => empty($field['is_hidden'])));
     $canDelegate = user_can($pdo, $uid, 'plugin.form-builder.forms.manage-any') || $access['owner'] === $uid;
     $act = (string)($_POST['fb_action'] ?? '');
 
@@ -48,6 +50,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     if ($act === 'save_submission') {
         $settings['submit_label'] = trim((string)($_POST['submit_label'] ?? 'Submit')) ?: 'Submit';
         $settings['success_message'] = trim((string)($_POST['success_message'] ?? ''));
+        $successTemplate = $_POST['success_detail_template'] ?? '';
+        $settings['success_detail_template'] = is_string($successTemplate) ? trim(mb_substr($successTemplate, 0, 2000)) : '';
+        $successField = $_POST['success_detail_field'] ?? '';
+        $successFieldKeys = array_column($successValueFields, 'field_key');
+        $settings['success_detail_field'] = is_string($successField) && in_array($successField, $successFieldKeys, true) ? $successField : '';
         $settings['recaptcha'] = !empty($_POST['recaptcha']) ? '1' : '0';
         $settings['rate_max'] = max(1, min(10000, (int)($_POST['rate_max'] ?? 10)));
         $settings['rate_window'] = max(60, min(604800, (int)($_POST['rate_window'] ?? 3600)));
@@ -165,6 +172,10 @@ $allUsers = $pdo->query("SELECT id, name, email, role FROM `users` WHERE is_dele
       <div class="fba-row2">
         <div class="fba-field"><label>Success message</label><textarea name="success_message" rows="2" style="font-family:inherit"><?= htmlspecialchars($settings['success_message'], ENT_QUOTES) ?></textarea></div>
         <div class="fba-field"><label>Notification email</label><input type="email" name="notify_email" value="<?= htmlspecialchars($settings['notify_email'], ENT_QUOTES) ?>" placeholder="admin@example.com"><div class="fba-hint">Sent after persistence through the Core Mail API.</div></div>
+      </div>
+      <div class="fba-row2">
+        <div class="fba-field"><label>Custom success notification</label><textarea name="success_detail_template" rows="3" maxlength="2000" placeholder="Anda telah mendaftarkan diri di Trial Class {value}" style="font-family:inherit"><?= htmlspecialchars($settings['success_detail_template'], ENT_QUOTES) ?></textarea><div class="fba-hint">Use <span class="fba-code">{value}</span> for the submitted value and <span class="fba-code">{label}</span> for its field label. The value is displayed prominently; without <span class="fba-code">{value}</span>, it is appended below the text.</div></div>
+        <div class="fba-field"><label>Success notification value</label><select name="success_detail_field"><option value="">Disabled</option><?php foreach ($successValueFields as $successValueField): ?><option value="<?= htmlspecialchars($successValueField['field_key'], ENT_QUOTES) ?>" <?= $settings['success_detail_field'] === $successValueField['field_key'] ? 'selected' : '' ?>><?= htmlspecialchars((string)($successValueField['label'] ?: $successValueField['field_key']), ENT_QUOTES) ?></option><?php endforeach; ?></select><div class="fba-hint">Choice fields display their visitor-facing option label instead of the stored key.</div></div>
       </div>
       <div class="fba-row3">
         <div class="fba-field"><label>Confirmation email field</label><select name="confirmation_email_field"><option value="">Disabled</option><?php foreach ($inputFields as $ef) if ($ef['type'] === 'email'): ?><option value="<?= htmlspecialchars($ef['field_key'], ENT_QUOTES) ?>" <?= $settings['confirmation_email_field'] === $ef['field_key'] ? 'selected' : '' ?>><?= htmlspecialchars($ef['label'], ENT_QUOTES) ?></option><?php endif; ?></select></div>

@@ -482,6 +482,8 @@ function fb_default_settings(): array {
     return [
         'submit_label'    => 'Submit',
         'success_message' => 'Thank you! Your submission has been received.',
+        'success_detail_template' => '',
+        'success_detail_field' => '',
         'recaptcha'       => '0',
         'rate_max'        => 10,
         'rate_window'     => 3600,
@@ -507,10 +509,44 @@ function fb_form_settings(array $form): array {
     $s['rate_max'] = max(1, min(10000, (int)$s['rate_max']));
     $s['rate_window'] = max(60, min(604800, (int)$s['rate_window']));
     $s['min_fill_seconds'] = max(0, min(30, (int)($s['min_fill_seconds'] ?? 2)));
+    $s['success_detail_template'] = is_string($s['success_detail_template'] ?? null) ? trim(mb_substr($s['success_detail_template'], 0, 2000)) : '';
+    $s['success_detail_field'] = is_string($s['success_detail_field'] ?? null) && preg_match('/\A[a-z0-9][a-z0-9_]{0,79}\z/', $s['success_detail_field']) === 1 ? $s['success_detail_field'] : '';
     $statuses = array_values(array_unique(array_filter(array_map('strval', (array)($s['workflow_statuses'] ?? [])), static fn(string $v): bool => preg_match('/\A[a-z][a-z0-9_-]{0,39}\z/', $v) === 1)));
     $s['workflow_statuses'] = $statuses ?: ['submitted', 'reviewing', 'accepted', 'rejected', 'archived'];
     if (!in_array('submitted', $s['workflow_statuses'], true)) array_unshift($s['workflow_statuses'], 'submitted');
     return $s;
+}
+
+function fb_success_value_field(array $fields, string $key): ?array {
+    if ($key === '') return null;
+    $types = fb_field_types();
+    foreach ($fields as $field) {
+        $fieldKey = (string)($field['field_key'] ?? $field['key'] ?? '');
+        $type = (string)($field['type'] ?? '');
+        $hidden = !empty($field['is_hidden'] ?? $field['hidden'] ?? false);
+        if ($fieldKey === $key && !$hidden && !empty($types[$type]['input']) && empty($types[$type]['file'])) return $field;
+    }
+    return null;
+}
+
+function fb_success_value_text(array $field, mixed $value): string {
+    if (in_array((string)($field['type'] ?? ''), ['select', 'radio', 'checkbox'], true)) {
+        $options = array_key_exists('options_json', $field)
+            ? fb_field_options($field)
+            : (is_array($field['options'] ?? null) ? $field['options'] : []);
+        $labels = [];
+        foreach ($options as $option) if (is_array($option) && is_scalar($option['value'] ?? null)) $labels[(string)$option['value']] = (string)($option['label'] ?? $option['value']);
+        if (is_array($value)) $value = implode(', ', array_map(static fn(mixed $item): string => $labels[(string)$item] ?? (string)$item, $value));
+        elseif (is_scalar($value)) $value = $labels[(string)$value] ?? (string)$value;
+    } elseif ((string)($field['type'] ?? '') === 'country' && is_string($value) && ($country = fb_country($value)) !== null) {
+        $value = (string)$country['name'];
+    } elseif (is_array($value)) {
+        $value = implode(', ', array_map('strval', $value));
+    }
+    if (!is_scalar($value)) return '';
+    $text = preg_replace('/[\x00-\x1F\x7F]+/u', ' ', (string)$value);
+    $text = is_string($text) ? preg_replace('/\s+/u', ' ', $text) : '';
+    return trim(mb_substr(is_string($text) ? $text : '', 0, 500));
 }
 
 function fb_form_access(array $form): array {

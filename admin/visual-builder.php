@@ -1216,6 +1216,7 @@ fb_admin_css();
       if (setting) field.settings[setting] = value;
       else {
         field[property] = value;
+        if (property === 'hidden' && value && definition.form.settings.success_detail_field === field.key) definition.form.settings.success_detail_field = '';
         if (field.type === 'intl_phone' && property === 'required' && value) {
           const countryField = definition.form.fields.find((candidate) => candidate.key === field.settings?.country_field);
           if (countryField) countryField.required = true;
@@ -1288,7 +1289,7 @@ fb_admin_css();
       definition.form.fields = definition.form.fields.filter((candidate) => candidate.key !== selectedKey);
       const settings = definition.form.settings;
       settings.columns = (settings.columns || []).filter((key) => key !== selectedKey);
-      ['confirmation_email_field', 'reply_to_email_field'].forEach((key) => { if (settings[key] === selectedKey) settings[key] = ''; });
+      ['confirmation_email_field', 'reply_to_email_field', 'success_detail_field'].forEach((key) => { if (settings[key] === selectedKey) settings[key] = ''; });
       Object.values(settings.translations || {}).forEach((translation) => { if (translation?.fields) delete translation.fields[selectedKey]; });
       definition.form.fields.forEach((candidate) => {
         if (candidate.validation?.after_field === selectedKey) delete candidate.validation.after_field;

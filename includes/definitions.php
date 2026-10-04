@@ -191,7 +191,8 @@ function fb_definition_decode(string|array $definition): array {
 
     $settings = $form['settings'] ?? [];
     if (!is_array($settings) || array_diff(array_keys($settings), array_keys(fb_default_settings())) !== []) throw new InvalidArgumentException('Invalid form settings.');
-    foreach (['submit_label','success_message','recaptcha','notify_email','show_total','total_label','accent','currency_code','confirmation_email_field','reply_to_email_field'] as $key) if (isset($settings[$key])) fb_definition_text($settings[$key], 4000, 'Invalid form setting.');
+    foreach (['submit_label','success_message','recaptcha','notify_email','show_total','total_label','accent','currency_code','confirmation_email_field','reply_to_email_field','success_detail_field'] as $key) if (isset($settings[$key])) fb_definition_text($settings[$key], 4000, 'Invalid form setting.');
+    if (isset($settings['success_detail_template'])) fb_definition_text($settings['success_detail_template'], 2000, 'Invalid success detail template.');
     foreach (['rate_max','rate_window','min_fill_seconds'] as $key) if (isset($settings[$key]) && !is_int($settings[$key])) throw new InvalidArgumentException('Invalid numeric setting.');
     if (isset($settings['rate_max']) && ($settings['rate_max'] < 1 || $settings['rate_max'] > 10000)) throw new InvalidArgumentException('Invalid rate maximum.');
     if (isset($settings['rate_window']) && ($settings['rate_window'] < 60 || $settings['rate_window'] > 604800)) throw new InvalidArgumentException('Invalid rate window.');
@@ -205,6 +206,7 @@ function fb_definition_decode(string|array $definition): array {
     if (!is_array($statuses) || !array_is_list($statuses) || count($statuses) < 1 || count($statuses) > 20 || array_values(array_unique($statuses)) !== $statuses || !in_array('submitted', $statuses, true)) throw new InvalidArgumentException('Invalid workflow statuses.');
     foreach ($statuses as $status) if (!is_string($status) || preg_match('/\A[a-z][a-z0-9_-]{0,39}\z/', $status) !== 1) throw new InvalidArgumentException('Invalid workflow status.');
     foreach (['confirmation_email_field','reply_to_email_field'] as $emailKey) if (($settings[$emailKey] ?? '') !== '' && (!isset($byKey[$settings[$emailKey]]) || $byKey[$settings[$emailKey]]['type'] !== 'email')) throw new InvalidArgumentException('Invalid email field reference.');
+    if (($settings['success_detail_field'] ?? '') !== '' && fb_success_value_field($fields, $settings['success_detail_field']) === null) throw new InvalidArgumentException('Invalid success detail field reference.');
     $columns = $settings['columns'] ?? [];
     if (!is_array($columns) || !array_is_list($columns) || count($columns) > 20 || array_values(array_unique($columns)) !== $columns) throw new InvalidArgumentException('Invalid column list.');
     foreach ($columns as $column) if (!is_string($column) || !isset($byKey[$column]) || empty($types[$byKey[$column]['type']]['input'])) throw new InvalidArgumentException('Invalid submission column.');
@@ -217,8 +219,8 @@ function fb_definition_decode(string|array $definition): array {
     foreach ($translations as $locale => $translation) {
         if (!is_array($translation) || array_diff(array_keys($translation), ['form','fields','messages','email']) !== []) throw new InvalidArgumentException('Invalid translation contract.');
         $formText = $translation['form'] ?? [];
-        if (!is_array($formText) || array_diff(array_keys($formText), ['title','description','submit_label','success_message']) !== []) throw new InvalidArgumentException('Invalid form translation.');
-        foreach ($formText as $text) fb_definition_text($text, 4000, 'Invalid translated text.');
+        if (!is_array($formText) || array_diff(array_keys($formText), ['title','description','submit_label','success_message','success_detail_template']) !== []) throw new InvalidArgumentException('Invalid form translation.');
+        foreach ($formText as $textKey => $text) fb_definition_text($text, $textKey === 'success_detail_template' ? 2000 : 4000, 'Invalid translated text.');
         $messages = $translation['messages'] ?? [];
         if (!is_array($messages) || array_diff(array_keys($messages), $messageKeys) !== []) throw new InvalidArgumentException('Invalid public messages.');
         foreach ($messages as $text) fb_definition_text($text, 2000, 'Invalid public message.', false);
@@ -305,7 +307,7 @@ function fb_translation_overlay(array $settings, string $locale): array {
 
 function fb_localized_form(array $form, array $settings): array {
     $translation = fb_translation_overlay($settings, fb_locale())['form'] ?? [];
-    if (is_array($translation)) { foreach (['title','description'] as $key) if (is_string($translation[$key] ?? null)) $form[$key] = $translation[$key]; foreach (['submit_label','success_message'] as $key) if (is_string($translation[$key] ?? null)) $settings[$key] = $translation[$key]; }
+    if (is_array($translation)) { foreach (['title','description'] as $key) if (is_string($translation[$key] ?? null)) $form[$key] = $translation[$key]; foreach (['submit_label','success_message','success_detail_template'] as $key) if (is_string($translation[$key] ?? null)) $settings[$key] = $translation[$key]; }
     if (!is_string($translation['submit_label'] ?? null) && $settings['submit_label'] === fb_default_settings()['submit_label']) $settings['submit_label'] = fb_message($settings, 'default_submit');
     if (!is_string($translation['success_message'] ?? null) && $settings['success_message'] === fb_default_settings()['success_message']) $settings['success_message'] = fb_message($settings, 'default_success');
     return [$form,$settings];
