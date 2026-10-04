@@ -248,6 +248,15 @@ $check(($capacityOptions[0]['capacity'] ?? null) === 3
     && str_contains($fullOptionHtml, 'One — Full')
     && !str_contains($availableOptionHtml, 'value="one" disabled'),
     'select capacity round-trips through definitions and disables only a full public option');
+$displayLabel = 'Kebidanan : "Midwife Challenge" | Sesi A';
+$labelDefinition = $selectDefinition;
+$labelDefinition['form']['fields'][5]['options'][0]['label'] = $displayLabel;
+$decodedLabel = fb_definition_decode($labelDefinition);
+$labelField = $capacityField;
+$labelField['options_json'] = fb_json_encode($decodedLabel['form']['fields'][5]['options']);
+$check(($decodedLabel['form']['fields'][5]['options'][0]['label'] ?? null) === $displayLabel
+    && str_contains(fb_render_field_html($labelField, 'contract', 'i3', false, fb_default_settings()), 'Kebidanan : &quot;Midwife Challenge&quot; | Sesi A'),
+    'select labels preserve punctuation, quotes, and literal pipe characters');
 $parsedCapacity = fb_parse_option_lines("biomedis|Dart Mutation|0|16\nunlimited|Other|0|", 'select');
 $longOptionValue = str_repeat('a', 120);
 $longParsed = fb_parse_option_lines($longOptionValue . '|Long value|0|16', 'select');

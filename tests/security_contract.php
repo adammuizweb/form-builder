@@ -8,7 +8,7 @@ $permissions = array_column($manifest['permissions'] ?? [], null, 'key');
 $composer = json_decode((string)file_get_contents($root . '/composer.json'), true, 32, JSON_THROW_ON_ERROR);
 $lock = json_decode((string)file_get_contents($root . '/composer.lock'), true, 64, JSON_THROW_ON_ERROR);
 $lockedPackages = array_column($lock['packages'] ?? [], 'version', 'name');
-$check(($manifest['version'] ?? null) === '2.1.0' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.122' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
+$check(($manifest['version'] ?? null) === '2.1.1' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.122' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
 $check(($composer['require']['php'] ?? null) === '>=8.1' && ($composer['require']['phpoffice/phpspreadsheet'] ?? null) === '~5.8.1'
     && ($composer['config']['platform']['php'] ?? null) === '8.1.0'
     && ($lockedPackages['phpoffice/phpspreadsheet'] ?? null) === '5.8.1'
@@ -178,9 +178,28 @@ $check(str_contains($visualBuilder, 'data-fbv-type=')
     && str_contains($visualBuilder, 'previewFrame.contentDocument')
     && str_contains($visualBuilder, 'element.inert = true'),
     'Visual Builder exposes draft-only add, select, inspect, and delete interactions after initialization');
-$check(str_contains($visualBuilder, "if (event.target.matches('[data-field-options]')) {\n      const field = currentField();")
-    && str_contains($visualBuilder, "field.type === 'select' ? 4 : 3"),
-    'Visual Builder resolves the selected field before parsing optional capacity values');
+$check(str_contains($visualBuilder, 'const renderOptionEditor = (field)')
+    && str_contains($visualBuilder, 'data-option-prop="label"')
+    && str_contains($visualBuilder, 'data-option-prop="value"')
+    && str_contains($visualBuilder, 'data-option-toggle="price"')
+    && str_contains($visualBuilder, 'data-option-toggle="capacity"')
+    && str_contains($visualBuilder, 'data-option-add')
+    && str_contains($visualBuilder, 'data-option-remove')
+    && str_contains($visualBuilder, 'Kebidanan : "Midwife Challenge"')
+    && !str_contains($visualBuilder, 'data-field-options')
+    && !str_contains($visualBuilder, 'value|Label|price'),
+    'Visual Builder edits labels, values, prices, and optional capacities with structured controls');
+$check(str_contains($visualBuilder, '.fbv-field-picker-shell')
+    && str_contains($visualBuilder, '.fbv-field-picker-control::after')
+    && str_contains($visualBuilder, 'grid-template-columns: 224px minmax(360px, 1fr) 370px')
+    && str_contains($visualBuilder, 'Pick any question directly, including hidden fields.'),
+    'Visual Builder field picker and right inspector use dedicated responsive styling');
+$check(str_contains($visualBuilder, 'Object.defineProperty(translated, option.value')
+    && str_contains($visualBuilder, "optionInput.value = String(previousValue ?? '')")
+    && str_contains($visualBuilder, "optionInput.select === 'function'")
+    && str_contains($visualBuilder, 'priceToggle?.focus({ preventScroll: true })')
+    && substr_count($visualBuilder, 'focus({ preventScroll: true })') >= 3,
+    'structured option edits preserve translations, visibly reject invalid input, and restore keyboard focus');
 $check(str_contains($visualBuilder, 'id="fbvToggleLeft"')
     && str_contains($visualBuilder, 'id="fbvToggleRight"')
     && str_contains($visualBuilder, 'aria-controls="fbvQuestionLibrary"')

@@ -44,8 +44,8 @@ fb_admin_css();
 .fbv-status::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #2b7a4a; box-shadow: 0 0 0 4px rgba(43 122 74 / .12); }
 .fbv-status[data-state="loading"]::before, .fbv-status[data-state="saving"]::before { background: #ca8a04; box-shadow: 0 0 0 4px rgba(202 138 4 / .14); }
 .fbv-status[data-state="error"]::before, .fbv-status[data-state="conflict"]::before { background: #dc2626; box-shadow: 0 0 0 4px rgba(220 38 38 / .12); }
-.fbv-workspace { position: relative; display: grid; grid-template-columns: 224px minmax(360px, 1fr) 288px; min-height: calc(100vh - 150px); margin: 0 -1rem -1rem; background: var(--adam-bg); }
-.fbv.is-left-hidden .fbv-workspace { grid-template-columns: minmax(360px, 1fr) 288px; }
+.fbv-workspace { position: relative; display: grid; grid-template-columns: 224px minmax(360px, 1fr) 370px; min-height: calc(100vh - 150px); margin: 0 -1rem -1rem; background: var(--adam-bg); }
+.fbv.is-left-hidden .fbv-workspace { grid-template-columns: minmax(360px, 1fr) 370px; }
 .fbv.is-right-hidden .fbv-workspace { grid-template-columns: 224px minmax(360px, 1fr); }
 .fbv.is-left-hidden.is-right-hidden .fbv-workspace { grid-template-columns: minmax(360px, 1fr); }
 .fbv.is-left-hidden .fbv-sidebar.left, .fbv.is-right-hidden .fbv-sidebar.right { display: none; }
@@ -53,13 +53,13 @@ fb_admin_css();
 .fbv-panel-toggle:hover, .fbv-panel-toggle:focus-visible { color: var(--adam-accent); border-color: var(--adam-accent); outline: none; }
 .fbv-panel-toggle svg { display: block; width: 13px; height: 13px; transition: transform .2s ease; }
 .fbv-panel-toggle.left { left: 224px; border-left: 0; border-radius: 0 999px 999px 0; }
-.fbv-panel-toggle.right { right: 288px; border-right: 0; border-radius: 999px 0 0 999px; }
+.fbv-panel-toggle.right { right: 370px; border-right: 0; border-radius: 999px 0 0 999px; }
 .fbv.is-left-hidden .fbv-panel-toggle.left { left: 0; }
 .fbv.is-right-hidden .fbv-panel-toggle.right { right: 0; }
 .fbv.is-left-hidden .fbv-panel-toggle.left svg, .fbv.is-right-hidden .fbv-panel-toggle.right svg { transform: rotate(180deg); }
 .fbv-sidebar { padding: 1rem; background: var(--adam-card); }
 .fbv-sidebar.left { border-right: 1px solid var(--adam-border); }
-.fbv-sidebar.right { border-left: 1px solid var(--adam-border); }
+.fbv-sidebar.right { border-left: 1px solid var(--adam-border); background: color-mix(in srgb, var(--adam-card) 96%, var(--adam-bg)); }
 .fbv-sidebar h2 { margin: 0 0 .25rem; font-size: .92rem; }
 .fbv-sidebar > p { margin: 0 0 1rem; color: var(--adam-muted); font-size: .75rem; line-height: 1.45; }
 .fbv-library-title { margin: 1rem 0 .5rem; color: var(--adam-muted); font-size: .66rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
@@ -89,15 +89,53 @@ fb_admin_css();
 .fbv-inspector-empty { padding: 1.1rem; border: 1px dashed var(--adam-border); border-radius: 12px; background: var(--adam-bg); color: var(--adam-muted); font-size: .78rem; line-height: 1.55; }
 .fbv-inspector-type { display: inline-flex; margin-bottom: .8rem; padding: .2rem .45rem; border-radius: 999px; background: color-mix(in srgb, var(--adam-accent) 10%, transparent); color: var(--adam-accent); font-size: .65rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
 .fbv-inspector .fba-field { margin-bottom: .7rem; }
-.fbv-field-picker { width: 100%; margin-bottom: .85rem; }
+.fbv-field-picker-shell { margin-bottom: 1rem; padding: .7rem; border: 1px solid var(--adam-border); border-radius: 12px; background: var(--adam-bg); }
+.fbv-field-picker-shell > label { display: block; margin-bottom: .38rem; color: var(--adam-muted); font-size: .65rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.fbv-field-picker-control { position: relative; }
+.fbv-field-picker-control::after { content: ''; position: absolute; top: 50%; right: .85rem; width: 7px; height: 7px; border-right: 2px solid var(--adam-muted); border-bottom: 2px solid var(--adam-muted); transform: translateY(-70%) rotate(45deg); pointer-events: none; }
+.fbv-field-picker { width: 100%; min-height: 42px; appearance: none; padding: .62rem 2.25rem .62rem .75rem; border: 1.5px solid var(--adam-border); border-radius: 9px; outline: none; background: var(--adam-card); color: var(--adam-text); font-family: inherit; font-size: .8rem; font-weight: 650; line-height: 1.25; cursor: pointer; }
+.fbv-field-picker:hover:not(:disabled) { border-color: color-mix(in srgb, var(--adam-accent) 60%, var(--adam-border)); }
+.fbv-field-picker:focus { border-color: var(--adam-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--adam-accent) 14%, transparent); }
+.fbv-field-picker:disabled { cursor: not-allowed; opacity: .58; }
+.fbv-field-picker-help { display: block; margin-top: .4rem; color: var(--adam-muted); font-size: .68rem; line-height: 1.4; }
 .fbv-inspector textarea { resize: vertical; }
 .fbv-inspector-actions { display: flex; justify-content: space-between; gap: .5rem; margin-top: 1rem; padding-top: .8rem; border-top: 1px solid var(--adam-border); }
 .fbv-position-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; }
 .fbv-inspector-key { font-family: ui-monospace, monospace; font-size: .72rem; }
+.fbv-options { margin: .9rem 0 1rem; }
+.fbv-options-head { display: flex; align-items: flex-start; justify-content: space-between; gap: .7rem; margin-bottom: .65rem; }
+.fbv-options-head strong { display: block; font-size: .78rem; }
+.fbv-options-head span { display: block; margin-top: .14rem; color: var(--adam-muted); font-size: .68rem; line-height: 1.4; }
+.fbv-option-list { display: grid; gap: .65rem; }
+.fbv-option-card { overflow: hidden; border: 1px solid var(--adam-border); border-radius: 12px; background: var(--adam-card); box-shadow: 0 4px 14px rgba(17 40 25 / .04); }
+.fbv-option-card-head { display: flex; align-items: center; gap: .35rem; padding: .48rem .55rem; border-bottom: 1px solid var(--adam-border); background: color-mix(in srgb, var(--adam-accent) 4%, var(--adam-bg)); }
+.fbv-option-number { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 7px; background: color-mix(in srgb, var(--adam-accent) 12%, transparent); color: var(--adam-accent); font-size: .66rem; font-weight: 800; }
+.fbv-option-card-head strong { min-width: 0; flex: 1; overflow: hidden; color: var(--adam-muted); font-size: .67rem; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+.fbv-option-icon { display: grid; place-items: center; width: 25px; height: 25px; padding: 0; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--adam-muted); font: 700 .75rem/1 inherit; cursor: pointer; }
+.fbv-option-icon:hover:not(:disabled), .fbv-option-icon:focus-visible { border-color: var(--adam-border); background: var(--adam-card); color: var(--adam-accent); outline: none; }
+.fbv-option-icon.danger:hover:not(:disabled), .fbv-option-icon.danger:focus-visible { color: var(--adam-danger); }
+.fbv-option-icon:disabled { cursor: not-allowed; opacity: .35; }
+.fbv-option-body { display: grid; gap: .65rem; padding: .7rem; }
+.fbv-option-control { display: grid; gap: .3rem; }
+.fbv-option-control > span, .fbv-option-advanced label > span { color: var(--adam-muted); font-size: .65rem; font-weight: 750; letter-spacing: .04em; }
+.fbv-option-control input, .fbv-option-control textarea, .fbv-option-advanced input { width: 100%; min-height: 38px; padding: .5rem .65rem; border: 1.5px solid var(--adam-border); border-radius: 8px; outline: none; background: var(--adam-bg); color: var(--adam-text); font: inherit; font-size: .78rem; }
+.fbv-option-control textarea { min-height: 58px; resize: vertical; }
+.fbv-option-control input:focus, .fbv-option-control textarea:focus, .fbv-option-advanced input:focus { border-color: var(--adam-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--adam-accent) 12%, transparent); }
+.fbv-option-features { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+.fbv-option-feature { padding: .55rem; border: 1px solid var(--adam-border); border-radius: 9px; background: var(--adam-bg); }
+.fbv-option-feature:only-child { grid-column: 1 / -1; }
+.fbv-option-feature > label { display: flex; align-items: flex-start; gap: .42rem; margin: 0; color: var(--adam-text); font-size: .7rem; font-weight: 700; letter-spacing: 0; text-transform: none; cursor: pointer; }
+.fbv-option-feature input[type=checkbox] { margin-top: .1rem; accent-color: var(--adam-accent); }
+.fbv-option-feature small { display: block; margin-top: .08rem; color: var(--adam-muted); font-size: .61rem; font-weight: 500; line-height: 1.35; }
+.fbv-option-feature input[type=number] { width: 100%; min-height: 34px; margin-top: .5rem; padding: .42rem .5rem; border: 1px solid var(--adam-border); border-radius: 7px; background: var(--adam-card); color: var(--adam-text); font: inherit; font-size: .75rem; }
+.fbv-option-advanced { border-top: 1px dashed var(--adam-border); padding-top: .15rem; }
+.fbv-option-advanced summary { color: var(--adam-muted); font-size: .68rem; font-weight: 700; cursor: pointer; }
+.fbv-option-advanced label { display: grid; gap: .3rem; margin-top: .55rem; }
+.fbv-option-empty { padding: .8rem; border: 1px dashed var(--adam-border); border-radius: 10px; color: var(--adam-muted); font-size: .72rem; text-align: center; }
 .fbv-mode-card { margin-top: 1rem; padding: .85rem; border: 1px solid var(--adam-border); border-radius: 12px; }
 .fbv-mode-card strong { display: block; margin-bottom: .25rem; font-size: .78rem; }
 .fbv-mode-card span { display: block; margin-bottom: .65rem; color: var(--adam-muted); font-size: .72rem; line-height: 1.45; }
-@media (max-width: 1100px) {
+@media (max-width: 1180px) {
   .fbv-workspace { grid-template-columns: 190px minmax(320px, 1fr); }
   .fbv.is-left-hidden .fbv-workspace, .fbv.is-left-hidden.is-right-hidden .fbv-workspace { grid-template-columns: minmax(320px, 1fr); }
   .fbv.is-right-hidden:not(.is-left-hidden) .fbv-workspace { grid-template-columns: 190px minmax(320px, 1fr); }
@@ -116,6 +154,7 @@ fb_admin_css();
   .fbv-library button { min-width: 135px; }
   .fbv-library-title { display: none; }
   .fbv-stage { padding: 1rem .75rem 2rem; }
+  .fbv-option-features { grid-template-columns: 1fr; }
 }
 </style>
 
@@ -178,7 +217,13 @@ fb_admin_css();
     <aside class="fbv-sidebar right" id="fbvQuestionProperties" aria-label="Question properties">
       <h2>Question properties</h2>
       <p>Select a question on the canvas to edit its label, help text, options, required state, and visibility.</p>
-      <select class="fbv-field-picker" id="fbvFieldPicker" aria-label="Select a field" disabled><option value="">Select a field</option></select>
+      <div class="fbv-field-picker-shell">
+        <label for="fbvFieldPicker">Editing field</label>
+        <div class="fbv-field-picker-control">
+          <select class="fbv-field-picker" id="fbvFieldPicker" disabled><option value="">Select a field</option></select>
+        </div>
+        <span class="fbv-field-picker-help">Pick any question directly, including hidden fields.</span>
+      </div>
       <div class="fbv-inspector" id="fbvInspector"><div class="fbv-inspector-empty">Select a field on the canvas, or add one from the library.</div></div>
       <div class="fbv-mode-card">
         <strong>Need advanced layout?</strong>
@@ -327,6 +372,50 @@ fb_admin_css();
     renderFieldPicker();
     renderLayout();
   };
+  const renderOptionEditor = (field) => {
+    const options = Array.isArray(field.options) ? field.options : [];
+    const currency = workingDefinition?.form?.settings?.currency_code || 'USD';
+    const optionCards = options.map((option, index) => {
+      const priced = Number(option.price || 0) !== 0;
+      const limited = field.type === 'select' && Object.prototype.hasOwnProperty.call(option, 'capacity');
+      return `<article class="fbv-option-card" data-option-index="${index}">
+        <header class="fbv-option-card-head">
+          <span class="fbv-option-number">${index + 1}</span>
+          <strong>${escapeHtml(option.label || `Option ${index + 1}`)}</strong>
+          <button class="fbv-option-icon" type="button" data-option-move="up" title="Move option up" aria-label="Move option ${index + 1} up"${index === 0 ? ' disabled' : ''}>&uarr;</button>
+          <button class="fbv-option-icon" type="button" data-option-move="down" title="Move option down" aria-label="Move option ${index + 1} down"${index === options.length - 1 ? ' disabled' : ''}>&darr;</button>
+          <button class="fbv-option-icon danger" type="button" data-option-remove title="Remove option" aria-label="Remove option ${index + 1}"${options.length <= 1 ? ' disabled' : ''}>&times;</button>
+        </header>
+        <div class="fbv-option-body">
+          <label class="fbv-option-control">
+            <span>Text shown to visitors</span>
+            <textarea data-option-prop="label" rows="2" placeholder='Example: Kebidanan : "Midwife Challenge"'>${escapeHtml(option.label || '')}</textarea>
+          </label>
+          <div class="fbv-option-features">
+            <div class="fbv-option-feature">
+              <label><input type="checkbox" data-option-toggle="price"${priced ? ' checked' : ''}><span>Add a price<small>Include an amount for this choice.</small></span></label>
+              <input type="number" data-option-prop="price" step="1" value="${Number(option.price || 0)}" aria-label="Price in ${escapeHtml(currency)}"${priced ? '' : ' hidden'}>
+            </div>
+            ${field.type === 'select' ? `<div class="fbv-option-feature">
+              <label><input type="checkbox" data-option-toggle="capacity"${limited ? ' checked' : ''}><span>Limit registrations<small>Disable this choice when all slots are taken.</small></span></label>
+              <input type="number" data-option-prop="capacity" min="1" max="<?= FB_OPTION_CAPACITY_MAX ?>" step="1" value="${limited ? Number(option.capacity) : 1}" aria-label="Available slots"${limited ? '' : ' hidden'}>
+            </div>` : ''}
+          </div>
+          <details class="fbv-option-advanced">
+            <summary>Advanced</summary>
+            <label><span>Stored value</span><input type="text" data-option-prop="value" value="${escapeHtml(option.value || '')}" placeholder="Unique internal value"></label>
+          </details>
+        </div>
+      </article>`;
+    }).join('');
+    return `<section class="fbv-options">
+      <div class="fbv-options-head">
+        <div><strong>Answer choices</strong><span>Write visitor-facing text normally. Colons, quotes, and pipe characters are supported.</span></div>
+        <button class="fba-btn sm" type="button" data-option-add>Add option</button>
+      </div>
+      <div class="fbv-option-list">${optionCards || '<div class="fbv-option-empty">Add the first answer choice.</div>'}</div>
+    </section>`;
+  };
   const renderInspector = () => {
     const field = currentField();
     if (!field) {
@@ -336,13 +425,9 @@ fb_admin_css();
     const meta = TYPES[field.type] || { label: field.type };
     const isInput = meta.input === true;
     const isChoice = meta.options === true;
-    const encodeOptionPart = (value) => String(value ?? '').replace(/\\/g, '\\\\').replace(/\r/g, '\\r').replace(/\n/g, '\\n').replace(/\|/g, '\\|');
-    const options = (field.options || []).map((option) => `${encodeOptionPart(option.value)}|${encodeOptionPart(option.label)}|${option.price || 0}${field.type === 'select' && option.capacity ? `|${option.capacity}` : ''}`).join('\n');
     const labelControl = field.type === 'divider' ? '' : `<div class="fba-field"><label>${field.type === 'paragraph' ? 'Text' : 'Label'}</label>${field.type === 'paragraph' ? `<textarea data-field-prop="label" rows="4" maxlength="1000">${escapeHtml(field.label)}</textarea>` : `<input data-field-prop="label" type="text" maxlength="1000" value="${escapeHtml(field.label)}">`}</div>`;
     const headingControl = field.type === 'heading' ? `<div class="fba-field"><label>Heading level</label><select data-setting-prop="level">${['h1','h2','h3','h4','h5','h6'].map((level) => `<option value="${level}"${(field.settings?.level || 'h2') === level ? ' selected' : ''}>${level.toUpperCase()}</option>`).join('')}</select></div>` : '';
-    const optionFormat = field.type === 'select' ? 'value|Label|price|capacity' : 'value|Label|price';
-    const capacityHint = field.type === 'select' ? ' Capacity is optional; blank means unlimited.' : '';
-    const inputControls = isInput ? `<div class="fba-field"><label>Field key</label><input class="fbv-inspector-key" type="text" value="${escapeHtml(field.key)}" readonly></div><div class="fba-field"><label>Placeholder</label><input data-field-prop="placeholder" type="text" maxlength="1000" value="${escapeHtml(field.placeholder || '')}"></div><div class="fba-field"><label>Help text</label><input data-field-prop="help" type="text" maxlength="2000" value="${escapeHtml(field.help || '')}"></div>${isChoice ? `<div class="fba-field"><label>Options <span class="fba-hint">${optionFormat}, use \\| for a literal pipe.${capacityHint}</span></label><textarea data-field-options rows="6">${escapeHtml(options)}</textarea></div>` : ''}<div class="fba-checks"><label class="fba-check"><input data-field-prop="required" type="checkbox"${field.required ? ' checked' : ''}> Required</label><label class="fba-check"><input data-field-prop="hidden" type="checkbox"${field.hidden ? ' checked' : ''}> Hidden</label></div>` : '';
+    const inputControls = isInput ? `<div class="fba-field"><label>Field key</label><input class="fbv-inspector-key" type="text" value="${escapeHtml(field.key)}" readonly></div><div class="fba-field"><label>Placeholder</label><input data-field-prop="placeholder" type="text" maxlength="1000" value="${escapeHtml(field.placeholder || '')}"></div><div class="fba-field"><label>Help text</label><input data-field-prop="help" type="text" maxlength="2000" value="${escapeHtml(field.help || '')}"></div>${isChoice ? renderOptionEditor(field) : ''}<div class="fba-checks"><label class="fba-check"><input data-field-prop="required" type="checkbox"${field.required ? ' checked' : ''}> Required</label><label class="fba-check"><input data-field-prop="hidden" type="checkbox"${field.hidden ? ' checked' : ''}> Hidden</label></div>` : '';
     const siblings = ordered(currentFields().filter((candidate) => candidate.parent === field.parent && !['row', 'col'].includes(candidate.type)));
     const siblingIndex = siblings.findIndex((candidate) => candidate.key === field.key);
     const positionControls = `<div class="fba-field"><label>Column</label><select data-field-parent>${layoutColumns().map(({ row, column, rowIndex, columnIndex }) => `<option value="${escapeHtml(column.key)}"${column.key === field.parent ? ' selected' : ''}>Row ${rowIndex + 1}, column ${columnIndex + 1}</option>`).join('')}</select></div><div class="fbv-position-actions"><button class="fba-btn sm" type="button" data-field-move="up"${siblingIndex <= 0 ? ' disabled' : ''}>Move up</button><button class="fba-btn sm" type="button" data-field-move="down"${siblingIndex < 0 || siblingIndex >= siblings.length - 1 ? ' disabled' : ''}>Move down</button></div>`;
@@ -734,50 +819,115 @@ fb_admin_css();
       moveField(selectedKey, event.target.value);
       return;
     }
-    const property = event.target.dataset.fieldProp;
-    const setting = event.target.dataset.settingProp;
-    if (!property && !setting && !event.target.matches('[data-field-options]')) return;
-    if (event.target.matches('[data-field-options]')) {
+    const optionCard = event.target.closest('[data-option-index]');
+    const optionToggle = event.target.closest('[data-option-toggle]');
+    if (optionCard && optionToggle) {
       const field = currentField();
-      if (!field) return;
-      const parseOptionLine = (line) => {
-        const parts = [''];
-        let escaped = false;
-        for (const character of line) {
-          if (escaped) {
-            parts[parts.length - 1] += character === 'n' ? '\n' : character === 'r' ? '\r' : character;
-            escaped = false;
-          } else if (character === '\\') escaped = true;
-          else if (character === '|') parts.push('');
-          else parts[parts.length - 1] += character;
+      const index = Number(optionCard.dataset.optionIndex);
+      if (!field || !Number.isSafeInteger(index) || !field.options?.[index]) return;
+      const feature = optionToggle.dataset.optionToggle;
+      const featureInput = optionCard.querySelector(`[data-option-prop="${feature}"]`);
+      mutateDefinition((definition) => {
+        const option = definition.form.fields.find((candidate) => candidate.key === selectedKey)?.options?.[index];
+        if (!option) return;
+        if (feature === 'price') option.price = optionToggle.checked ? 1 : 0;
+        if (feature === 'capacity' && field.type === 'select') {
+          if (optionToggle.checked) option.capacity = 1;
+          else delete option.capacity;
         }
-        if (escaped) parts[parts.length - 1] += '\\';
-        return parts;
-      };
-      const lines = event.target.value.split(/\r?\n/).filter((line) => line.trim() !== '');
-      const parsed = lines.map(parseOptionLine);
-      const options = parsed.map(([value = '', label = '', price = '0', capacity = '']) => {
-        const option = { value, label, price: Number(price || 0) };
-        if (field.type === 'select' && capacity.trim() !== '') option.capacity = Number(capacity);
-        return option;
       });
-      const optionValues = options.map((option) => option.value);
-      const invalidCapacity = options.some((option) => option.capacity !== undefined && (!Number.isSafeInteger(option.capacity) || option.capacity < 1 || option.capacity > <?= FB_OPTION_CAPACITY_MAX ?>));
-      if (!options.length || options.length > 200 || parsed.some((parts) => parts.length < 2 || parts.length > (field.type === 'select' ? 4 : 3)) || new Set(optionValues).size !== optionValues.length || invalidCapacity || options.some((option) => option.value.trim() === '' || option.label.trim() === '' || /[\x00-\x1f\x7f]/.test(option.value) || !Number.isSafeInteger(option.price) || Math.abs(option.price) > 1000000000000)) {
-        setStatus(`Options need unique ${field.type === 'select' ? 'value|Label|integer price|optional capacity' : 'value|Label|integer price'} entries`, 'error');
-        return;
+      if (featureInput) {
+        featureInput.hidden = !optionToggle.checked;
+        if (optionToggle.checked) {
+          featureInput.value = '1';
+          window.requestAnimationFrame(() => featureInput.focus({ preventScroll: true }));
+        }
+      }
+      setStatus(`${feature === 'price' ? 'Price' : 'Registration limit'} ${optionToggle.checked ? 'enabled' : 'disabled'} - unsaved changes`, 'saving');
+      return;
+    }
+    const optionInput = event.target.closest('[data-option-prop]');
+    if (optionCard && optionInput) {
+      const field = currentField();
+      const index = Number(optionCard.dataset.optionIndex);
+      const property = optionInput.dataset.optionProp;
+      if (!field || !Number.isSafeInteger(index) || !field.options?.[index] || !['label', 'value', 'price', 'capacity'].includes(property)) return;
+      const options = structuredClone(field.options);
+      const option = options[index];
+      const oldValue = option.value;
+      const rejectOptionInput = (message, previousValue) => {
+        optionInput.value = String(previousValue ?? '');
+        optionInput.removeAttribute('aria-invalid');
+        optionInput.focus({ preventScroll: true });
+        if (typeof optionInput.select === 'function') optionInput.select();
+        setStatus(message, 'error');
+      };
+      if (property === 'label') {
+        if (!optionInput.value.trim() || [...optionInput.value].length > 500) {
+          rejectOptionInput('Displayed option text must contain 1 to 500 characters', option.label);
+          return;
+        }
+        option.label = optionInput.value;
+      } else if (property === 'value') {
+        const value = optionInput.value;
+        if (!value.trim() || [...value].length > 200 || /[\x00-\x1f\x7f]/.test(value)
+            || options.some((candidate, candidateIndex) => candidateIndex !== index && candidate.value === value)) {
+          rejectOptionInput('Stored values must be unique and contain 1 to 200 characters', option.value);
+          return;
+        }
+        option.value = value;
+      } else if (property === 'price') {
+        if (optionInput.value.trim() === '') {
+          rejectOptionInput('Price must be a whole number', option.price || 0);
+          return;
+        }
+        const price = Number(optionInput.value);
+        if (!Number.isSafeInteger(price) || Math.abs(price) > 1000000000000) {
+          rejectOptionInput('Price must be a whole number', option.price || 0);
+          return;
+        }
+        option.price = price;
+        if (price === 0) {
+          const priceToggle = optionCard.querySelector('[data-option-toggle="price"]');
+          if (priceToggle) priceToggle.checked = false;
+          optionInput.hidden = true;
+          window.requestAnimationFrame(() => priceToggle?.focus({ preventScroll: true }));
+        }
+      } else {
+        const capacity = Number(optionInput.value);
+        if (field.type !== 'select' || !Number.isSafeInteger(capacity) || capacity < 1 || capacity > <?= FB_OPTION_CAPACITY_MAX ?>) {
+          rejectOptionInput(`Capacity must be between 1 and <?= FB_OPTION_CAPACITY_MAX ?>`, option.capacity || 1);
+          return;
+        }
+        option.capacity = capacity;
+      }
+      optionInput.removeAttribute('aria-invalid');
+      if (property === 'label') {
+        const heading = optionCard.querySelector('.fbv-option-card-head strong');
+        if (heading) heading.textContent = option.label;
       }
       mutateDefinition((definition) => {
-        definition.form.fields.find((field) => field.key === selectedKey).options = options;
-        const allowedValues = new Set(options.map((option) => option.value));
+        const target = definition.form.fields.find((candidate) => candidate.key === selectedKey);
+        if (!target) return;
+        target.options = options;
+        const allowedValues = new Set(options.map((candidate) => candidate.value));
         Object.values(definition.form.settings.translations || {}).forEach((translation) => {
           const translated = translation?.fields?.[selectedKey]?.options;
           if (!translated) return;
+          if (property === 'value' && oldValue !== option.value && Object.prototype.hasOwnProperty.call(translated, oldValue)) {
+            if (!Object.prototype.hasOwnProperty.call(translated, option.value)) {
+              Object.defineProperty(translated, option.value, { value: translated[oldValue], enumerable: true, configurable: true, writable: true });
+            }
+            delete translated[oldValue];
+          }
           Object.keys(translated).forEach((value) => { if (!allowedValues.has(value)) delete translated[value]; });
         });
       });
       return;
     }
+    const property = event.target.dataset.fieldProp;
+    const setting = event.target.dataset.settingProp;
+    if (!property && !setting) return;
     const value = event.target.type === 'checkbox' ? event.target.checked : event.target.value;
     const selected = currentField();
     if (!selected) return;
@@ -805,6 +955,53 @@ fb_admin_css();
     });
   });
   inspector.addEventListener('click', (event) => {
+    const addOption = event.target.closest('[data-option-add]');
+    if (addOption) {
+      const field = currentField();
+      if (!field || !TYPES[field.type]?.options) return;
+      if ((field.options || []).length >= 200) { setStatus('This field has reached the 200-option limit', 'error'); return; }
+      const addedIndex = field.options.length;
+      mutateDefinition((definition) => {
+        const target = definition.form.fields.find((candidate) => candidate.key === selectedKey);
+        if (!target) return;
+        const used = new Set((target.options || []).map((option) => option.value));
+        let number = target.options.length + 1;
+        while (used.has(`option_${number}`)) number++;
+        target.options.push({ value: `option_${number}`, label: `Option ${number}`, price: 0 });
+      }, true);
+      setStatus('Option added - unsaved changes', 'saving');
+      window.requestAnimationFrame(() => inspector.querySelector(`[data-option-index="${addedIndex}"] [data-option-prop="label"]`)?.focus({ preventScroll: true }));
+      return;
+    }
+    const optionCard = event.target.closest('[data-option-index]');
+    const optionMove = event.target.closest('[data-option-move]');
+    const removeOption = event.target.closest('[data-option-remove]');
+    if (optionCard && (optionMove || removeOption)) {
+      const index = Number(optionCard.dataset.optionIndex);
+      const field = currentField();
+      if (!field || !Number.isSafeInteger(index) || !field.options?.[index]) return;
+      if (removeOption && field.options.length <= 1) { setStatus('A choice field needs at least one option', 'error'); return; }
+      const destination = optionMove ? index + (optionMove.dataset.optionMove === 'up' ? -1 : 1) : Math.min(index, field.options.length - 2);
+      const action = removeOption ? 'removed' : 'moved';
+      mutateDefinition((definition) => {
+        const target = definition.form.fields.find((candidate) => candidate.key === selectedKey);
+        if (!target?.options?.[index]) return;
+        if (removeOption) target.options.splice(index, 1);
+        else {
+          if (destination < 0 || destination >= target.options.length) return;
+          [target.options[index], target.options[destination]] = [target.options[destination], target.options[index]];
+        }
+        const allowedValues = new Set(target.options.map((option) => option.value));
+        Object.values(definition.form.settings.translations || {}).forEach((translation) => {
+          const translated = translation?.fields?.[selectedKey]?.options;
+          if (!translated) return;
+          Object.keys(translated).forEach((value) => { if (!allowedValues.has(value)) delete translated[value]; });
+        });
+      }, true);
+      setStatus(`Option ${action} - unsaved changes`, 'saving');
+      window.requestAnimationFrame(() => inspector.querySelector(`[data-option-index="${destination}"] [data-option-prop="label"]`)?.focus({ preventScroll: true }));
+      return;
+    }
     const move = event.target.closest('[data-field-move]');
     if (move && !move.disabled) {
       reorderField(selectedKey, move.dataset.fieldMove === 'up' ? -1 : 1);

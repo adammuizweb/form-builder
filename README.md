@@ -1,6 +1,6 @@
 # Form Builder
 
-Form Builder 2.1.0 is a Jyavani Core 2.3.122 plugin for reusable public forms, private uploads, multilingual definitions, review workflows, and revision-safe visual editing.
+Form Builder 2.1.1 is a Jyavani Core 2.3.122 plugin for reusable public forms, private uploads, multilingual definitions, review workflows, and revision-safe visual editing.
 
 ## Requirements
 
@@ -24,7 +24,7 @@ The `country` field renders a searchable bundled ISO 3166-1 picker and stores th
 
 Priced options and totals use the form's configurable uppercase ISO 4217 `currency_code`; new forms default to `USD`.
 
-Select options may define an optional positive `capacity`. Public forms disable full options, while final submission, restore, and legacy-import checks run under the form mutation lock. Capacity is derived from non-trashed submissions, so trashing or permanently deleting a submission releases its slot without maintaining a separate counter. Classic and Visual Builder option lines use `value|Label|price|capacity`; leave capacity blank for an unlimited option.
+Select options may define an optional positive `capacity`. Public forms disable full options, while final submission, restore, and legacy-import checks run under the form mutation lock. Capacity is derived from non-trashed submissions, so trashing or permanently deleting a submission releases its slot without maintaining a separate counter. Visual Builder provides structured controls for visitor-facing text, stored values, pricing, and optional registration limits. Classic Builder option lines use `value|Label|price|capacity`; leave capacity blank for an unlimited option.
 
 ## Legacy Submission Import
 

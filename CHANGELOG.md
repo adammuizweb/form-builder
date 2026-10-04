@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.1 - 2026-10-04
+
+- Replace Visual Builder's pipe-delimited option textarea with structured choice cards for display text, stored values, pricing, and optional capacities.
+- Improve the right inspector and field picker styling, spacing, focus states, and responsive layout.
+- Preserve punctuation, quotes, and literal pipe characters in visitor-facing option labels without special syntax.
+
 ## 2.1.0 - 2026-10-04
 
 - Add optional per-option capacity limits for Select fields in Classic Builder, Visual Builder, and definition imports.
