@@ -59,9 +59,26 @@ fb_release_form_mutation_lock($pdo, $initialMutationLock);
 $initialMutationLock = null;
 if (!is_string($_POST['fb_started'] ?? null) || !fb_started_check($pdo, (int)$formId, $_POST['fb_started'], (int)$settings['min_fill_seconds'], $locale)) $fail(fb_message($settings, 'wait'), 400);
 
+$existingSubmission = $pdo->prepare('SELECT reference_code FROM fb_submissions WHERE form_id = ? AND idempotency_key = ? LIMIT 1');
+$existingSubmission->execute([$formId, $idempotency]);
+$existingReference = $existingSubmission->fetchColumn();
+if (is_string($existingReference) && $existingReference !== '') fb_success_redirect($pdo, $return, $form, $existingReference);
+
 if ($settings['recaptcha'] === '1') {
     $keys = fb_recaptcha_keys($pdo);
     $captcha = is_string($_POST['g-recaptcha-response'] ?? null) ? $_POST['g-recaptcha-response'] : '';
+    try {
+        $pdo->beginTransaction();
+        $captchaRate = fb_rate_limit_check($pdo, $ctx['ip'], 'captcha_f' . $formId, (int)$settings['rate_window'], (int)$settings['rate_max']);
+        $captchaRate['allowed'] ? $pdo->commit() : $pdo->rollBack();
+    } catch (Throwable $error) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        $fail(fb_message($settings, 'service_unavailable'), 503);
+    }
+    if (!$captchaRate['allowed']) {
+        header('Retry-After: ' . $captchaRate['retry_after']);
+        $fail(fb_message($settings, 'rate_limited'), 429);
+    }
     if ($keys['secret'] === '' || !fb_recaptcha_verify($keys['secret'], $captcha, $ctx['ip'])) $fail(fb_message($settings, 'captcha_failed'));
 }
 
@@ -118,7 +135,7 @@ try {
     $currentToken = fb_visual_definition_hash(fb_visual_canonical_definition($pdo, (int)$formId));
     if (!hash_equals($canonicalToken, $currentToken)) throw new UnexpectedValueException('Form schema changed during submission.');
     $pdo->beginTransaction();
-    $lockedForm = $pdo->prepare('SELECT id FROM fb_forms WHERE id = ? AND deleted_at IS NULL FOR UPDATE');
+    $lockedForm = $pdo->prepare("SELECT id FROM fb_forms WHERE id = ? AND deleted_at IS NULL AND status = 'active' FOR UPDATE");
     $lockedForm->execute([$formId]);
     if ($lockedForm->fetchColumn() === false) throw new UnexpectedValueException('Form changed during submission.');
     $rate = fb_rate_limit_check($pdo, $ctx['ip'], 'submit_f' . $formId, (int)$settings['rate_window'], (int)$settings['rate_max']);

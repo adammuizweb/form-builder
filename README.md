@@ -1,6 +1,6 @@
 # Form Builder
 
-Form Builder 2.2.4 is a Jyavani Core 2.3.140 plugin for reusable public forms, configurable private multi-file uploads, multilingual definitions, review workflows, and revision-safe visual editing.
+Form Builder 2.3.0 is a Jyavani Core 2.3.140 plugin for reusable public forms, configurable private multi-file uploads, multilingual definitions, review workflows, and revision-safe visual editing.
 
 ## Requirements
 
@@ -17,6 +17,10 @@ Core runs `migrations/` during install, update, or enable. Runtime requests only
 Embed an active form with `[form slug="contact"]`. On Jyavani Core 2.3.167 or newer, authorized forms are highlighted in Article, Page, and Theme Content CodeMirror editors; hover identifies the form and Ctrl/Cmd-click, Enter, or F12 opens its Visual Builder in a new tab. Older supported Core versions continue rendering forms without editor-reference navigation. Theme Section integrations may render `form-builder` with a `slug` attribute, and Theme Zones may use the Form Builder widget. Repeated embeds receive unique DOM IDs. Form slugs preserve valid hyphens and underscores when settings or status change. Authorized Form Builder editors see a non-public status notice when an embed points to a draft, archived, trashed, or missing form; visitors never receive an unavailable form.
 
 Definitions use schema version `1` and deterministically upsert by slug. The admin import/export controls omit submissions, files, secrets, ACL, and unsafe code by default. PHP integrations can call `fb_export_form_definition()` and `fb_upsert_form_definition()` directly after checking their own authorization.
+
+The dedicated global Settings page owns shared reCAPTCHA keys, versioned definition import, and workspace documentation. Stored reCAPTCHA secrets are never rendered back to administrators; key rotation saves a matching site-key/secret pair atomically. Clearing both keys is allowed only when no active form requires them. Forms can opt into the Google reCAPTCHA v2 checkbox only after both global keys are configured.
+
+The forms workspace separates current and archived forms. Archiving stops public rendering and submissions while retaining fields, submissions, drafts, and private uploads. The Archived view can reactivate a form as a draft for review; the Bin remains a separate soft-deletion workflow.
 
 Public labels, help, options, UI messages, validation messages, success text, and administrator/applicant mail templates can be overridden under any valid locale key in `settings.translations`. Locale identifiers use normalized lowercase BCP 47 syntax, such as `fr`, `pt-br`, or `zh-hant`; an exact locale falls back to its base language and then to the built-in English text. Unknown translation keys and malformed or oversized values are rejected during definition validation.
 

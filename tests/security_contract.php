@@ -8,7 +8,7 @@ $permissions = array_column($manifest['permissions'] ?? [], null, 'key');
 $composer = json_decode((string)file_get_contents($root . '/composer.json'), true, 32, JSON_THROW_ON_ERROR);
 $lock = json_decode((string)file_get_contents($root . '/composer.lock'), true, 64, JSON_THROW_ON_ERROR);
 $lockedPackages = array_column($lock['packages'] ?? [], 'version', 'name');
-$check(($manifest['version'] ?? null) === '2.2.4' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.140' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
+$check(($manifest['version'] ?? null) === '2.3.0' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.140' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
 $check(in_array('content-editor', $manifest['dependencies']['js'] ?? [], true), 'upload descriptions declare the Core content-editor dependency');
 $staticCopies = array_column($manifest['static']['copy'] ?? [], 'to', 'from');
 $check(($staticCopies['public/proof.js'] ?? null) === 'static/plugins/form-builder/proof.js', 'submission proof generator publishes only in the plugin-owned static namespace');
@@ -25,6 +25,10 @@ $check(($adminPages['admin/tools/form-builder/editor']['file'] ?? null) === 'adm
     && ($adminPages['admin/tools/form-builder/editor']['permission'] ?? null) === 'plugin.form-builder.workspace.access'
     && ($adminPages['admin/tools/form-builder/editor']['hidden'] ?? false) === true,
     'Visual Builder has a hidden permission-bound dashboard route');
+$check(($adminPages['admin/tools/form-builder/settings']['file'] ?? null) === 'admin/global-settings.php'
+    && ($adminPages['admin/tools/form-builder/settings']['permission'] ?? null) === 'plugin.form-builder.workspace.access'
+    && ($adminPages['admin/tools/form-builder/settings']['hidden'] ?? false) === true,
+    'global Settings has a hidden workspace-bound dashboard route');
 $check(is_file($root . '/migrations/0001-baseline.sql') && is_file($root . '/migrations/0002-submission-workflow.php') && is_file($root . '/migrations/0003-visual-builder-drafts.php') && is_file($root . '/migrations/0004-option-capacity.php') && count(glob($root . '/migrations/*') ?: []) === 4, 'only final append-only migration names ship');
 $builder = (string)file_get_contents($root . '/tools/build-package.php');
 $check(!str_contains($builder, "'form-builder/' .") && str_contains($builder, "str_replace(DIRECTORY_SEPARATOR, '/', \$relative)"), 'package builder writes plugin.json at the archive root');
@@ -51,7 +55,7 @@ $proofScript = (string)file_get_contents($root . '/public/proof.js');
 $plugin = (string)file_get_contents($root . '/plugin.php');
 $check(!preg_match('/(?<!jy_)mail\s*\(/', $submit) && strpos($submit, '$pdo->commit()') < strpos($submit, 'jy_mail_send'), 'Core mail executes only after persistence');
 $check(!str_contains($submit, 'HTTP_X_FORWARDED_FOR') && str_contains($submit, 'do_action_isolated'), 'submission path retains trusted IP and isolated observer contracts');
-$check(substr_count($submit, 'fb_success_redirect($pdo, $return, $form,') === 3
+$check(substr_count($submit, 'fb_success_redirect($pdo, $return, $form,') === 4
     && str_contains($publicHelpers, 'function fb_success_token(')
     && str_contains($publicHelpers, "hash_hmac('sha256', \"success\\0")
     && str_contains($publicHelpers, 'function fb_success_token_check(')
@@ -108,12 +112,44 @@ $check($capacityUsageSource !== '' && substr_count($capacityUsageSource, '$pdo->
     'capacity rendering uses one live-submission query and canonical edits preserve occupied field identities');
 $check(!str_contains((string)file_get_contents($root . '/plugin.php'), 'CREATE TABLE') && !str_contains((string)file_get_contents($root . '/plugin.php'), 'ALTER TABLE'), 'runtime entrypoint contains no DDL');
 $adminIndex = (string)file_get_contents($root . '/admin/index.php');
+$globalSettings = (string)file_get_contents($root . '/admin/global-settings.php');
 $settings = (string)file_get_contents($root . '/admin/settings.php');
 $visualBuilder = (string)file_get_contents($root . '/admin/visual-builder.php');
 $visualPreview = (string)file_get_contents($root . '/admin/visual-preview.php');
 $classicBuilder = (string)file_get_contents($root . '/admin/builder.php');
 $classicCanvas = (string)file_get_contents($root . '/admin/_canvas.php');
 $adminUi = (string)file_get_contents($root . '/admin/_ui.php');
+$check(str_contains($adminIndex, 'admin/tools/form-builder/settings')
+    && !str_contains($adminIndex, "\$act === 'save_recaptcha'")
+    && !str_contains($adminIndex, "\$act === 'import_definition'")
+    && !str_contains($adminIndex, 'id="fba-rc"')
+    && !str_contains($adminIndex, 'id="fba-import"'),
+    'the forms header links one dedicated Settings page without legacy global modals');
+$check(str_contains($globalSettings, "adiwira_require_permission(\$pdo, 'plugin.form-builder.workspace.access'")
+    && str_contains($globalSettings, "plugin.form-builder.global-settings.manage")
+    && str_contains($globalSettings, "plugin.form-builder.definitions.manage")
+    && str_contains($globalSettings, 'csrf_check($csrfInput)')
+    && str_contains($globalSettings, 'type="password" name="secret"')
+    && str_contains($globalSettings, 'value="" autocomplete="new-password"')
+    && !str_contains($globalSettings, "value=\"<?= htmlspecialchars(\$keys['secret']")
+    && str_contains($globalSettings, 'fba-more-menu')
+    && str_contains($globalSettings, 'fba-portal')
+    && str_contains($globalSettings, 'Form Lifecycle')
+    && str_contains($plugin, 'function fb_recaptcha_configured(')
+    && str_contains($plugin, 'function fb_acquire_recaptcha_config_lock(')
+    && str_contains($plugin, 'function fb_recaptcha_active_form_count(')
+    && str_contains($globalSettings, '$pdo->beginTransaction()')
+    && str_contains($globalSettings, 'name="clear_keys"')
+    && str_contains($globalSettings, 'fb_acquire_recaptcha_config_lock($pdo)')
+    && str_contains($globalSettings, 'fb_recaptcha_active_form_count($pdo)')
+    && str_contains($globalSettings, 'Enter the matching secret key when changing the site key.'),
+    'global Settings independently authorizes mutations, protects stored secrets, and documents workspace controls');
+$check(str_contains($adminUi, '.fba-head h1 { display: inline-flex;')
+    && str_contains($adminUi, 'border-left: 4px solid var(--adam-accent)')
+    && !str_contains($adminIndex, '<td data-col="updated" style="white-space:nowrap" class="fba-sub">')
+    && !str_contains((string)file_get_contents($root . '/admin/submissions.php'), '<td style="white-space:nowrap" class="fba-sub">')
+    && !str_contains((string)file_get_contents($root . '/admin/bin.php'), '<td style="white-space:nowrap" class="fba-sub">'),
+    'outlined admin headings and nested secondary text preserve symmetric table-cell layout');
 $referenceProviderAt = strpos($plugin, "register_editor_reference_provider('form-builder'");
 $referenceProviderEnd = strpos($plugin, "if (function_exists('register_theme_section'))", $referenceProviderAt ?: 0);
 $referenceProviderSource = $referenceProviderAt !== false && $referenceProviderEnd !== false
@@ -124,7 +160,8 @@ $check(str_contains($plugin, "register_editor_reference_provider('form-builder'"
     && str_contains($plugin, "'shortcode' => 'form'")
     && str_contains($plugin, "'attribute' => 'slug'")
     && str_contains($plugin, 'fb_can_access_form($pdo, $form, $uid)')
-    && str_contains($plugin, "'page' => 'admin/tools/form-builder/editor'"),
+    && str_contains($plugin, 'admin/tools/form-builder/editor')
+    && str_contains($plugin, "['page'=>'admin/tools/form-builder','scope'=>'archived']"),
     'Form shortcode references are permission-filtered and target the authorized Visual Builder route');
 $check($referenceProviderSource !== ''
     && str_contains($referenceProviderSource, "\$columns = 'id, title, slug, status, created_by, access_json'")
@@ -220,6 +257,7 @@ $check(str_contains($draftHelpers, 'function fb_visual_publish_draft(')
     && str_contains($draftHelpers, 'function fb_visual_canonical_definition(')
     && str_contains($draftHelpers, 'fb_visual_replace_canonical(')
     && str_contains($draftHelpers, 'deleted_at IS NULL')
+    && str_contains($draftHelpers, 'Reactivate this form as a draft before publishing it.')
     && str_contains($plugin, 'SELECT GET_LOCK(?, ?)')
     && str_contains((string)file_get_contents($root . '/admin/bin.php'), 'fb_acquire_form_mutation_lock($pdo, $formId)'),
     'transactional publishing preserves the field bin and serializes with Classic edits and restores');
@@ -343,8 +381,35 @@ $check(str_contains($plugin, 'function fb_render_embed(')
     && substr_count($plugin, 'return fb_render_embed(') === 3,
     'inactive embed diagnostics are editor-only and shared by shortcodes, Theme Sections, and Theme Zones');
 $check(str_contains($plugin, "empty(\$form['deleted_at']) && (\$form['status'] ?? '') === 'active'")
-    && str_contains($submit, "!empty(\$form['deleted_at']) || (\$form['status'] ?? '') !== 'active'"),
+    && str_contains($submit, "!empty(\$form['deleted_at']) || (\$form['status'] ?? '') !== 'active'")
+    && str_contains($submit, "deleted_at IS NULL AND status = 'active' FOR UPDATE"),
     'trashed forms cannot render publicly or accept submissions even if their prior status was active');
+$check(str_contains($plugin, 'function fb_archive_form(')
+    && str_contains($plugin, 'function fb_reactivate_form_as_draft(')
+    && str_contains($plugin, "status IN ('active','draft')")
+    && str_contains($plugin, "status = 'archived'")
+    && str_contains($adminIndex, "\$scope === 'archived'")
+    && str_contains($adminIndex, 'Reactivate as draft')
+    && str_contains($adminIndex, 'fb_reactivate_form_as_draft($pdo, $target)')
+    && str_contains($adminIndex, 'fb_archive_form($pdo, $target)')
+    && str_contains($settings, 'Use the Archived forms view to reactivate this form safely as a draft.')
+    && str_contains($definitionsSource, "\$nextStatus = \$row && (\$row['status'] ?? '') === 'archived' ? 'archived'"),
+    'archive is a locked visible lifecycle with a separate archived view and safe draft reactivation');
+$check(str_contains($publicRenderer, 'class="g-recaptcha"')
+    && str_contains($publicRenderer, 'https://www.google.com/recaptcha/api.js')
+    && str_contains($publicRenderer, '$recaptchaScriptPrinted')
+    && !str_contains($publicRenderer, 'recaptcha/api.js" async')
+    && str_contains($settings, 'Configure both global reCAPTCHA keys before enabling reCAPTCHA for this form.')
+    && str_contains($settings, 'Configure both global reCAPTCHA keys before activating this form.')
+    && str_contains($definitionsSource, 'Configure both global reCAPTCHA keys before importing an enabled form.')
+    && str_contains($draftHelpers, 'Configure both global reCAPTCHA keys before publishing this form.')
+    && str_contains($plugin, "\$restoreStatus === 'active' && \$restoreSettings['recaptcha'] === '1'")
+    && str_contains($settings, 'fb_acquire_recaptcha_config_lock($pdo)')
+    && str_contains($definitionsSource, 'fb_acquire_recaptcha_config_lock($pdo)')
+    && str_contains($draftHelpers, 'fb_acquire_recaptcha_config_lock($pdo)')
+    && strpos($submit, "'captcha_f' . \$formId") < strpos($submit, 'fb_recaptcha_verify(')
+    && strpos($submit, 'SELECT reference_code FROM fb_submissions WHERE form_id = ? AND idempotency_key = ? LIMIT 1') < strpos($submit, 'fb_recaptcha_verify('),
+    'configured per-form reCAPTCHA renders one v2 runtime and cannot be enabled without both global keys');
 $check(str_contains($plugin, 'function fb_can_view_submissions(')
     && str_contains($plugin, "['submissions']['roles']")
     && str_contains($settings, 'name="submission_users[]"'),

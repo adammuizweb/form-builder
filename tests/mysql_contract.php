@@ -38,6 +38,7 @@ $check = static function (bool $ok, string $message) use (&$failures): void { ec
 try {
     $server->exec('CREATE DATABASE `' . $database . '` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci');
     $pdo = new PDO($dsn . ';dbname=' . $database, $user, $password, [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_EMULATE_PREPARES=>false]);
+    $pdo->exec('CREATE TABLE settings (`key` varchar(191) NOT NULL PRIMARY KEY, `value` longtext NULL, autoload tinyint(1) NOT NULL DEFAULT 1) ENGINE=InnoDB');
     foreach (plugin_migrations_split_sql((string)file_get_contents(dirname(__DIR__) . '/migrations/0001-baseline.sql')) as $sql) $pdo->exec($sql);
     $check((int)$pdo->query("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ('fb_forms','fb_fields','fb_submissions','fb_rate_limits')")->fetchColumn() === 4, 'baseline creates the complete 1.5.2 schema');
     $rateResults = [];
@@ -93,6 +94,10 @@ try {
     try { fb_acquire_form_mutation_lock($concurrentPdo, $capacityFormId, 0); $concurrentBlocked = false; } catch (UnexpectedValueException) { $concurrentBlocked = true; }
     fb_release_form_mutation_lock($pdo, $capacityLock);
     $check($concurrentBlocked, 'form-scoped advisory locking serializes concurrent capacity-increasing mutations');
+    $recaptchaLock = fb_acquire_recaptcha_config_lock($pdo);
+    try { fb_acquire_recaptcha_config_lock($concurrentPdo, 0); $recaptchaConcurrentBlocked = false; } catch (UnexpectedValueException) { $recaptchaConcurrentBlocked = true; }
+    fb_release_recaptcha_config_lock($pdo, $recaptchaLock);
+    $check($recaptchaConcurrentBlocked, 'global reCAPTCHA configuration lock serializes key and activation changes');
     $capacityFields = fb_flat_fields(fb_get_fields($pdo, $capacityFormId));
     $renamedFields = $capacityFields;
     foreach ($renamedFields as &$candidate) if ($candidate['field_key'] === 'trial_class') $candidate['field_key'] = 'renamed_trial_class';
@@ -173,6 +178,60 @@ try {
     $publishedUpload = $pdo->query("SELECT help_text,settings_json FROM fb_fields WHERE form_id={$publishFormId} AND field_key='proof_upload' AND deleted_at IS NULL")->fetch(PDO::FETCH_ASSOC);
     $publishedUploadSettings = is_array($publishedUpload) ? json_decode((string)$publishedUpload['settings_json'], true) : null;
     $check($unsafePublishRejected && $publishedDraft['revision'] === 3 && $publishedDraft['published_changed'] === false && $publishedDraft['has_unpublished_changes'] === false && $publishedForm['title'] === 'Published visual form' && $publishedForm['status'] === 'active' && $publishedField === 'Published email' && $publishedSettings['unsafe_code_enabled'] === true && $publishedSettings['submission_proof_enabled'] === '1' && $publishedSettings['submission_proof_format'] === 'pdf' && ($publishedUpload['help_text'] ?? null) === 'Legacy help' && ($publishedUploadSettings['upload_description_html'] ?? null) === '<p>Published <strong>description</strong>.</p>' && $publishedForm['css'] === '.published-unsafe{color:blue}' && $publishedForm['js'] === 'window.publishedUnsafe=true', 'transactional publish preserves proof settings and upload descriptions while requiring unsafe permission for protected changes');
+
+    $lifecycleDefinition = json_decode($definitionJson, true, 64, JSON_THROW_ON_ERROR);
+    $lifecycleDefinition['definition_id'] = hash('sha256', 'form-builder:lifecycle-contract');
+    $lifecycleDefinition['form']['slug'] = 'lifecycle-contract';
+    $lifecycleDefinition['form']['title'] = 'Lifecycle contract';
+    $lifecycleDefinition['form']['status'] = 'active';
+    $lifecycleResult = fb_upsert_form_definition($pdo, $lifecycleDefinition, 11, false);
+    $lifecycleFormId = (int)$lifecycleResult['form_id'];
+    $pdo->prepare("INSERT INTO fb_submissions (form_id,reference_code,workflow_status,data_json) VALUES (?,?,'submitted',?)")->execute([$lifecycleFormId,'LIFECYCLE-1',fb_json_encode(['name'=>'Preserved'])]);
+    $lifecycleForm = fb_get_form($pdo, $lifecycleFormId);
+    fb_archive_form($pdo, $lifecycleForm);
+    $archivedForm = fb_get_form($pdo, $lifecycleFormId);
+    try { fb_archive_form($pdo, $archivedForm); $secondArchiveRejected = false; } catch (UnexpectedValueException) { $secondArchiveRejected = true; }
+    $archivedDefinition = fb_export_form_definition($pdo, $lifecycleFormId);
+    $archivedDefinition['form']['status'] = 'active';
+    fb_upsert_form_definition($pdo, $archivedDefinition, 11, false);
+    $archivedForm = fb_get_form($pdo, $lifecycleFormId);
+    $lifecycleCounts = $pdo->query("SELECT (SELECT COUNT(*) FROM fb_fields WHERE form_id={$lifecycleFormId}) fields_count,(SELECT COUNT(*) FROM fb_submissions WHERE form_id={$lifecycleFormId}) submissions_count")->fetch(PDO::FETCH_ASSOC);
+    fb_reactivate_form_as_draft($pdo, $archivedForm);
+    $reactivatedForm = fb_get_form($pdo, $lifecycleFormId);
+    try { fb_reactivate_form_as_draft($pdo, $reactivatedForm); $secondReactivateRejected = false; } catch (UnexpectedValueException) { $secondReactivateRejected = true; }
+    $check($archivedForm['status'] === 'archived' && $archivedForm['deleted_at'] === null && $archivedForm['slug'] === 'lifecycle-contract'
+        && (int)($lifecycleCounts['fields_count'] ?? 0) === 5 && (int)($lifecycleCounts['submissions_count'] ?? 0) === 1
+        && $reactivatedForm['status'] === 'draft' && $reactivatedForm['deleted_at'] === null
+        && $secondArchiveRejected && $secondReactivateRejected,
+        'archive and definition import preserve form data and offline state while reactivation returns safely to draft');
+
+    fb_archive_form($pdo, $publishedForm);
+    $archivedPublishDraft = fb_visual_load_draft($pdo, $publishFormId, 11, true);
+    try { fb_visual_publish_draft($pdo, $publishFormId, $archivedPublishDraft['revision'], 11, true); $archivedPublishRejected = false; } catch (UnexpectedValueException) { $archivedPublishRejected = true; }
+    $archivedPublishedForm = fb_get_form($pdo, $publishFormId);
+    fb_reactivate_form_as_draft($pdo, $archivedPublishedForm);
+    $publishedForm = fb_get_form($pdo, $publishFormId);
+    $check($archivedPublishRejected && $publishedForm['status'] === 'draft', 'Visual publishing cannot bypass archived-to-draft reactivation');
+
+    $captchaDefinition = $lifecycleDefinition;
+    $captchaDefinition['definition_id'] = hash('sha256', 'form-builder:captcha-contract');
+    $captchaDefinition['form']['slug'] = 'captcha-contract';
+    $captchaDefinition['form']['settings']['recaptcha'] = '1';
+    try { fb_upsert_form_definition($pdo, $captchaDefinition, 11, false); $captchaImportRejected = false; } catch (InvalidArgumentException) { $captchaImportRejected = true; }
+    $captchaDraft = fb_visual_load_draft($pdo, $publishFormId, 11, true);
+    $captchaDraft['definition']['form']['settings']['recaptcha'] = '1';
+    $captchaSaved = fb_visual_save_draft($pdo, $publishFormId, $captchaDraft['definition'], $captchaDraft['revision'], 11, true);
+    try { fb_visual_publish_draft($pdo, $publishFormId, $captchaSaved['revision'], 11, true); $captchaPublishRejected = false; } catch (UnexpectedValueException) { $captchaPublishRejected = true; }
+    $legacyRecaptchaSettings = fb_form_settings($reactivatedForm);
+    $legacyRecaptchaSettings['recaptcha'] = '1';
+    $pdo->prepare("UPDATE fb_forms SET status='active',settings_json=? WHERE id=?")->execute([fb_json_encode($legacyRecaptchaSettings),$lifecycleFormId]);
+    $legacyRecaptchaForm = fb_get_form($pdo, $lifecycleFormId);
+    fb_trash_form($pdo, $legacyRecaptchaForm);
+    $trashedLegacyRecaptchaForm = fb_get_form($pdo, $lifecycleFormId);
+    fb_restore_form($pdo, $trashedLegacyRecaptchaForm);
+    $restoredLegacyRecaptchaForm = fb_get_form($pdo, $lifecycleFormId);
+    $check($captchaImportRejected && $captchaPublishRejected && $restoredLegacyRecaptchaForm['status'] === 'draft', 'every activation path requires configured reCAPTCHA keys and legacy Bin restore falls back to draft');
+
     $deleteForm = $publishedForm;
     $storageRoot = fb_prepare_files_base_dir($deleteForm);
     $storedDirectory = fb_ensure_storage_directory($storageRoot, [(string)$publishFormId, '2026', '09']);

@@ -264,17 +264,23 @@ function fb_upsert_form_definition(PDO $pdo, string|array $input, ?int $actorId 
     $lockLookup->execute([$form['slug']]);
     $lockFormId = $lockLookup->fetchColumn();
     $mutationLock = $lockFormId !== false ? fb_acquire_form_mutation_lock($pdo, (int)$lockFormId) : null;
+    $recaptchaLock = null;
     try {
         $pdo->beginTransaction();
         $existing = $pdo->prepare('SELECT * FROM fb_forms WHERE slug = ? FOR UPDATE'); $existing->execute([$form['slug']]); $row = $existing->fetch(PDO::FETCH_ASSOC);
         $css = $allowUnsafeCode && $form['css'] !== '' ? $form['css'] : null; $js = $allowUnsafeCode && $form['js'] !== '' ? $form['js'] : null;
+        $nextStatus = $row && ($row['status'] ?? '') === 'archived' ? 'archived' : $form['status'];
+        if ($nextStatus === 'active' && $settings['recaptcha'] === '1') {
+            $recaptchaLock = fb_acquire_recaptcha_config_lock($pdo);
+            if (!fb_recaptcha_configured($pdo, true)) throw new InvalidArgumentException('Configure both global reCAPTCHA keys before importing an enabled form.');
+        }
         if ($row) {
             $formId = (int)$row['id'];
             fb_assert_capacity_configuration($pdo, $formId, fb_flat_fields(fb_get_fields($pdo, $formId)), $form['fields']);
-            $pdo->prepare('UPDATE fb_forms SET title=?,description=?,status=?,settings_json=?,css=?,js=?,updated_at=NOW() WHERE id=?')->execute([trim($form['title']),trim($form['description']) ?: null,$form['status'],fb_json_encode($settings),$css,$js,$formId]);
+            $pdo->prepare('UPDATE fb_forms SET title=?,description=?,status=?,settings_json=?,css=?,js=?,updated_at=NOW() WHERE id=?')->execute([trim($form['title']),trim($form['description']) ?: null,$nextStatus,fb_json_encode($settings),$css,$js,$formId]);
             $pdo->prepare('DELETE FROM fb_fields WHERE form_id = ?')->execute([$formId]);
         } else {
-            $pdo->prepare('INSERT INTO fb_forms (slug,title,description,status,settings_json,css,js,access_json,created_by) VALUES (?,?,?,?,?,?,?,?,?)')->execute([$form['slug'],trim($form['title']),trim($form['description']) ?: null,$form['status'],fb_json_encode($settings),$css,$js,fb_json_encode(['roles'=>[],'users'=>[],'owner'=>$actorId ?? 0,'submissions'=>['roles'=>[],'users'=>[]]]),$actorId]);
+            $pdo->prepare('INSERT INTO fb_forms (slug,title,description,status,settings_json,css,js,access_json,created_by) VALUES (?,?,?,?,?,?,?,?,?)')->execute([$form['slug'],trim($form['title']),trim($form['description']) ?: null,$nextStatus,fb_json_encode($settings),$css,$js,fb_json_encode(['roles'=>[],'users'=>[],'owner'=>$actorId ?? 0,'submissions'=>['roles'=>[],'users'=>[]]]),$actorId]);
             $formId = (int)$pdo->lastInsertId();
         }
         $ids = []; $pending = $form['fields'];
@@ -292,7 +298,10 @@ function fb_upsert_form_definition(PDO $pdo, string|array $input, ?int $actorId 
         $pdo->prepare('INSERT INTO fb_import_ledger (definition_id,form_slug,schema_version,definition_sha256,form_id,imported_by) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE definition_sha256=VALUES(definition_sha256),form_id=VALUES(form_id),imported_by=VALUES(imported_by),created_at=NOW()')->execute([$definitionId,$form['slug'],FB_DEFINITION_SCHEMA,$hash,$formId,$actorId]);
         $pdo->commit(); return ['form_id'=>$formId,'slug'=>$form['slug'],'sha256'=>$hash];
     } catch (Throwable $error) { if ($pdo->inTransaction()) $pdo->rollBack(); throw $error; }
-    finally { if ($mutationLock !== null) fb_release_form_mutation_lock($pdo, $mutationLock); }
+    finally {
+        if ($recaptchaLock !== null) fb_release_recaptcha_config_lock($pdo, $recaptchaLock);
+        if ($mutationLock !== null) fb_release_form_mutation_lock($pdo, $mutationLock);
+    }
 }
 
 function fb_normalize_locale(string $locale): ?string {

@@ -657,7 +657,7 @@ function fb_render_embed(PDO $pdo, string $slug): string {
     };
     $message = match ($status) {
         'draft' => 'Activate this form to display it to visitors.',
-        'archived' => 'Restore or duplicate this form before embedding it.',
+        'archived' => 'Reactivate this form as a draft or duplicate it before embedding it.',
         'trashed' => 'Restore this form from the Bin before embedding it.',
         default => 'Check that the shortcode slug exactly matches an existing form.',
     };
@@ -671,7 +671,7 @@ function fb_render_embed(PDO $pdo, string $slug): string {
 
 // All forms available for one workspace capability (PHP-filtered; form counts are small).
 // Trashed forms (deleted_at) are always excluded — they live in the Bin.
-function fb_accessible_forms(PDO $pdo, string $statusFilter = "status != 'archived'", string $capability = 'workspace'): array {
+function fb_accessible_forms(PDO $pdo, string $statusFilter = "status IN ('active','draft')", string $capability = 'workspace'): array {
     $rows = $pdo->query("SELECT * FROM `fb_forms` WHERE {$statusFilter} AND deleted_at IS NULL ORDER BY updated_at DESC, id DESC")->fetchAll(PDO::FETCH_ASSOC);
     $rows = is_array($rows) ? $rows : [];
     $uid = function_exists('current_user_id') ? (int)current_user_id() : 0;
@@ -686,7 +686,39 @@ function fb_accessible_forms(PDO $pdo, string $statusFilter = "status != 'archiv
     }));
 }
 
-// ---------------- Form Bin (soft delete) ----------------
+// ---------------- Form lifecycle and Bin ----------------
+function fb_archive_form(PDO $pdo, array $form): void {
+    $fid = (int)$form['id'];
+    $mutationLock = fb_acquire_form_mutation_lock($pdo, $fid);
+    try {
+        $current = fb_get_form($pdo, $fid);
+        if ($current === null || !empty($current['deleted_at']) || !in_array($current['status'] ?? null, ['active', 'draft'], true)) {
+            throw new UnexpectedValueException('Form changed before it could be archived.');
+        }
+        $update = $pdo->prepare("UPDATE `fb_forms` SET status = 'archived', updated_at = NOW() WHERE id = ? AND deleted_at IS NULL AND status IN ('active','draft')");
+        $update->execute([$fid]);
+        if ($update->rowCount() !== 1) throw new UnexpectedValueException('Form changed before it could be archived.');
+    } finally {
+        fb_release_form_mutation_lock($pdo, $mutationLock);
+    }
+}
+
+function fb_reactivate_form_as_draft(PDO $pdo, array $form): void {
+    $fid = (int)$form['id'];
+    $mutationLock = fb_acquire_form_mutation_lock($pdo, $fid);
+    try {
+        $current = fb_get_form($pdo, $fid);
+        if ($current === null || !empty($current['deleted_at']) || ($current['status'] ?? null) !== 'archived') {
+            throw new UnexpectedValueException('Form changed before it could be reactivated.');
+        }
+        $update = $pdo->prepare("UPDATE `fb_forms` SET status = 'draft', updated_at = NOW() WHERE id = ? AND deleted_at IS NULL AND status = 'archived'");
+        $update->execute([$fid]);
+        if ($update->rowCount() !== 1) throw new UnexpectedValueException('Form changed before it could be reactivated.');
+    } finally {
+        fb_release_form_mutation_lock($pdo, $mutationLock);
+    }
+}
+
 // Move a form to the Bin. Slug is suffixed so it can be reused and restored later.
 function fb_trash_form(PDO $pdo, array $form): void {
     $fid = (int)$form['id'];
@@ -707,6 +739,7 @@ function fb_trash_form(PDO $pdo, array $form): void {
 function fb_restore_form(PDO $pdo, array $form): void {
     $fid = (int)$form['id'];
     $mutationLock = fb_acquire_form_mutation_lock($pdo, $fid);
+    $recaptchaLock = null;
     try {
         $current = fb_get_form($pdo, $fid);
         if ($current === null || empty($current['deleted_at'])) throw new UnexpectedValueException('Form changed before it could be restored.');
@@ -720,10 +753,17 @@ function fb_restore_form(PDO $pdo, array $form): void {
             if ($chk->fetchColumn() === false) break;
             $slug = $base . '-' . $i++;
         }
-        $update = $pdo->prepare('UPDATE `fb_forms` SET deleted_at = NULL, slug = ?, updated_at = NOW() WHERE id = ? AND deleted_at IS NOT NULL');
-        $update->execute([$slug, $fid]);
+        $restoreStatus = (string)$current['status'];
+        $restoreSettings = fb_form_settings($current);
+        if ($restoreStatus === 'active' && $restoreSettings['recaptcha'] === '1') {
+            $recaptchaLock = fb_acquire_recaptcha_config_lock($pdo);
+            if (!fb_recaptcha_configured($pdo, true)) $restoreStatus = 'draft';
+        }
+        $update = $pdo->prepare('UPDATE `fb_forms` SET deleted_at = NULL, slug = ?, status = ?, updated_at = NOW() WHERE id = ? AND deleted_at IS NOT NULL');
+        $update->execute([$slug, $restoreStatus, $fid]);
         if ($update->rowCount() !== 1) throw new UnexpectedValueException('Form changed before it could be restored.');
     } finally {
+        if ($recaptchaLock !== null) fb_release_recaptcha_config_lock($pdo, $recaptchaLock);
         fb_release_form_mutation_lock($pdo, $mutationLock);
     }
 }
@@ -1161,11 +1201,48 @@ function fb_recover_storage_trash(PDO $pdo, string $base, int $limit = 5, ?int $
 }
 
 // ---------------- reCAPTCHA (global keys, per-form toggle) ----------------
-function fb_recaptcha_keys(PDO $pdo): array {
+function fb_recaptcha_keys(PDO $pdo, bool $fresh = false): array {
+    if ($fresh) {
+        $statement = $pdo->prepare('SELECT `key`,`value` FROM settings WHERE `key` IN (?,?)');
+        $statement->execute([FB_RECAPTCHA_SITEKEY_KEY, FB_RECAPTCHA_SECRET_KEY]);
+        $values = $statement->fetchAll(PDO::FETCH_KEY_PAIR) ?: [];
+        return [
+            'sitekey' => (string)($values[FB_RECAPTCHA_SITEKEY_KEY] ?? ''),
+            'secret' => (string)($values[FB_RECAPTCHA_SECRET_KEY] ?? ''),
+        ];
+    }
     return [
         'sitekey' => (string)settings_get($pdo, FB_RECAPTCHA_SITEKEY_KEY, ''),
         'secret'  => (string)settings_get($pdo, FB_RECAPTCHA_SECRET_KEY, ''),
     ];
+}
+
+function fb_recaptcha_configured(PDO $pdo, bool $fresh = false): bool {
+    $keys = fb_recaptcha_keys($pdo, $fresh);
+    return $keys['sitekey'] !== '' && $keys['secret'] !== '';
+}
+
+function fb_acquire_recaptcha_config_lock(PDO $pdo, int $timeoutSeconds = 5): string {
+    $database = (string)$pdo->query('SELECT DATABASE()')->fetchColumn();
+    if ($database === '') throw new RuntimeException('No selected database for reCAPTCHA lock.');
+    $name = 'fb:' . substr(hash('sha256', $database), 0, 20) . ':recaptcha';
+    $statement = $pdo->prepare('SELECT GET_LOCK(?, ?)');
+    $statement->execute([$name, max(0, min(30, $timeoutSeconds))]);
+    if ((int)$statement->fetchColumn() !== 1) throw new UnexpectedValueException('reCAPTCHA settings are being changed in another session.');
+    return $name;
+}
+
+function fb_release_recaptcha_config_lock(PDO $pdo, string $name): void {
+    try {
+        $statement = $pdo->prepare('SELECT RELEASE_LOCK(?)');
+        $statement->execute([$name]);
+    } catch (Throwable $error) {
+        error_log('[form-builder] unable to release reCAPTCHA lock: ' . $error->getMessage());
+    }
+}
+
+function fb_recaptcha_active_form_count(PDO $pdo): int {
+    return (int)$pdo->query("SELECT COUNT(*) FROM fb_forms WHERE status = 'active' AND deleted_at IS NULL AND JSON_VALID(settings_json) AND JSON_UNQUOTE(JSON_EXTRACT(settings_json, '$.recaptcha')) = '1'")->fetchColumn();
 }
 
 function fb_recaptcha_verify(string $secret, string $token, string $remoteIp = ''): bool {
@@ -1317,14 +1394,14 @@ if (function_exists('register_editor_reference_provider')) {
             $slug = (string)($form['slug'] ?? '');
             if (isset($entries[$slug]) || preg_match('/\A[a-z0-9][a-z0-9_-]{0,79}\z/', $slug) !== 1) return;
             $title = trim((string)($form['title'] ?? ''));
+            $archived = ($form['status'] ?? '') === 'archived';
             $entries[$slug] = [
                 'title' => $title !== '' ? $title : $slug,
                 'source' => 'Form Builder',
-                'action_label' => function_exists('__') ? __('Open editor') : 'Open editor',
-                'url' => $adminBase . '/?' . http_build_query([
-                    'page' => 'admin/tools/form-builder/editor',
-                    'id' => (int)$form['id'],
-                ]),
+                'action_label' => function_exists('__') ? __($archived ? 'Open archive' : 'Open editor') : ($archived ? 'Open archive' : 'Open editor'),
+                'url' => $adminBase . '/?' . http_build_query($archived
+                    ? ['page'=>'admin/tools/form-builder','scope'=>'archived']
+                    : ['page'=>'admin/tools/form-builder/editor','id'=>(int)$form['id']]),
             ];
         };
         foreach (array_keys($referencedSlugs) as $slug) {

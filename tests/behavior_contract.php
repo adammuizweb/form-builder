@@ -137,6 +137,7 @@ $missingWorkspaceReference = is_callable($referenceProvider) ? $referenceProvide
 ]) : null;
 $GLOBALS['_uid'] = 1;
 $draftReference = $referenceConfig['entries']['draft-form'] ?? [];
+$archivedReference = $referenceConfig['entries']['archived-form'] ?? [];
 $check(($referenceConfig['syntax'] ?? null) === 'shortcode'
     && ($referenceConfig['shortcode'] ?? null) === 'form'
     && ($referenceConfig['attribute'] ?? null) === 'slug'
@@ -146,6 +147,9 @@ $check(($referenceConfig['syntax'] ?? null) === 'shortcode'
     && ($draftReference['title'] ?? null) === '<Draft Form>'
     && str_contains((string)($draftReference['url'] ?? ''), 'page=admin%2Ftools%2Fform-builder%2Feditor')
     && str_contains((string)($draftReference['url'] ?? ''), 'id=1')
+    && ($archivedReference['action_label'] ?? null) === 'Open archive'
+    && str_contains((string)($archivedReference['url'] ?? ''), 'scope=archived')
+    && !str_contains((string)($archivedReference['url'] ?? ''), 'form-builder%2Feditor')
     && !isset($referenceConfig['entries']['trashed-form'])
     && $referenceAuthorizationCalls === 2
     && $mismatchedActorReference === null

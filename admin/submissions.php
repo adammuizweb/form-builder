@@ -516,7 +516,7 @@ if (isset($_GET['detail'])):
             <td><?= htmlspecialchars(mb_strimwidth($txt, 0, 60, '…'), ENT_QUOTES) ?></td>
             <?php endforeach; ?>
             <?php if ($settings['show_total'] === '1'): ?><td class="fba-mono"><?= fb_format_currency((int)($tot['total'] ?? 0), (string)$settings['currency_code']) ?></td><?php endif; ?>
-             <td style="white-space:nowrap" class="fba-sub"><?= htmlspecialchars(date('d M Y H:i', strtotime((string)$r['created_at'])), ENT_QUOTES) ?></td>
+             <td style="white-space:nowrap"><span class="fba-sub"><?= htmlspecialchars(date('d M Y H:i', strtotime((string)$r['created_at'])), ENT_QUOTES) ?></span></td>
              <td><span class="fba-badge read"><?= htmlspecialchars(ucfirst((string)$r['workflow_status']), ENT_QUOTES) ?></span></td>
             <td>
               <?php if ((int)$r['is_deleted']): ?><span class="fba-badge trash">Trash</span>

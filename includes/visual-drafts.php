@@ -253,11 +253,14 @@ function fb_visual_replace_canonical(PDO $pdo, int $formId, array $definition): 
 function fb_visual_publish_draft(PDO $pdo, int $formId, int $expectedRevision, ?int $actorId, bool $allowUnsafeCode): array {
     if ($expectedRevision < 1) throw new InvalidArgumentException('Invalid draft revision.');
     $mutationLock = fb_acquire_form_mutation_lock($pdo, $formId);
+    $recaptchaLock = null;
     try {
         $pdo->beginTransaction();
-        $formLock = $pdo->prepare('SELECT id FROM fb_forms WHERE id = ? AND deleted_at IS NULL FOR UPDATE');
+        $formLock = $pdo->prepare('SELECT status FROM fb_forms WHERE id = ? AND deleted_at IS NULL FOR UPDATE');
         $formLock->execute([$formId]);
-        if ($formLock->fetchColumn() === false) throw new InvalidArgumentException('Form not found.');
+        $formStatus = $formLock->fetchColumn();
+        if ($formStatus === false) throw new InvalidArgumentException('Form not found.');
+        if ($formStatus === 'archived') throw new UnexpectedValueException('Reactivate this form as a draft before publishing it.');
         $select = $pdo->prepare('SELECT * FROM fb_builder_drafts WHERE form_id = ? FOR UPDATE');
         $select->execute([$formId]);
         $row = $select->fetch(PDO::FETCH_ASSOC);
@@ -268,6 +271,11 @@ function fb_visual_publish_draft(PDO $pdo, int $formId, int $expectedRevision, ?
         $definition = fb_definition_decode((string)$row['definition_json']);
         if (!$allowUnsafeCode && !hash_equals(fb_visual_protected_code_hash($current), fb_visual_protected_code_hash($definition))) throw new DomainException('Unsafe-code permission is required to publish protected content changes.');
         $definition['form']['status'] = 'active';
+        $draftSettings = array_merge(fb_default_settings(), fb_definition_safe_settings($definition['form']['settings'] ?? []));
+        if ($draftSettings['recaptcha'] === '1') {
+            $recaptchaLock = fb_acquire_recaptcha_config_lock($pdo);
+            if (!fb_recaptcha_configured($pdo, true)) throw new UnexpectedValueException('Configure both global reCAPTCHA keys before publishing this form.');
+        }
         fb_visual_replace_canonical($pdo, $formId, $definition);
         $canonical = fb_visual_canonical_definition($pdo, $formId);
         $hash = fb_visual_definition_hash($canonical);
@@ -284,6 +292,7 @@ function fb_visual_publish_draft(PDO $pdo, int $formId, int $expectedRevision, ?
         if ($pdo->inTransaction()) $pdo->rollBack();
         throw $error;
     } finally {
+        if ($recaptchaLock !== null) fb_release_recaptcha_config_lock($pdo, $recaptchaLock);
         fb_release_form_mutation_lock($pdo, $mutationLock);
     }
 }

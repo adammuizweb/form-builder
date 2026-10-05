@@ -18,6 +18,7 @@ $canDefinitions = user_can($pdo, $uid, 'plugin.form-builder.definitions.manage')
 $csrf = function_exists('csrf_token') ? csrf_token() : '';
 $flash = '';
 $flashOk = true;
+$scope = (($_GET['scope'] ?? '') === 'archived') ? 'archived' : 'current';
 
 // ---------------- Global POST actions ----------------
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
@@ -38,22 +39,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $newId = (int)$pdo->lastInsertId();
         fb_js_redirect(fb_visual_builder_url($newId));
         return;
-    } elseif ($act === 'save_recaptcha') {
-        if (!$canGlobalSettings) {
-            $flash = 'Access denied.'; $flashOk = false;
-        } else {
-            settings_set($pdo, FB_RECAPTCHA_SITEKEY_KEY, trim((string)($_POST['sitekey'] ?? '')), 1);
-            settings_set($pdo, FB_RECAPTCHA_SECRET_KEY, trim((string)($_POST['secret'] ?? '')), 1);
-            $flash = 'reCAPTCHA keys saved.';
-        }
-    } elseif ($act === 'import_definition') {
-        if (!$canDefinitions) { $flash = 'Access denied.'; $flashOk = false; }
-        else try { $result = fb_upsert_form_definition($pdo, (string)($_POST['definition_json'] ?? ''), $uid, user_can($pdo, $uid, 'plugin.form-builder.unsafe-code.manage')); fb_js_redirect(fb_url(['view'=>'settings','id'=>$result['form_id'],'saved'=>1])); return; }
-        catch (InvalidArgumentException|JsonException $error) { $flash = 'Import failed: ' . $error->getMessage(); $flashOk = false; }
-        catch (Throwable $error) { error_log('[form-builder] definition import failed: ' . $error->getMessage()); $flash = 'Import failed due to a server error.'; $flashOk = false; }
-    } elseif (in_array($act, ['duplicate_form', 'archive_form', 'delete_form'], true)) {
+    } elseif (in_array($act, ['duplicate_form', 'archive_form', 'reactivate_form', 'delete_form'], true)) {
         $target = fb_get_form($pdo, (int)($_POST['form_id'] ?? 0));
-        if ($target === null || !fb_can_access_form($pdo, $target, $uid)) {
+        if ($target === null || !empty($target['deleted_at']) || !fb_can_access_form($pdo, $target, $uid)) {
             $flash = 'Form not found or access denied.'; $flashOk = false;
         } elseif ($act === 'duplicate_form') {
             $slug = fb_unique_form_slug($pdo, $target['slug'] . '-copy');
@@ -72,8 +60,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             }
             $flash = 'Form duplicated as draft.';
         } elseif ($act === 'archive_form') {
-            $pdo->prepare('UPDATE `fb_forms` SET status = "archived" WHERE id = ?')->execute([(int)$target['id']]);
-            $flash = 'Form archived.';
+            try { fb_archive_form($pdo, $target); $flash = 'Form archived.'; }
+            catch (UnexpectedValueException $error) { $flash = $error->getMessage(); $flashOk = false; }
+        } elseif ($act === 'reactivate_form') {
+            try { fb_reactivate_form_as_draft($pdo, $target); $flash = 'Form reactivated as a draft.'; }
+            catch (UnexpectedValueException $error) { $flash = $error->getMessage(); $flashOk = false; }
         } elseif ($act === 'delete_form') {
             fb_trash_form($pdo, $target);
             $flash = 'Form dipindahkan ke Bin. Admin bisa me-restore dari Bin.';
@@ -81,21 +72,26 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     } elseif ($act === 'bulk') {
         $do = (string)($_POST['do'] ?? '');
         $ids = array_values(array_filter(array_map('intval', (array)($_POST['ids'] ?? []))));
-        if ($ids === [] || !in_array($do, ['archive', 'delete'], true)) {
+        $allowedBulk = $scope === 'archived' ? ['reactivate', 'delete'] : ['archive', 'delete'];
+        if ($ids === [] || !in_array($do, $allowedBulk, true)) {
             $flash = 'Pilih form dan aksi bulk terlebih dahulu.'; $flashOk = false;
         } else {
             $n = 0;
             foreach ($ids as $bid) {
                 $target = fb_get_form($pdo, $bid);
                 if ($target === null || !fb_can_access_form($pdo, $target, $uid)) continue;
-                if ($do === 'archive') {
-                    $pdo->prepare('UPDATE `fb_forms` SET status = "archived" WHERE id = ?')->execute([$bid]);
-                } else {
-                    fb_trash_form($pdo, $target);
-                }
-                $n++;
+                try {
+                    if ($do === 'archive') fb_archive_form($pdo, $target);
+                    elseif ($do === 'reactivate') fb_reactivate_form_as_draft($pdo, $target);
+                    else fb_trash_form($pdo, $target);
+                    $n++;
+                } catch (UnexpectedValueException) {}
             }
-            $flash = $n . ' form ' . ($do === 'archive' ? 'diarsipkan.' : 'dipindahkan ke Bin.');
+            $flash = $n . ' form ' . match ($do) {
+                'archive' => 'diarsipkan.',
+                'reactivate' => 'diaktifkan kembali sebagai draft.',
+                default => 'dipindahkan ke Bin.',
+            };
             if ($n === 0) $flashOk = false;
         }
     }
@@ -151,13 +147,10 @@ if ($view === 'builder' || $view === 'settings' || $view === 'submissions') {
     return;
 }
 
-// ---------------- Forms list ----------------
-$rcKeys = fb_recaptcha_keys($pdo);
-
 // Search + pagination
 $q = trim((string)($_GET['q'] ?? ''));
 $perPage = 10;
-$allForms = fb_accessible_forms($pdo);
+$allForms = fb_accessible_forms($pdo, $scope === 'archived' ? "status = 'archived'" : "status IN ('active','draft')");
 if ($q !== '') {
     $allForms = array_values(array_filter($allForms, static function ($f) use ($q): bool {
         return mb_stripos((string)$f['title'], $q) !== false || mb_stripos((string)$f['slug'], $q) !== false;
@@ -167,8 +160,9 @@ $totalForms = count($allForms);
 $totalPages = max(1, (int)ceil($totalForms / $perPage));
 $pageNum = max(1, min($totalPages, (int)($_GET['p'] ?? 1)));
 $forms = array_slice($allForms, ($pageNum - 1) * $perPage, $perPage);
-$listUrl = static function (array $extra = []) use ($q, $pageNum): string {
+$listUrl = static function (array $extra = []) use ($q, $scope): string {
     $params = array_merge(['page' => 'admin/tools/form-builder'], $extra);
+    if ($scope === 'archived' && !isset($extra['scope'])) $params['scope'] = 'archived';
     if ($q !== '' && !isset($extra['q'])) $params['q'] = $q;
     return '?' . http_build_query($params);
 };
@@ -177,8 +171,7 @@ $listUrl = static function (array $extra = []) use ($q, $pageNum): string {
   <div class="fba-head">
     <h1>Form Builder</h1>
     <div class="fba-actions">
-      <?php if ($canGlobalSettings): ?><button class="fba-btn" onclick="document.getElementById('fba-rc').style.display='flex'">reCAPTCHA</button><?php endif; ?>
-      <?php if ($canDefinitions): ?><button class="fba-btn" onclick="document.getElementById('fba-import').style.display='flex'">Import JSON</button><?php endif; ?>
+      <?php if ($canGlobalSettings || $canDefinitions): ?><a class="fba-btn" href="?page=admin/tools/form-builder/settings"><?= svg_ico('settings') ?> Settings</a><?php endif; ?>
       <form method="post" style="display:inline">
         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>">
         <input type="hidden" name="fb_action" value="create_form">
@@ -189,11 +182,16 @@ $listUrl = static function (array $extra = []) use ($q, $pageNum): string {
   </div>
 
   <div class="fba-toolbar">
+    <div class="fba-state-tabs" aria-label="Form status views">
+      <a class="fba-btn sm <?= $scope === 'current' ? 'is-active' : '' ?>" href="?page=admin/tools/form-builder">Current</a>
+      <a class="fba-btn sm <?= $scope === 'archived' ? 'is-active' : '' ?>" href="?page=admin/tools/form-builder&amp;scope=archived">Archived</a>
+    </div>
     <form method="get" class="fba-search">
       <input type="hidden" name="page" value="admin/tools/form-builder">
+      <?php if ($scope === 'archived'): ?><input type="hidden" name="scope" value="archived"><?php endif; ?>
       <input type="search" name="q" value="<?= htmlspecialchars($q, ENT_QUOTES) ?>" placeholder="Cari form (judul / slug)…">
       <button class="fba-btn sm" type="submit">Cari</button>
-      <?php if ($q !== ''): ?><a class="fba-btn sm" href="?page=admin/tools/form-builder">Reset</a><?php endif; ?>
+      <?php if ($q !== ''): ?><a class="fba-btn sm" href="<?= $scope === 'archived' ? '?page=admin/tools/form-builder&amp;scope=archived' : '?page=admin/tools/form-builder' ?>">Reset</a><?php endif; ?>
     </form>
     <div class="fba-cols-toggle">
       <button type="button" class="fba-btn sm" id="fbaColsBtn">⚙ Kolom ▾</button>
@@ -208,7 +206,7 @@ $listUrl = static function (array $extra = []) use ($q, $pageNum): string {
   </div>
 
   <?php if (!$allForms): ?>
-    <div class="fba-empty"><?= $q !== '' ? 'Tidak ada form yang cocok dengan pencarian. <a href="?page=admin/tools/form-builder">Reset</a>' : 'No forms yet. Click <strong>+ New Form</strong> to build your first one.' ?></div>
+    <div class="fba-empty"><?php if ($q !== ''): ?>Tidak ada form yang cocok dengan pencarian. <a href="<?= $scope === 'archived' ? '?page=admin/tools/form-builder&amp;scope=archived' : '?page=admin/tools/form-builder' ?>">Reset</a><?php elseif ($scope === 'archived'): ?>No archived forms. Archived forms remain here until they are reactivated or moved to the Bin.<?php else: ?>No forms yet. Click <strong>+ New Form</strong> to build your first one.<?php endif; ?></div>
   <?php else: ?>
   <form method="post" id="fbaBulkForm">
     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>">
@@ -216,7 +214,7 @@ $listUrl = static function (array $extra = []) use ($q, $pageNum): string {
     <div class="fba-bulkbar">
       <select name="do">
         <option value="">Bulk action…</option>
-        <option value="archive">Arsipkan</option>
+        <?php if ($scope === 'archived'): ?><option value="reactivate">Reactivate as draft</option><?php else: ?><option value="archive">Arsipkan</option><?php endif; ?>
         <option value="delete">Pindahkan ke Bin</option>
       </select>
       <button class="fba-btn sm" type="submit">Terapkan</button>
@@ -252,18 +250,18 @@ $listUrl = static function (array $extra = []) use ($q, $pageNum): string {
             <td data-col="fields"><?= $fieldsCount ?></td>
             <td data-col="subs"><?= $canViewFormSubmissions ? $subsCount . ($newCount > 0 ? ' <span class="fba-badge new">' . $newCount . ' new</span>' : '') : '&mdash;' ?></td>
             <td data-col="status"><span class="fba-badge <?= $statusCls ?>"><?= htmlspecialchars($f['status'], ENT_QUOTES) ?></span></td>
-            <td data-col="updated" style="white-space:nowrap" class="fba-sub"><?= htmlspecialchars(date('d M Y H:i', strtotime((string)$f['updated_at'])), ENT_QUOTES) ?></td>
+            <td data-col="updated" style="white-space:nowrap"><span class="fba-sub"><?= htmlspecialchars(date('d M Y H:i', strtotime((string)$f['updated_at'])), ENT_QUOTES) ?></span></td>
             <td style="white-space:nowrap">
-               <?php if ($canEditForm): ?><a class="fba-btn sm primary" href="<?= fb_visual_builder_url($fid) ?>">Visual Builder</a><?php elseif ($canViewFormSubmissions): ?><a class="fba-btn sm primary" href="<?= fb_url(['view' => 'submissions', 'id' => $fid]) ?>">Submissions</a><?php endif; ?>
+               <?php if ($canEditForm && $scope !== 'archived'): ?><a class="fba-btn sm primary" href="<?= fb_visual_builder_url($fid) ?>">Visual Builder</a><?php elseif ($canEditForm): ?><a class="fba-btn sm primary" href="<?= fb_url(['view' => 'settings', 'id' => $fid]) ?>">Review</a><?php elseif ($canViewFormSubmissions): ?><a class="fba-btn sm primary" href="<?= fb_url(['view' => 'submissions', 'id' => $fid]) ?>">Submissions</a><?php endif; ?>
               <details class="fba-more">
                 <summary class="fba-btn sm" title="Aksi lainnya" aria-label="Aksi lainnya"><svg class="lucide-icon fba-menu-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></svg></summary>
                 <div class="fba-more-menu">
                    <?php if ($canViewFormSubmissions): ?><a href="<?= fb_url(['view' => 'submissions', 'id' => $fid]) ?>"><?= svg_ico('clipboard-list') ?><span>Submissions</span></a><?php endif; ?>
-                   <?php if ($canEditForm): ?><a href="<?= fb_url(['view' => 'builder', 'id' => $fid]) ?>"><?= svg_ico('layout-template') ?><span>Classic Builder</span></a>
-                   <a href="<?= fb_url(['view' => 'settings', 'id' => $fid]) ?>"><?= svg_ico('settings') ?><span>Settings</span></a>
-                   <?php if ($canDefinitions): ?><a href="<?= fb_url(['action' => 'export_definition', 'id' => $fid]) ?>"><?= svg_ico('download') ?><span>Export definition</span></a><?php endif; ?>
-                   <button type="submit" form="fba-dup-<?= $fid ?>"><?= svg_ico('copy') ?><span>Duplikat</span></button>
-                   <button type="submit" form="fba-arch-<?= $fid ?>" class="danger"><?= svg_ico('box') ?><span>Arsipkan</span></button>
+                    <?php if ($canEditForm && $scope !== 'archived'): ?><a href="<?= fb_url(['view' => 'builder', 'id' => $fid]) ?>"><?= svg_ico('layout-template') ?><span>Classic Builder</span></a><?php endif; ?>
+                    <?php if ($canEditForm): ?><a href="<?= fb_url(['view' => 'settings', 'id' => $fid]) ?>"><?= svg_ico('settings') ?><span>Form settings</span></a>
+                    <?php if ($canDefinitions): ?><a href="<?= fb_url(['action' => 'export_definition', 'id' => $fid]) ?>"><?= svg_ico('download') ?><span>Export definition</span></a><?php endif; ?>
+                    <button type="submit" form="fba-dup-<?= $fid ?>"><?= svg_ico('copy') ?><span>Duplikat</span></button>
+                    <?php if ($scope === 'archived'): ?><button type="submit" form="fba-reactivate-<?= $fid ?>"><?= svg_ico('rotate-ccw') ?><span>Reactivate as draft</span></button><?php else: ?><button type="submit" form="fba-arch-<?= $fid ?>" class="danger"><?= svg_ico('box') ?><span>Arsipkan</span></button><?php endif; ?>
                    <button type="submit" form="fba-del-<?= $fid ?>" class="danger"><?= svg_ico('trash-2') ?><span>Hapus</span></button><?php endif; ?>
                 </div>
               </details>
@@ -293,11 +291,19 @@ $listUrl = static function (array $extra = []) use ($q, $pageNum): string {
     <input type="hidden" name="fb_action" value="duplicate_form">
     <input type="hidden" name="form_id" value="<?= $fid ?>">
   </form>
-  <form method="post" id="fba-arch-<?= $fid ?>" style="display:none" data-fb-confirm-title="Archive form" data-fb-confirm-message="Arsipkan form ini? Form berhenti menerima submission." data-fb-confirm-text="Archive">
+  <?php if ($scope === 'archived'): ?>
+  <form method="post" id="fba-reactivate-<?= $fid ?>" style="display:none" data-fb-confirm-title="Reactivate form" data-fb-confirm-message="Reactivate this form as a draft? Review it before publishing." data-fb-confirm-text="Reactivate as draft">
+    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>">
+    <input type="hidden" name="fb_action" value="reactivate_form">
+    <input type="hidden" name="form_id" value="<?= $fid ?>">
+  </form>
+  <?php else: ?>
+  <form method="post" id="fba-arch-<?= $fid ?>" style="display:none" data-fb-confirm-title="Archive form" data-fb-confirm-message="Arsipkan form ini? Form berhenti menerima submission, tetapi data dan upload tetap disimpan." data-fb-confirm-text="Archive">
     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>">
     <input type="hidden" name="fb_action" value="archive_form">
     <input type="hidden" name="form_id" value="<?= $fid ?>">
   </form>
+  <?php endif; ?>
   <form method="post" id="fba-del-<?= $fid ?>" style="display:none" data-fb-confirm-title="Move form to Bin" data-fb-confirm-message="Pindahkan form ini ke Bin? Admin masih bisa me-restore dari Bin." data-fb-confirm-text="Move to Bin">
     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>">
     <input type="hidden" name="fb_action" value="delete_form">
@@ -419,20 +425,3 @@ $listUrl = static function (array $extra = []) use ($q, $pageNum): string {
   window.addEventListener('resize', closeAllMores);
 })();
 </script>
-
-<?php if ($canGlobalSettings): ?><div class="fba-overlay" id="fba-rc" style="display:none" onclick="if(event.target===this)this.style.display='none'">
-  <div class="fba-modal">
-    <div class="fba-modal-head"><h2>reCAPTCHA (global keys)</h2><a href="javascript:void(0)" onclick="document.getElementById('fba-rc').style.display='none'">&times;</a></div>
-    <div class="fba-modal-body">
-      <form method="post">
-        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>">
-        <input type="hidden" name="fb_action" value="save_recaptcha">
-        <div class="fba-field"><label>Site Key</label><input type="text" name="sitekey" value="<?= htmlspecialchars($rcKeys['sitekey'], ENT_QUOTES) ?>"></div>
-        <div class="fba-field"><label>Secret Key</label><input type="text" name="secret" value="<?= htmlspecialchars($rcKeys['secret'], ENT_QUOTES) ?>"></div>
-        <p class="fba-hint">Keys are global. Enable reCAPTCHA per form in each form's Settings.</p>
-        <button class="fba-btn primary" type="submit">Save</button>
-      </form>
-    </div>
-  </div>
-</div><?php endif; ?>
-<?php if ($canDefinitions): ?><div class="fba-overlay" id="fba-import" style="display:none" onclick="if(event.target===this)this.style.display='none'"><div class="fba-modal"><div class="fba-modal-head"><h2>Import form definition</h2><a href="javascript:void(0)" onclick="document.getElementById('fba-import').style.display='none'">&times;</a></div><div class="fba-modal-body"><form method="post"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>"><input type="hidden" name="fb_action" value="import_definition"><div class="fba-field"><label>Versioned definition JSON</label><textarea name="definition_json" rows="16" maxlength="524288" required></textarea></div><button class="fba-btn primary" type="submit">Atomic upsert by slug</button></form></div></div></div><?php endif; ?>

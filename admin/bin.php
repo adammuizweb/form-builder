@@ -264,7 +264,7 @@ fb_admin_css();
             <span class="fba-sub fba-mono"><?= htmlspecialchars($origSlug, ENT_QUOTES) ?></span>
           </td>
           <td><span class="fba-badge <?= htmlspecialchars(['active' => 'active', 'draft' => 'draft', 'archived' => 'arch'][$tf['status']] ?? 'draft', ENT_QUOTES) ?>"><?= htmlspecialchars($tf['status'], ENT_QUOTES) ?></span></td>
-          <td style="white-space:nowrap" class="fba-sub"><?= htmlspecialchars(date('d M Y H:i', strtotime((string)$tf['deleted_at'])), ENT_QUOTES) ?></td>
+          <td style="white-space:nowrap"><span class="fba-sub"><?= htmlspecialchars(date('d M Y H:i', strtotime((string)$tf['deleted_at'])), ENT_QUOTES) ?></span></td>
           <td style="white-space:nowrap">
             <form method="post" style="display:inline">
               <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES) ?>">
@@ -312,7 +312,7 @@ fb_admin_css();
             <a href="?page=admin/tools/form-builder&view=builder&id=<?= (int)$it['form_id'] ?>"><?= htmlspecialchars($it['form_title'], ENT_QUOTES) ?></a>
             <?php else: ?><span class="fba-hint">(form dihapus)</span><?php endif; ?>
           </td>
-          <td style="white-space:nowrap" class="fba-sub"><?= htmlspecialchars(date('d M Y H:i', strtotime((string)$it['deleted_at'])), ENT_QUOTES) ?></td>
+          <td style="white-space:nowrap"><span class="fba-sub"><?= htmlspecialchars(date('d M Y H:i', strtotime((string)$it['deleted_at'])), ENT_QUOTES) ?></span></td>
           <td style="white-space:nowrap">
             <?php if ($it['form_title'] !== null && ($it['form_deleted_at'] ?? null) === null): ?>
             <form method="post" style="display:inline">

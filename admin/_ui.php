@@ -10,6 +10,7 @@ function fb_url(array $over = []): string {
         'fid' => $_GET['fid'] ?? null,
         'q' => $_GET['q'] ?? null,
         'p' => $_GET['p'] ?? null,
+        'scope' => $_GET['scope'] ?? null,
         'df' => $_GET['df'] ?? null,
         'dt' => $_GET['dt'] ?? null,
         'st' => $_GET['st'] ?? null,
@@ -46,7 +47,7 @@ function fb_admin_css(): void {
 <style>
 .fba { color: var(--adam-text); font-family: inherit; }
 .fba-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.2rem; }
-.fba-head h1 { font-size: 1.35rem; font-weight: 700; margin: 0; }
+.fba-head h1 { display: inline-flex; align-items: center; min-height: 44px; margin: 0; padding: .52rem .82rem; border: 1px solid var(--adam-border); border-left: 4px solid var(--adam-accent); border-radius: 12px; background: linear-gradient(135deg, color-mix(in srgb, var(--adam-accent) 9%, var(--adam-card)), var(--adam-card)); box-shadow: 0 8px 24px rgba(15 23 42 / .06); font-size: 1.35rem; font-weight: 750; letter-spacing: -.015em; }
 .fba-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
 .fba-btn { display: inline-flex; align-items: center; justify-content: center; gap: .42rem; border: 1px solid var(--adam-border); background: var(--adam-card); color: var(--adam-text); border-radius: 9px; padding: .42rem .85rem; font-size: .8rem; font-weight: 600; cursor: pointer; text-decoration: none; transition: all .18s; font-family: inherit; }
 .fba-btn svg { width: 15px; height: 15px; flex: 0 0 15px; }
@@ -90,7 +91,7 @@ function fb_admin_css(): void {
 .fba-modal-body { padding: 1.1rem 1.3rem; }
 .fba-field { margin-bottom: 1rem; }
 .fba-field label { display: block; font-size: .72rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--adam-muted); margin-bottom: .4rem; }
-.fba-field input[type=text], .fba-field input[type=email], .fba-field input[type=number], .fba-field input[type=date], .fba-field input[type=search], .fba-field select, .fba-field textarea {
+.fba-field input[type=text], .fba-field input[type=password], .fba-field input[type=email], .fba-field input[type=number], .fba-field input[type=date], .fba-field input[type=search], .fba-field select, .fba-field textarea {
   width: 100%; font: inherit; font-size: .88rem; background: var(--adam-bg); color: var(--adam-text);
   border: 1.5px solid var(--adam-border); border-radius: 9px; padding: .55rem .8rem; outline: none; transition: border-color .2s;
 }
@@ -236,6 +237,11 @@ function fb_admin_css(): void {
 .fba-form-switch select:focus, .fba-filter-form input:focus, .fba-filter-form select:focus, .fba-bulk-actions select:focus { border-color: var(--adam-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--adam-accent) 15%, transparent); }
 .fba-submissions-toolbar { align-items: flex-start; justify-content: space-between; padding: .8rem; border: 1px solid var(--adam-border); border-radius: 12px; background: var(--adam-card); }
 .fba-state-tabs { display: flex; gap: .3rem; padding: .2rem; border-radius: 10px; background: var(--adam-bg); }
+.fba-state-tabs .is-active { border-color: var(--adam-accent); color: var(--adam-accent); background: color-mix(in srgb, var(--adam-accent) 8%, var(--adam-card)); }
+.fba-doc-list { display: grid; gap: .8rem; margin: 0; }
+.fba-doc-list > div { padding: .8rem .9rem; border: 1px solid var(--adam-border); border-radius: 10px; background: var(--adam-bg); }
+.fba-doc-list dt { margin: 0 0 .22rem; font-size: .82rem; font-weight: 750; color: var(--adam-text); }
+.fba-doc-list dd { margin: 0; color: var(--adam-muted); font-size: .8rem; line-height: 1.55; }
 .fba-filter-form { flex: 1; justify-content: flex-end; }
 .fba-filter-form input[type=search] { width: min(210px, 100%); }
 .fba-table tbody tr { transition: background .15s ease; }

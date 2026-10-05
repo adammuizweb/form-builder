@@ -145,6 +145,8 @@ function fb_render_form(PDO $pdo, array $form): string {
     $formId = (int)$form['id'];
     $slug = (string)$form['slug'];
     $settings = fb_form_settings($form);
+    $recaptchaKeys = $settings['recaptcha'] === '1' ? fb_recaptcha_keys($pdo) : ['sitekey'=>'','secret'=>''];
+    $recaptchaEnabled = $recaptchaKeys['sitekey'] !== '' && $recaptchaKeys['secret'] !== '';
     $locale = fb_locale();
     [$form, $settings] = fb_localized_form($form, $settings);
     $unsafeCode = ($settings['unsafe_code_enabled'] ?? false) === true;
@@ -242,6 +244,7 @@ function fb_render_form(PDO $pdo, array $form): string {
 
     static $cssPrinted = false;
     static $proofScriptPrinted = false;
+    static $recaptchaScriptPrinted = false;
     ob_start();
 
     if (!$cssPrinted):
@@ -340,6 +343,7 @@ function fb_render_form(PDO $pdo, array $form): string {
 .fb-submit { width: 100%; margin-top: 1rem; display: inline-flex; align-items: center; justify-content: center; gap: .5rem; border: none; cursor: pointer; font: inherit; font-size: 1rem; font-weight: 700; color: var(--fb-on-accent, #fff); background: linear-gradient(135deg, var(--fb-accent), var(--fb-accent-deep)); border-radius: var(--fb-radius); padding: .9rem 1.5rem; box-shadow: 0 8px 22px var(--fb-accent-soft, rgba(43 122 74 / .3)); transition: transform .2s, box-shadow .2s; }
 .fb-submit:hover { transform: translateY(-2px); box-shadow: 0 12px 28px var(--fb-accent-soft, rgba(43 122 74 / .4)); }
 .fb-submit:disabled { opacity: .75; cursor: wait; transform: none; }
+.fb-recaptcha { margin-top: 1rem; min-height: 78px; overflow-x: auto; }
 .fb-flash-err { background: rgba(190 45 45 / .08); border: 1.5px solid rgba(190 45 45 / .4); color: var(--fb-danger); border-radius: var(--fb-radius); padding: .8rem 1rem; font-size: .9rem; font-weight: 600; margin-bottom: 1rem; }
 .fb-success { text-align: center; padding: 2.5rem 1rem; }
 .fb-success .check { width: 72px; height: 72px; margin: 0 auto 1rem; border-radius: 50%; background: linear-gradient(135deg, var(--fb-accent), var(--fb-accent-deep)); color: var(--fb-on-accent, #fff); display: grid; place-items: center; font-size: 2rem; animation: fb-pop .55s cubic-bezier(.34,1.56,.64,1); }
@@ -424,6 +428,11 @@ function fb_render_form(PDO $pdo, array $form): string {
       <span class="lbl"><?= fb_h($settings['total_label']) ?></span>
       <span class="amt" data-fb-total><?= fb_format_currency(0, (string)$settings['currency_code']) ?></span>
     </div>
+    <?php endif; ?>
+
+    <?php if ($recaptchaEnabled): ?>
+    <div class="fb-recaptcha"><div class="g-recaptcha" data-sitekey="<?= fb_h($recaptchaKeys['sitekey']) ?>"></div></div>
+    <?php if (!$recaptchaScriptPrinted): $recaptchaScriptPrinted = true; ?><script src="https://www.google.com/recaptcha/api.js" defer referrerpolicy="no-referrer"></script><?php endif; ?>
     <?php endif; ?>
 
     <button type="submit" class="fb-submit" data-fb-submit><?= fb_h($settings['submit_label']) ?></button>

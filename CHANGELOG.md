@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.3.0 - 2026-10-05
+
+- Add a dedicated global Settings page for protected reCAPTCHA keys, definition import, and workspace/lifecycle documentation.
+- Add Current and Archived form views with locked archive and draft-reactivation transitions while preserving form data and uploads.
+- Render configured reCAPTCHA v2 widgets, close the final archive/submission race, and improve lifecycle guidance.
+- Improve Form Builder headings and restore table-cell layout for Updated and date columns.
+
 ## 2.2.4 - 2026-10-04
 
 - Persist Visual Builder upload descriptions from legacy empty settings and keep upload descriptions independent from help text.

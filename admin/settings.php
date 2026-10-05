@@ -42,9 +42,28 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $title = trim((string)($_POST['title'] ?? '')) ?: 'Untitled Form';
         $slug = fb_unique_form_slug($pdo, (string)($_POST['slug'] ?? '') !== '' ? (string)$_POST['slug'] : $title, $formId);
         $status = in_array(($_POST['status'] ?? ''), ['active', 'draft', 'archived'], true) ? (string)$_POST['status'] : 'draft';
-        $pdo->prepare('UPDATE `fb_forms` SET title = ?, slug = ?, description = ?, status = ? WHERE id = ?')
-            ->execute([$title, $slug, trim((string)($_POST['description'] ?? '')) ?: null, $status, $formId]);
-        $saved = true;
+        if (($form['status'] ?? '') === 'archived' && $status !== 'archived') {
+            echo '<div class="fba-empty">Use the Archived forms view to reactivate this form safely as a draft.</div>';
+            return;
+        }
+        $recaptchaLock = null;
+        try {
+            if ($status === 'active' && $settings['recaptcha'] === '1') {
+                $recaptchaLock = fb_acquire_recaptcha_config_lock($pdo);
+                if (!fb_recaptcha_configured($pdo, true)) {
+                    echo '<div class="fba-empty">Configure both global reCAPTCHA keys before activating this form.</div>';
+                    return;
+                }
+            }
+            $pdo->prepare('UPDATE `fb_forms` SET title = ?, slug = ?, description = ?, status = ? WHERE id = ?')
+                ->execute([$title, $slug, trim((string)($_POST['description'] ?? '')) ?: null, $status, $formId]);
+            $saved = true;
+        } catch (UnexpectedValueException $error) {
+            echo '<div class="fba-empty">' . htmlspecialchars($error->getMessage(), ENT_QUOTES) . '</div>';
+            return;
+        } finally {
+            if ($recaptchaLock !== null) fb_release_recaptcha_config_lock($pdo, $recaptchaLock);
+        }
     }
 
     if ($act === 'save_submission') {
@@ -60,7 +79,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $settings['submission_proof_enabled'] = !empty($_POST['submission_proof_enabled']) ? '1' : '0';
         $proofFormat = $_POST['submission_proof_format'] ?? 'png';
         $settings['submission_proof_format'] = is_string($proofFormat) && in_array($proofFormat, ['png', 'pdf'], true) ? $proofFormat : 'png';
-        $settings['recaptcha'] = !empty($_POST['recaptcha']) ? '1' : '0';
+        $enableRecaptcha = !empty($_POST['recaptcha']);
+        $settings['recaptcha'] = $enableRecaptcha ? '1' : '0';
         $settings['rate_max'] = max(1, min(10000, (int)($_POST['rate_max'] ?? 10)));
         $settings['rate_window'] = max(60, min(604800, (int)($_POST['rate_window'] ?? 3600)));
         $settings['notify_email'] = trim((string)($_POST['notify_email'] ?? ''));
@@ -78,9 +98,24 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
         $currencyCode = strtoupper(trim((string)($_POST['currency_code'] ?? 'USD')));
         $settings['currency_code'] = preg_match('/\A[A-Z]{3}\z/', $currencyCode) === 1 ? $currencyCode : 'USD';
         $settings['columns'] = array_values(array_filter(array_map('strval', (array)($_POST['columns'] ?? []))));
-        $pdo->prepare('UPDATE `fb_forms` SET settings_json = ? WHERE id = ?')
-            ->execute([fb_json_encode($settings), $formId]);
-        $saved = true;
+        $recaptchaLock = null;
+        try {
+            if ($enableRecaptcha) {
+                $recaptchaLock = fb_acquire_recaptcha_config_lock($pdo);
+                if (!fb_recaptcha_configured($pdo, true)) {
+                    echo '<div class="fba-empty">Configure both global reCAPTCHA keys before enabling reCAPTCHA for this form.</div>';
+                    return;
+                }
+            }
+            $pdo->prepare('UPDATE `fb_forms` SET settings_json = ? WHERE id = ?')
+                ->execute([fb_json_encode($settings), $formId]);
+            $saved = true;
+        } catch (UnexpectedValueException $error) {
+            echo '<div class="fba-empty">' . htmlspecialchars($error->getMessage(), ENT_QUOTES) . '</div>';
+            return;
+        } finally {
+            if ($recaptchaLock !== null) fb_release_recaptcha_config_lock($pdo, $recaptchaLock);
+        }
     }
 
     if ($act === 'save_display') {
@@ -134,7 +169,7 @@ $allUsers = $pdo->query("SELECT id, name, email, role FROM `users` WHERE is_dele
     <h1>Settings: <?= htmlspecialchars($form['title'], ENT_QUOTES) ?></h1>
     <div class="fba-actions">
       <a class="fba-btn" href="<?= fb_url(['view' => 'forms', 'id' => null]) ?>">&larr; Forms</a>
-      <a class="fba-btn" href="<?= fb_url(['view' => 'builder', 'id' => $formId]) ?>">Builder</a>
+      <?php if ($form['status'] !== 'archived'): ?><a class="fba-btn" href="<?= fb_url(['view' => 'builder', 'id' => $formId]) ?>">Builder</a><?php endif; ?>
       <a class="fba-btn" href="<?= fb_url(['view' => 'submissions', 'id' => $formId]) ?>">Submissions</a>
     </div>
   </div>
@@ -154,10 +189,11 @@ $allUsers = $pdo->query("SELECT id, name, email, role FROM `users` WHERE is_dele
         <div class="fba-field"><label>Description (shown above the form)</label><input type="text" name="description" value="<?= htmlspecialchars((string)$form['description'], ENT_QUOTES) ?>"></div>
         <div class="fba-field"><label>Status</label>
           <select name="status">
-            <?php foreach (['draft' => 'Draft (not accepting)', 'active' => 'Active (accepting)', 'archived' => 'Archived'] as $k => $lbl): ?>
+            <?php $statusOptions = $form['status'] === 'archived' ? ['archived' => 'Archived'] : ['draft' => 'Draft (not accepting)', 'active' => 'Active (accepting)', 'archived' => 'Archived']; foreach ($statusOptions as $k => $lbl): ?>
             <option value="<?= $k ?>" <?= $form['status'] === $k ? 'selected' : '' ?>><?= $lbl ?></option>
             <?php endforeach; ?>
           </select>
+          <?php if ($form['status'] === 'archived'): ?><div class="fba-hint">Reactivate from the Archived forms view before publishing.</div><?php endif; ?>
         </div>
       </div>
       <button class="fba-btn primary" type="submit">Save general</button>
@@ -193,7 +229,7 @@ $allUsers = $pdo->query("SELECT id, name, email, role FROM `users` WHERE is_dele
       </div>
       <div class="fba-field"><label>Workflow statuses (comma-separated)</label><input type="text" name="workflow_statuses" value="<?= htmlspecialchars(implode(',', $settings['workflow_statuses']), ENT_QUOTES) ?>"></div>
       <div class="fba-checks" style="margin:.3rem 0 .8rem">
-        <label class="fba-check"><input type="checkbox" name="recaptcha" value="1" <?= $settings['recaptcha'] === '1' ? 'checked' : '' ?>> Enable reCAPTCHA</label>
+        <label class="fba-check"><input type="checkbox" name="recaptcha" value="1" <?= $settings['recaptcha'] === '1' ? 'checked' : '' ?>> Enable reCAPTCHA v2 checkbox</label>
         <label class="fba-check"><input type="checkbox" name="show_total" value="1" <?= $settings['show_total'] === '1' ? 'checked' : '' ?>> Show total (sums priced options)</label>
         <div class="fba-hint" style="margin-top:.3rem">Legacy: total otomatis di akhir form. <strong>Diabaikan</strong> jika ada element <strong>Total</strong> di canvas builder (cara yang disarankan — posisi &amp; alignment bisa diatur).</div>
       </div>
