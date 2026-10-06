@@ -14,7 +14,7 @@ $canViewSubmissions = fb_can_view_submissions($pdo, $form, $uid);
 ?>
 <div class="fba">
   <div class="fba-head">
-    <h1>Classic Builder: <?= htmlspecialchars($form['title'], ENT_QUOTES) ?> <span class="fba-badge <?= ['active'=>'active','draft'=>'draft','archived'=>'arch'][$form['status']] ?? 'draft' ?>"><?= htmlspecialchars($form['status'], ENT_QUOTES) ?></span></h1>
+    <h1 class="fba-icon-heading"><?= svg_ico('panel-top', 'fba-heading-icon') ?><span>Classic Builder: <?= htmlspecialchars($form['title'], ENT_QUOTES) ?></span><span class="fba-badge <?= ['active'=>'active','draft'=>'draft','archived'=>'arch'][$form['status']] ?? 'draft' ?>"><?= htmlspecialchars($form['status'], ENT_QUOTES) ?></span></h1>
     <div class="fba-actions">
       <a class="fba-btn" href="<?= fb_url(['view' => 'forms', 'id' => null]) ?>">&larr; Forms</a>
       <a class="fba-btn primary" href="<?= fb_visual_builder_url($formId) ?>">Visual Builder</a>

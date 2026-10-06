@@ -257,7 +257,7 @@ $listUrl = static function (array $extra = []) use ($q, $scope): string {
                 <summary class="fba-btn sm" title="Aksi lainnya" aria-label="Aksi lainnya"><svg class="lucide-icon fba-menu-trigger-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></svg></summary>
                 <div class="fba-more-menu">
                    <?php if ($canViewFormSubmissions): ?><a href="<?= fb_url(['view' => 'submissions', 'id' => $fid]) ?>"><?= svg_ico('clipboard-list') ?><span>Submissions</span></a><?php endif; ?>
-                    <?php if ($canEditForm && $scope !== 'archived'): ?><a href="<?= fb_url(['view' => 'builder', 'id' => $fid]) ?>"><?= svg_ico('layout-template') ?><span>Classic Builder</span></a><?php endif; ?>
+                    <?php if ($canEditForm && $scope !== 'archived'): ?><a href="<?= fb_url(['view' => 'builder', 'id' => $fid]) ?>"><?= svg_ico('panel-top') ?><span>Classic Builder</span></a><?php endif; ?>
                     <?php if ($canEditForm): ?><a href="<?= fb_url(['view' => 'settings', 'id' => $fid]) ?>"><?= svg_ico('settings') ?><span>Form settings</span></a>
                     <?php if ($canDefinitions): ?><a href="<?= fb_url(['action' => 'export_definition', 'id' => $fid]) ?>"><?= svg_ico('download') ?><span>Export definition</span></a><?php endif; ?>
                     <button type="submit" form="fba-dup-<?= $fid ?>"><?= svg_ico('copy') ?><span>Duplikat</span></button>

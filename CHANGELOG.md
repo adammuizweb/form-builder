@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.1 - 2026-10-06
+
+- Use Core's available `panel-top` Lucide icon consistently for Classic Builder navigation, headings, and Visual Builder handoff actions.
+
 ## 2.3.0 - 2026-10-05
 
 - Add a dedicated global Settings page for protected reCAPTCHA keys, definition import, and workspace/lifecycle documentation.

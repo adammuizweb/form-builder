@@ -48,6 +48,8 @@ function fb_admin_css(): void {
 .fba { color: var(--adam-text); font-family: inherit; }
 .fba-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.2rem; }
 .fba-head h1 { display: inline-flex; align-items: center; min-height: 44px; margin: 0; padding: .52rem .82rem; border: 1px solid var(--adam-border); border-left: 4px solid var(--adam-accent); border-radius: 12px; background: linear-gradient(135deg, color-mix(in srgb, var(--adam-accent) 9%, var(--adam-card)), var(--adam-card)); box-shadow: 0 8px 24px rgba(15 23 42 / .06); font-size: 1.35rem; font-weight: 750; letter-spacing: -.015em; }
+.fba-head h1.fba-icon-heading { gap: .5rem; }
+.fba-heading-icon { width: 20px; height: 20px; flex: 0 0 20px; color: var(--adam-accent); }
 .fba-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
 .fba-btn { display: inline-flex; align-items: center; justify-content: center; gap: .42rem; border: 1px solid var(--adam-border); background: var(--adam-card); color: var(--adam-text); border-radius: 9px; padding: .42rem .85rem; font-size: .8rem; font-weight: 600; cursor: pointer; text-decoration: none; transition: all .18s; font-family: inherit; }
 .fba-btn svg { width: 15px; height: 15px; flex: 0 0 15px; }

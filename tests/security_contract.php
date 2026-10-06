@@ -8,7 +8,7 @@ $permissions = array_column($manifest['permissions'] ?? [], null, 'key');
 $composer = json_decode((string)file_get_contents($root . '/composer.json'), true, 32, JSON_THROW_ON_ERROR);
 $lock = json_decode((string)file_get_contents($root . '/composer.lock'), true, 64, JSON_THROW_ON_ERROR);
 $lockedPackages = array_column($lock['packages'] ?? [], 'version', 'name');
-$check(($manifest['version'] ?? null) === '2.3.0' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.140' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
+$check(($manifest['version'] ?? null) === '2.3.1' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.140' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
 $check(in_array('content-editor', $manifest['dependencies']['js'] ?? [], true), 'upload descriptions declare the Core content-editor dependency');
 $staticCopies = array_column($manifest['static']['copy'] ?? [], 'to', 'from');
 $check(($staticCopies['public/proof.js'] ?? null) === 'static/plugins/form-builder/proof.js', 'submission proof generator publishes only in the plugin-owned static namespace');
@@ -177,9 +177,13 @@ $check(str_contains($adminUi, 'function fb_visual_builder_url(')
     && str_contains($adminIndex, 'fb_js_redirect(fb_visual_builder_url($newId))')
     && str_contains($adminIndex, '>Visual Builder</a>')
     && str_contains($adminIndex, '>Classic Builder</span>')
+    && str_contains($adminIndex, "svg_ico('panel-top')")
     && str_contains($classicBuilder, 'Classic Builder:')
+    && str_contains($classicBuilder, "svg_ico('panel-top', 'fba-heading-icon')")
+    && substr_count($visualBuilder, "svg_ico('panel-top')") === 2
+    && !str_contains($adminIndex, "svg_ico('layout-template')")
     && str_contains($classicBuilder, 'fb_visual_builder_url($formId)'),
-    'new forms default to Visual Builder while Classic remains explicitly available');
+    'new forms default to Visual Builder while Classic remains explicitly available with a Core icon');
 $check(str_contains($settings, 'name="success_message"')
     && str_contains($settings, 'name="success_detail_field"')
     && str_contains($settings, 'name="success_message_case"')

@@ -171,7 +171,7 @@ fb_admin_css();
     <span class="fba-badge <?= $statusClass ?>" id="fbvFormStatus"><?= htmlspecialchars((string)$form['status'], ENT_QUOTES) ?></span>
     <div class="fbv-status" id="fbvDraftStatus" data-state="loading" role="status">Loading draft...</div>
     <a class="fba-btn" href="<?= htmlspecialchars($settingsUrl, ENT_QUOTES) ?>">Settings</a>
-    <a class="fba-btn" href="<?= htmlspecialchars($classicUrl, ENT_QUOTES) ?>">Classic</a>
+    <a class="fba-btn" href="<?= htmlspecialchars($classicUrl, ENT_QUOTES) ?>"><?= svg_ico('panel-top') ?>Classic</a>
     <button class="fba-btn primary" id="fbvPublish" type="button" disabled>Publish</button>
   </header>
 
@@ -231,7 +231,7 @@ fb_admin_css();
       <div class="fbv-mode-card">
         <strong>Need advanced layout?</strong>
         <span>Rows, columns, custom HTML, and current production controls remain available.</span>
-        <a class="fba-btn sm" href="<?= htmlspecialchars($classicUrl, ENT_QUOTES) ?>">Open Classic Builder</a>
+        <a class="fba-btn sm" href="<?= htmlspecialchars($classicUrl, ENT_QUOTES) ?>"><?= svg_ico('panel-top') ?>Open Classic Builder</a>
       </div>
     </aside>
   </div>
