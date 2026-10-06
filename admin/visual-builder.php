@@ -99,9 +99,15 @@ fb_admin_css();
 .fbv-field-picker:disabled { cursor: not-allowed; opacity: .58; }
 .fbv-field-picker-help { display: block; margin-top: .4rem; color: var(--adam-muted); font-size: .68rem; line-height: 1.4; }
 .fbv-inspector textarea { resize: vertical; }
-.fbv-upload-editor-shell { margin-bottom: .75rem; }
+.fbv-upload-editor-shell, .fbv-content-editor-shell { margin-bottom: .75rem; }
 .fbv-upload-editor-error { padding: .7rem; border: 1px solid #dc2626; border-radius: 9px; color: #b91c1c; font-size: .74rem; line-height: 1.45; }
-#fbvUploadEditorParking { position: absolute; left: -100000px; width: 360px; visibility: hidden; pointer-events: none; }
+#fbvUploadEditorParking, #fbvContentEditorParking { position: absolute; left: -100000px; width: 360px; visibility: hidden; pointer-events: none; }
+.fbv-content-editor-shell [data-editor-area="quill"] { min-height: 260px; }
+.fbv-content-editor-shell [data-editor-quill] { min-height: 210px; }
+.fbv-protected-content { padding: .75rem; border: 1px dashed var(--adam-border); border-radius: 10px; color: var(--adam-muted); font-size: .72rem; line-height: 1.45; }
+.fbv-image-preview { display: grid; place-items: center; min-height: 120px; margin-bottom: .65rem; overflow: hidden; border: 1px dashed var(--adam-border); border-radius: 10px; background: var(--adam-card); color: var(--adam-muted); font-size: .72rem; }
+.fbv-image-preview img { display: block; width: 100%; max-height: 220px; object-fit: contain; }
+.fbv-image-actions { display: flex; gap: .45rem; margin-bottom: .7rem; }
 .fbv-inspector-actions { display: flex; justify-content: space-between; gap: .5rem; margin-top: 1rem; padding-top: .8rem; border-top: 1px solid var(--adam-border); }
 .fbv-position-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; }
 .fbv-inspector-key { font-family: ui-monospace, monospace; font-size: .72rem; }
@@ -233,7 +239,7 @@ fb_admin_css();
       <div class="fbv-inspector" id="fbvInspector"><div class="fbv-inspector-empty">Select a field on the canvas, or add one from the library.</div></div>
       <div class="fbv-mode-card">
         <strong>Compatibility tools</strong>
-        <span>Field-key changes, rich or raw content, image metadata, and Bin recovery remain available in Classic while Visual parity is completed.</span>
+        <span>Field-key changes and Bin recovery remain available in Classic while Visual parity is completed.</span>
         <a class="fba-btn sm" href="<?= htmlspecialchars($classicUrl, ENT_QUOTES) ?>"><?= svg_ico('panel-top') ?>Open Classic Builder</a>
       </div>
     </aside>
@@ -254,6 +260,22 @@ fb_admin_css();
       <?php endif; ?>
     </div>
   </div>
+  <div id="fbvContentEditorParking" aria-hidden="true">
+    <div class="fbv-content-editor-shell" id="fbvContentEditorShell">
+      <?php if ($canUnsafeCode && function_exists('content_editor_render_mount')): ?>
+      <?= content_editor_render_mount([
+          'id' => 'fbv-content-editor',
+          'name' => 's_visual_content_html',
+          'mode_name' => 's_visual_content_mode',
+          'value' => '',
+          'initial_mode' => 'codemirror',
+          'label' => __('Content'),
+      ]) ?>
+      <?php elseif ($canUnsafeCode): ?>
+      <div class="fbv-upload-editor-error" data-content-editor-error role="alert"><?= htmlspecialchars((string)__('The content editor is unavailable. Protected content cannot be edited safely.'), ENT_QUOTES) ?></div>
+      <?php endif; ?>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -261,6 +283,7 @@ fb_admin_css();
   const ENDPOINT = '/fb-visual-builder/';
   const FORM_ID = <?= $formId ?>;
   const CSRF = <?= json_encode($csrf, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+  const ADMIN_BASE = <?= json_encode(rtrim((string)(defined('ADMIN_BASE_PATH') ? ADMIN_BASE_PATH : ''), '/'), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
   const CAN_UNSAFE = <?= $canUnsafeCode ? 'true' : 'false' ?>;
   const TYPES = <?= json_encode($types, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
   const app = document.getElementById('fbvApp');
@@ -285,6 +308,9 @@ fb_admin_css();
   const uploadEditorParking = document.getElementById('fbvUploadEditorParking');
   const uploadEditorShell = document.getElementById('fbvUploadEditorShell');
   const uploadEditorRoot = uploadEditorShell?.querySelector('[data-jyavani-editor-mount]') || null;
+  const contentEditorParking = document.getElementById('fbvContentEditorParking');
+  const contentEditorShell = document.getElementById('fbvContentEditorShell');
+  const contentEditorRoot = contentEditorShell?.querySelector('[data-jyavani-editor-mount]') || null;
   const UPLOAD_MAX_FILES = <?= FB_UPLOAD_MAX_FILES ?>;
   const UPLOAD_DESCRIPTION_MAX_LENGTH = <?= FB_UPLOAD_DESCRIPTION_MAX_LENGTH ?>;
   const UPLOAD_MIB = 1024 * 1024;
@@ -304,6 +330,7 @@ fb_admin_css();
   let saveInFlight = false;
   let pendingDefinition = null;
   let hasUnsavedChanges = false;
+  let hasPendingControlChanges = false;
   let draggedFieldKey = null;
   let retryTimer = 0;
   let preview = null;
@@ -311,6 +338,10 @@ fb_admin_css();
   let uploadEditorFieldKey = null;
   let uploadEditorApplying = false;
   let uploadEditorSelectionToken = 0;
+  let contentEditor = null;
+  let contentEditorFieldKey = null;
+  let contentEditorApplying = false;
+  let contentEditorSelectionToken = 0;
 
   const setPanelHidden = (side, hidden, persist = true) => {
     const toggle = side === 'left' ? leftToggle : rightToggle;
@@ -333,7 +364,7 @@ fb_admin_css();
     status.dataset.state = state;
   };
   const updateActions = () => {
-    const busy = !draft || hasUnsavedChanges || saveInFlight;
+    const busy = !draft || hasUnsavedChanges || hasPendingControlChanges || saveInFlight;
     publishButton.disabled = busy || draft.published_changed || !draft.has_unpublished_changes;
     publishButton.title = draft?.published_changed ? 'Reload the Classic version before publishing' : publishButton.disabled ? '' : 'Publish this draft';
     resetButton.hidden = !draft?.published_changed;
@@ -372,7 +403,34 @@ fb_admin_css();
   const currentFields = () => workingDefinition?.form?.fields || [];
   const currentField = () => currentFields().find((field) => field.key === selectedKey) || null;
   const isUploadField = (field) => field && ['file', 'image'].includes(field.type);
+  const isProtectedContentField = (field) => field && ['richtext', 'raw_html'].includes(field.type);
   const mutableRecord = (value) => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const normalizePublicMedia = (detail) => {
+    if (!detail) return null;
+    const source = detail?.media && typeof detail.media === 'object' ? detail.media : detail;
+    const media = typeof window.normalizeMedia === 'function' ? window.normalizeMedia(detail) : detail;
+    if (!media?.url) return null;
+    const normalized = {
+      id: Number(media.id) > 0 ? Number(media.id) : null,
+      url: String(media.url),
+      title: String(media.title || ''),
+      alt: String(media.alt || media.title || ''),
+      caption: String(media.caption || '')
+    };
+    const accessValues = ['visibility', 'storage_disk', 'access_scope'].map((key) => String(source?.[key] || 'public').toLowerCase());
+    if (accessValues.some((value) => value !== 'public') || normalized.url.startsWith('/private/') || normalized.url.length > 2000 || (!normalized.url.startsWith('/') && !/^https?:\/\//i.test(normalized.url)) || [...normalized.title].length > 2000 || [...normalized.alt].length > 2000 || [...normalized.caption].length > 2000) {
+      throw new Error('Selected image must be publicly accessible');
+    }
+    return normalized;
+  };
+  const pickPublicMedia = (context = {}) => {
+    if (typeof window.openMediaSelector !== 'function') return Promise.reject(new Error('Gallery selector is unavailable'));
+    return window.openMediaSelector({
+      url: `${ADMIN_BASE}/admin/modal_img/index.php?embedded=1&visibility=public`,
+      maxWidth: '980px',
+      context: { surface: 'plugin.form-builder.visual', consumer: 'plugin.form-builder', resource_id: String(FORM_ID), selection_mode: 'immediate', ...context }
+    }).then(normalizePublicMedia);
+  };
   const ordered = (fields) => [...fields].sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0) || a.key.localeCompare(b.key));
   const layoutRows = () => ordered(currentFields().filter((field) => field.type === 'row'));
   const layoutColumns = () => layoutRows().flatMap((row, rowIndex) => ordered(currentFields().filter((field) => field.type === 'col' && field.parent === row.key)).map((column, columnIndex) => ({ row, column, rowIndex, columnIndex })));
@@ -477,6 +535,18 @@ fb_admin_css();
     const countries = currentFields().filter((candidate) => candidate.type === 'country' && !candidate.hidden);
     return `<div class="fba-field"><label>Country field</label><select data-country-field required>${countries.map((country) => `<option value="${escapeHtml(country.key)}"${field.settings?.country_field === country.key ? ' selected' : ''}>${escapeHtml(country.label || country.key)}</option>`).join('')}</select>${countries.length ? '' : '<div class="fba-hint">Add a visible Country field before configuring this phone field.</div>'}</div>`;
   };
+  const renderImageBlockEditor = (field) => {
+    if (field.type !== 'image_block') return '';
+    const settings = mutableRecord(field.settings);
+    const url = String(settings.url || '');
+    return `<section class="fbv-property-group"><strong>Image</strong><div class="fbv-image-preview">${url ? `<img src="${escapeHtml(url)}" alt="">` : 'No image selected'}</div><div class="fbv-image-actions"><button class="fba-btn sm" type="button" data-image-pick>Choose from Gallery</button></div><div class="fba-field"><label>Image URL</label><input data-image-prop="url" type="text" maxlength="2000" value="${escapeHtml(url)}" placeholder="/static/img/example.jpg"></div><div class="fba-field"><label>Alternative text</label><input data-image-prop="alt" type="text" maxlength="2000" value="${escapeHtml(settings.alt || '')}"></div><div class="fba-field"><label>Caption</label><input data-image-prop="caption" type="text" maxlength="2000" value="${escapeHtml(settings.caption || '')}"></div><div class="fba-field"><label>Width</label><select data-image-prop="width"><option value=""${settings.width ? '' : ' selected'}>Full width</option>${['75','50','25'].map((width) => `<option value="${width}"${settings.width === width ? ' selected' : ''}>${width}%</option>`).join('')}</select></div></section>`;
+  };
+  const renderContentEditorControl = (field) => {
+    if (!isProtectedContentField(field)) return '';
+    if (!CAN_UNSAFE) return '<div class="fbv-protected-content">Unsafe-code permission is required to edit this protected content.</div>';
+    if (!contentEditorRoot) return '<div class="fbv-upload-editor-error" role="alert">The content editor is unavailable. Protected content cannot be edited safely.</div>';
+    return `<section class="fbv-property-group"><strong>${field.type === 'raw_html' ? 'Raw HTML' : 'Rich text'}</strong><div data-content-editor-host></div>${field.type === 'raw_html' ? '<div class="fba-hint">Raw HTML remains in CodeMirror and is not executed in the draft preview.</div>' : '<div class="fba-hint">Complex markup automatically remains in CodeMirror to prevent lossy conversion.</div>'}</section>`;
+  };
   const renderAlignmentControls = (field) => `<section class="fbv-property-group"><strong>Alignment</strong><div class="fba-row2"><div class="fba-field"><label>Horizontal</label><select data-setting-prop="align"><option value=""${field.settings?.align ? '' : ' selected'}>Left (default)</option><option value="center"${field.settings?.align === 'center' ? ' selected' : ''}>Center</option><option value="right"${field.settings?.align === 'right' ? ' selected' : ''}>Right</option></select></div><div class="fba-field"><label>Vertical in column</label><select data-setting-prop="valign"><option value=""${field.settings?.valign ? '' : ' selected'}>Top (default)</option><option value="middle"${field.settings?.valign === 'middle' ? ' selected' : ''}>Middle</option><option value="bottom"${field.settings?.valign === 'bottom' ? ' selected' : ''}>Bottom</option></select></div></div></section>`;
   const storeUploadDescription = (fieldKey, content) => {
     const field = currentFields().find((candidate) => candidate.key === fieldKey);
@@ -487,6 +557,74 @@ fb_admin_css();
       target.settings = mutableRecord(target.settings);
       target.settings.upload_description_html = content;
     });
+  };
+  const storeContentHtml = (fieldKey, content) => {
+    const field = currentFields().find((candidate) => candidate.key === fieldKey);
+    if (!isProtectedContentField(field) || String(field.settings?.html || '') === content) return;
+    mutateDefinition((definition) => {
+      const target = definition.form.fields.find((candidate) => candidate.key === fieldKey);
+      if (!isProtectedContentField(target)) return;
+      target.settings = mutableRecord(target.settings);
+      if (content === '') delete target.settings.html;
+      else {
+        target.settings.html = content;
+        definition.form.settings.unsafe_code_enabled = true;
+      }
+    });
+  };
+  const syncContentEditor = () => {
+    if (!contentEditor || !contentEditorFieldKey || contentEditorApplying) return true;
+    let content;
+    try { content = contentEditor.sync(); }
+    catch (error) {
+      setStatus(error?.message || 'Content editor sync failed', 'error');
+      return false;
+    }
+    if ([...content].length > 100000) {
+      setStatus('Protected content is too long', 'error');
+      return false;
+    }
+    storeContentHtml(contentEditorFieldKey, content);
+    return true;
+  };
+  const detachContentEditor = (sync = true) => {
+    if (sync) syncContentEditor();
+    contentEditorSelectionToken++;
+    contentEditorFieldKey = null;
+    if (contentEditorShell && contentEditorParking && contentEditorShell.parentElement !== contentEditorParking) contentEditorParking.appendChild(contentEditorShell);
+    contentEditorParking?.setAttribute('aria-hidden', 'true');
+  };
+  let contentEditorTransition = Promise.resolve();
+  const setContentEditorContent = (field) => {
+    if (!contentEditor) return;
+    const token = ++contentEditorSelectionToken;
+    const content = String(field.settings?.html || '');
+    contentEditorTransition = contentEditorTransition.then(async () => {
+      if (token !== contentEditorSelectionToken || contentEditorFieldKey !== field.key) return;
+      contentEditorApplying = true;
+      try {
+        await contentEditor.setMode('codemirror');
+        if (token !== contentEditorSelectionToken || contentEditorFieldKey !== field.key) return;
+        contentEditor.setContent(content, { source: 'field-selection' });
+        const modes = contentEditorRoot?.querySelector('[data-editor-modes]');
+        const quillMode = contentEditorRoot?.querySelector('[data-editor-mode="quill"]');
+        if (modes) modes.hidden = field.type === 'raw_html';
+        if (quillMode) quillMode.disabled = field.type === 'raw_html';
+        if (field.type === 'richtext' && !contentEditor.isComplex()) await contentEditor.setMode('quill');
+      } finally {
+        contentEditorApplying = false;
+      }
+    }).catch((error) => {
+      if (token === contentEditorSelectionToken) setStatus(error?.message || 'The content editor could not load this field', 'error');
+    });
+  };
+  const attachContentEditor = (field) => {
+    const host = inspector.querySelector('[data-content-editor-host]');
+    if (!host || !contentEditorShell || !isProtectedContentField(field) || !CAN_UNSAFE) return;
+    host.appendChild(contentEditorShell);
+    contentEditorParking?.setAttribute('aria-hidden', 'false');
+    contentEditorFieldKey = field.key;
+    setContentEditorContent(field);
   };
   const syncUploadDescription = () => {
     if (!uploadDescriptionEditor || !uploadEditorFieldKey || uploadEditorApplying) return true;
@@ -556,6 +694,7 @@ fb_admin_css();
   };
   const renderInspector = () => {
     detachUploadDescriptionEditor();
+    detachContentEditor();
     const field = currentField();
     if (!field) {
       inspector.innerHTML = '<div class="fbv-inspector-empty">Select a field on the canvas, or add one from the library.</div>';
@@ -578,8 +717,9 @@ fb_admin_css();
     const siblingIndex = siblings.findIndex((candidate) => candidate.key === field.key);
     const positionControls = `<div class="fba-field"><label>Column</label><select data-field-parent>${layoutColumns().map(({ row, column, rowIndex, columnIndex }) => `<option value="${escapeHtml(column.key)}"${column.key === field.parent ? ' selected' : ''}>Row ${rowIndex + 1}, column ${columnIndex + 1}</option>`).join('')}</select></div><div class="fbv-position-actions"><button class="fba-btn sm" type="button" data-field-move="up"${siblingIndex <= 0 ? ' disabled' : ''}>Move up</button><button class="fba-btn sm" type="button" data-field-move="down"${siblingIndex < 0 || siblingIndex >= siblings.length - 1 ? ' disabled' : ''}>Move down</button></div>`;
     const protectedType = ['richtext', 'raw_html'].includes(field.type) && !CAN_UNSAFE;
-    inspector.innerHTML = `<span class="fbv-inspector-type">${escapeHtml(meta.label)}</span>${labelControl}${uploadControl}${headingControl}${inputControls}${renderAlignmentControls(field)}${positionControls}<div class="fbv-inspector-actions"><span class="fba-hint">Autosaved draft</span><button class="fba-btn danger sm" type="button" data-fbv-delete${protectedType ? ' disabled title="Unsafe-code permission required"' : ''}>Delete</button></div>`;
+    inspector.innerHTML = `<span class="fbv-inspector-type">${escapeHtml(meta.label)}</span>${labelControl}${uploadControl}${headingControl}${inputControls}${renderImageBlockEditor(field)}${renderContentEditorControl(field)}${renderAlignmentControls(field)}${positionControls}<div class="fbv-inspector-actions"><span class="fba-hint">Autosaved draft</span><button class="fba-btn danger sm" type="button" data-fbv-delete${protectedType ? ' disabled title="Unsafe-code permission required"' : ''}>Delete</button></div>`;
     if (isUploadField(field)) attachUploadDescriptionEditor(field);
+    if (isProtectedContentField(field)) attachContentEditor(field);
   };
   const mutateDefinition = (callback, refreshInspector = false) => {
     if (!draft) return;
@@ -796,11 +936,14 @@ fb_admin_css();
     try {
       const saved = await request('save', { revision: String(draft.revision), definition: JSON.stringify(definition) });
       draft = saved;
-      if (!pendingDefinition && workingDefinition === definition) {
+      if (!pendingDefinition && workingDefinition === definition && !hasPendingControlChanges) {
         applyPreview(saved.preview_html);
         hasUnsavedChanges = false;
       }
-      showDraftState();
+      if (hasPendingControlChanges) {
+        setStatus('Unsaved inspector changes', 'saving');
+        updateActions();
+      } else showDraftState();
       window.dispatchEvent(new CustomEvent('fbv:draft-saved', { detail: draft }));
     } catch (error) {
       saveFailed = true;
@@ -905,16 +1048,72 @@ fb_admin_css();
       showUploadEditorError(error?.message || <?= json_encode(__('The description editor could not be loaded.')) ?>);
     }
   };
+  const mountContentEditor = () => {
+    if (!contentEditorRoot || contentEditor || !CAN_UNSAFE) return;
+    try {
+      if (!window.JyavaniEditor || typeof window.JyavaniEditor.mount !== 'function') throw new Error('Core content editor is unavailable.');
+      contentEditor = window.JyavaniEditor.mount(contentEditorRoot, {
+        context: {
+          owner: 'plugin.form-builder',
+          resourceType: 'visual-protected-content',
+          operation: 'edit',
+          resourceId: FORM_ID,
+          canUpdate: true,
+          adminBasePath: ADMIN_BASE
+        },
+        codeHeight: '46vh',
+        mediaContext: { surface: 'plugin.form-builder.visual-content', consumer: 'plugin.form-builder', resource_id: String(FORM_ID), selection_mode: 'immediate' },
+        adapters: {
+          pickMedia: (request) => pickPublicMedia({ ...request.pickerContext, field: contentEditorFieldKey || '' }),
+          pickFile: () => Promise.reject(new Error('File insertion is unavailable for public form content.'))
+        },
+        confirmLossy: () => window.FormBuilderConfirm({
+          variant: 'warning',
+          badgeText: 'Visual Builder',
+          title: 'Switch to rich text?',
+          message: 'Complex HTML will be simplified when switching to rich text. Continue?',
+          confirmText: 'Switch editor',
+          cancelText: 'Cancel',
+          focus: 'cancel'
+        })
+      });
+      const storeEditorEvent = (event) => {
+        if (contentEditorApplying || !contentEditorFieldKey) return;
+        const field = currentFields().find((candidate) => candidate.key === contentEditorFieldKey);
+        if (!isProtectedContentField(field)) return;
+        const content = String(event?.content ?? contentEditor.sync());
+        if ([...content].length > 100000) {
+          contentEditorApplying = true;
+          try { contentEditor.setContent(String(field.settings?.html || ''), { source: 'length-rejected' }); }
+          finally { contentEditorApplying = false; }
+          setStatus('Protected content is too long. The last change was rejected.', 'error');
+          return;
+        }
+        storeContentHtml(contentEditorFieldKey, content);
+      };
+      contentEditor.on('change', storeEditorEvent);
+      contentEditor.on('modechange', storeEditorEvent);
+      contentEditor.on('error', (event) => setStatus(event.error?.message || 'Content editor action failed', 'error'));
+    } catch (error) {
+      contentEditor = null;
+      setStatus(error?.message || 'The content editor could not be loaded', 'error');
+    }
+  };
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', mountUploadDescriptionEditor, { once: true });
+    document.addEventListener('DOMContentLoaded', () => {
+      mountUploadDescriptionEditor();
+      mountContentEditor();
+    }, { once: true });
   } else {
     mountUploadDescriptionEditor();
+    mountContentEditor();
   }
   uploadEditorRoot?.addEventListener('input', () => {
     if (uploadEditorApplying) return;
     window.queueMicrotask(() => syncUploadDescription());
   });
   uploadEditorRoot?.addEventListener('focusout', () => syncUploadDescription());
+  contentEditorRoot?.addEventListener('focusout', () => syncContentEditor());
   request('load').then((loaded) => {
     draft = loaded;
     workingDefinition = loaded.definition;
@@ -1005,7 +1204,7 @@ fb_admin_css();
   });
   publishButton.addEventListener('click', async () => {
     if (publishButton.disabled || !draft) return;
-    if (!syncUploadDescription()) return;
+    if (!syncUploadDescription() || !syncContentEditor()) return;
     if (saveInFlight || pendingDefinition) {
       setStatus('Saving description before publish...', 'saving');
       if (!await waitForSaveIdle()) {
@@ -1022,6 +1221,7 @@ fb_admin_css();
       draft = published;
       workingDefinition = published.definition;
       hasUnsavedChanges = false;
+      hasPendingControlChanges = false;
       applyPreview(published.preview_html);
       renderInspector();
       syncHeader(workingDefinition);
@@ -1055,6 +1255,8 @@ fb_admin_css();
       }
     }
     if (resetButton.disabled) return;
+    detachUploadDescriptionEditor(false);
+    detachContentEditor(false);
     saveInFlight = true;
     setStatus('Reloading Classic version...', 'saving');
     updateActions();
@@ -1066,11 +1268,13 @@ fb_admin_css();
       selectedKey = null;
       pendingDefinition = null;
       hasUnsavedChanges = false;
+      hasPendingControlChanges = false;
       applyPreview(reset.preview_html);
       renderInspector();
       showDraftState();
     } catch (error) {
       setStatus(error.conflict ? 'Reset conflict - reload the page' : error.message, error.conflict ? 'conflict' : 'error');
+      renderInspector();
     } finally {
       saveInFlight = false;
       updateActions();
@@ -1145,6 +1349,7 @@ fb_admin_css();
       });
       return;
     }
+    hasPendingControlChanges = false;
     const property = validationInput.dataset.validationProp;
     const validation = { ...mutableRecord(field.validation) };
     const rawValue = validationInput.value.trim();
@@ -1173,8 +1378,61 @@ fb_admin_css();
       if (target) target.validation = validation;
     });
   });
+  inspector.addEventListener('change', (event) => {
+    const input = event.target.closest('[data-image-prop]');
+    if (!input || !['url', 'width'].includes(input.dataset.imageProp)) return;
+    const field = currentField();
+    if (!field || field.type !== 'image_block') return;
+    const property = input.dataset.imageProp;
+    const value = input.value.trim();
+    const reject = (message) => {
+      renderInspector();
+      hasUnsavedChanges = Boolean(pendingDefinition || saveInFlight);
+      setStatus(message, 'error');
+      updateActions();
+    };
+    hasPendingControlChanges = false;
+    if (property === 'url' && (value.length > 2000 || (value !== '' && ((!value.startsWith('/') && !/^https?:\/\//i.test(value)) || value.startsWith('/private/'))))) {
+      reject('Use a root-relative or HTTP(S) image URL');
+      return;
+    }
+    if (property === 'width' && value !== '' && !['25', '50', '75'].includes(value)) {
+      reject('Image width is invalid');
+      return;
+    }
+    mutateDefinition((definition) => {
+      const target = definition.form.fields.find((candidate) => candidate.key === selectedKey && candidate.type === 'image_block');
+      if (!target) return;
+      target.settings = mutableRecord(target.settings);
+      if (value === '') delete target.settings[property];
+      else target.settings[property] = value;
+    }, true);
+  });
   inspector.addEventListener('input', (event) => {
+    const imageInput = event.target.closest('[data-image-prop]');
+    if (imageInput) {
+      const property = imageInput.dataset.imageProp;
+      if (property === 'url') {
+        hasPendingControlChanges = true;
+        hasUnsavedChanges = true;
+        setStatus('Unsaved image URL', 'saving');
+        updateActions();
+        return;
+      }
+      if (!['alt', 'caption'].includes(property)) return;
+      const value = imageInput.value;
+      if ([...value].length > 2000) return;
+      mutateDefinition((definition) => {
+        const target = definition.form.fields.find((candidate) => candidate.key === selectedKey && candidate.type === 'image_block');
+        if (!target) return;
+        target.settings = mutableRecord(target.settings);
+        if (value === '') delete target.settings[property];
+        else target.settings[property] = value;
+      });
+      return;
+    }
     if (event.target.matches('[data-validation-prop]')) {
+      hasPendingControlChanges = true;
       hasUnsavedChanges = true;
       setStatus('Unsaved validation changes', 'saving');
       updateActions();
@@ -1325,6 +1583,42 @@ fb_admin_css();
     });
   });
   inspector.addEventListener('click', (event) => {
+    const imagePicker = event.target.closest('[data-image-pick]');
+    if (imagePicker) {
+      const field = currentField();
+      if (!field || field.type !== 'image_block') return;
+      if (typeof window.openMediaSelector !== 'function') {
+        setStatus('Gallery selector is unavailable', 'error');
+        return;
+      }
+      const fieldKey = field.key;
+      imagePicker.disabled = true;
+      window.openMediaSelector({
+        url: `${ADMIN_BASE}/admin/modal_img/index.php?embedded=1&visibility=public`,
+        maxWidth: '980px',
+        context: { surface: 'plugin.form-builder.visual', consumer: 'plugin.form-builder', resource_id: String(FORM_ID), field: fieldKey, selection_mode: 'immediate' }
+      }).then((detail) => {
+        const source = detail?.media && typeof detail.media === 'object' ? detail.media : detail;
+        const media = typeof window.normalizeMedia === 'function' ? window.normalizeMedia(detail) : detail;
+        if (!media?.url) return;
+        const values = { url: String(media.url), alt: String(media.alt || media.title || ''), caption: String(media.caption || '') };
+        const accessValues = ['visibility', 'storage_disk', 'access_scope'].map((key) => String(source?.[key] || 'public').toLowerCase());
+        if (accessValues.some((value) => value !== 'public') || values.url.startsWith('/private/') || values.url.length > 2000 || (!values.url.startsWith('/') && !/^https?:\/\//i.test(values.url)) || [...values.alt].length > 2000 || [...values.caption].length > 2000) {
+          setStatus('Selected image metadata is invalid', 'error');
+          return;
+        }
+        mutateDefinition((definition) => {
+          const target = definition.form.fields.find((candidate) => candidate.key === fieldKey && candidate.type === 'image_block');
+          if (!target) return;
+          target.settings = mutableRecord(target.settings);
+          target.settings.url = values.url;
+          if (!target.settings.alt && values.alt) target.settings.alt = values.alt;
+          if (!target.settings.caption && values.caption) target.settings.caption = values.caption;
+        }, true);
+      }).catch((error) => setStatus(error?.message || 'Gallery selection failed', 'error'))
+        .finally(() => { imagePicker.disabled = false; });
+      return;
+    }
     const addOption = event.target.closest('[data-option-add]');
     if (addOption) {
       const field = currentField();
@@ -1403,15 +1697,19 @@ fb_admin_css();
 
   window.addEventListener('beforeunload', (event) => {
     syncUploadDescription();
-    if (!hasUnsavedChanges && !saveInFlight) return;
+    syncContentEditor();
+    if (!hasUnsavedChanges && !hasPendingControlChanges && !saveInFlight) return;
     event.preventDefault();
     event.returnValue = '';
   });
   window.addEventListener('pagehide', (event) => {
     if (event.persisted) return;
     syncUploadDescription();
+    syncContentEditor();
     if (uploadDescriptionEditor) uploadDescriptionEditor.destroy();
     uploadDescriptionEditor = null;
+    if (contentEditor) contentEditor.destroy();
+    contentEditor = null;
   });
 
   devices.forEach((button) => button.addEventListener('click', () => {

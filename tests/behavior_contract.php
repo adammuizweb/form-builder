@@ -253,6 +253,33 @@ $check(str_contains($parityEmailHtml, 'class="fb-field fb-al-r fb-v-b"')
     && str_contains($parityEmailHtml, 'maxlength="24"')
     && $parityErrors !== [],
     'Visual parity properties round-trip through definitions, public alignment, and detailed validation');
+$imageBlockDefinition = $definition;
+$imageBlockDefinition['form']['fields'][] = ['key'=>'hero_image','parent'=>'col_main','type'=>'image_block','label'=>'Hero image','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>40,'hidden'=>false,'options'=>[],'validation'=>[],'settings'=>['url'=>'/static/img/hero.jpg','alt'=>'Campus courtyard','caption'=>'Welcome to campus','width'=>'50']];
+$decodedImageBlock = fb_definition_decode($imageBlockDefinition)['form']['fields'][5];
+$imageBlockField = ['type'=>'image_block','field_key'=>'hero_image','label'=>'Hero image','required'=>0,'is_hidden'=>0,'validation_json'=>null,'settings_json'=>fb_json_encode($decodedImageBlock['settings'])];
+$imageBlockHtml = fb_render_field_html($imageBlockField, 'contract', 'image-block', false, fb_default_settings());
+$check(str_contains($imageBlockHtml, 'src="/static/img/hero.jpg"')
+    && str_contains($imageBlockHtml, 'alt="Campus courtyard"')
+    && str_contains($imageBlockHtml, '<figcaption>Welcome to campus</figcaption>')
+    && str_contains($imageBlockHtml, 'style="max-width:50%"'),
+    'Image Block metadata round-trips through definitions and the public renderer');
+$invalidImageBlock = $imageBlockDefinition;
+$invalidImageBlock['form']['fields'][5]['settings']['url'] = 'javascript:alert(1)';
+$check($rejects(static fn() => fb_definition_decode($invalidImageBlock)), 'deep validation rejects unsafe Image Block URLs');
+$protectedContentDefinition = $definition;
+$protectedContentDefinition['form']['settings']['unsafe_code_enabled'] = true;
+$protectedContentDefinition['form']['fields'][] = ['key'=>'rich_content','parent'=>'col_main','type'=>'richtext','label'=>'Rich content','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>40,'hidden'=>false,'options'=>[],'validation'=>[],'settings'=>['html'=>'<p>Rich <strong>content</strong>.</p>']];
+$protectedContentDefinition['form']['fields'][] = ['key'=>'raw_content','parent'=>'col_main','type'=>'raw_html','label'=>'Raw content','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>50,'hidden'=>false,'options'=>[],'validation'=>[],'settings'=>['html'=>'<section data-contract="raw">Raw content</section>']];
+$decodedProtectedContent = fb_definition_decode($protectedContentDefinition);
+$richContentField = ['type'=>'richtext','field_key'=>'rich_content','label'=>'Rich content','required'=>0,'is_hidden'=>0,'settings_json'=>fb_json_encode($decodedProtectedContent['form']['fields'][5]['settings'])];
+$rawContentField = ['type'=>'raw_html','field_key'=>'raw_content','label'=>'Raw content','required'=>0,'is_hidden'=>0,'settings_json'=>fb_json_encode($decodedProtectedContent['form']['fields'][6]['settings'])];
+$richContentHtml = fb_render_field_html($richContentField, 'contract', 'rich-content', true, fb_default_settings());
+$rawContentHtml = fb_render_field_html($rawContentField, 'contract', 'raw-content', true, fb_default_settings());
+$check(str_contains($richContentHtml, '<p>Rich <strong>content</strong>.</p>')
+    && str_contains($rawContentHtml, '<section data-contract="raw">Raw content</section>')
+    && fb_visual_definition_has_unsafe_code($decodedProtectedContent)
+    && !array_key_exists('html', fb_visual_safe_definition($decodedProtectedContent)['form']['fields'][5]['settings']),
+    'protected Rich Text and Raw HTML round-trip for authorized rendering while redacted Visual definitions omit source');
 $GLOBALS['__APP_LOCALE'] = 'fr-CA';
 $localizedSettings = array_merge(fb_default_settings(), $definition['form']['settings']);
 $localizedPhone = fb_localized_field(['field_key'=>'phone','label'=>'Phone'], $localizedSettings);
