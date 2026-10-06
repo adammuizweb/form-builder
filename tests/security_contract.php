@@ -8,7 +8,7 @@ $permissions = array_column($manifest['permissions'] ?? [], null, 'key');
 $composer = json_decode((string)file_get_contents($root . '/composer.json'), true, 32, JSON_THROW_ON_ERROR);
 $lock = json_decode((string)file_get_contents($root . '/composer.lock'), true, 64, JSON_THROW_ON_ERROR);
 $lockedPackages = array_column($lock['packages'] ?? [], 'version', 'name');
-$check(($manifest['version'] ?? null) === '2.3.1' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.140' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
+$check(($manifest['version'] ?? null) === '2.4.0' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.140' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
 $check(in_array('content-editor', $manifest['dependencies']['js'] ?? [], true), 'upload descriptions declare the Core content-editor dependency');
 $staticCopies = array_column($manifest['static']['copy'] ?? [], 'to', 'from');
 $check(($staticCopies['public/proof.js'] ?? null) === 'static/plugins/form-builder/proof.js', 'submission proof generator publishes only in the plugin-owned static namespace');
@@ -110,6 +110,19 @@ $check($capacityUsageSource !== '' && substr_count($capacityUsageSource, '$pdo->
     && str_contains($plugin, 'function fb_assert_capacity_configuration(')
     && substr_count($ajax, 'fb_assert_capacity_configuration($pdo, $formId, $currentFields, $nextFields)') >= 2,
     'capacity rendering uses one live-submission query and canonical edits preserve occupied field identities');
+$definitions = (string)file_get_contents($root . '/includes/definitions.php');
+$draftHelpers = (string)file_get_contents($root . '/includes/visual-drafts.php');
+$check(str_contains($plugin, 'function fb_assert_submission_field_key_transition(')
+    && str_contains($plugin, "JSON_CONTAINS_PATH(data_json, 'one',")
+    && str_contains($plugin, "JSON_CONTAINS_PATH(files_json, 'one',")
+    && str_contains($plugin, 'deleted_at IS NOT NULL')
+    && str_contains($ajax, "field_key = ?')")
+    && str_contains($ajax, 'fb_submission_history_uses_field_keys($pdo, $formId, [$key])')
+    && str_contains($ajax, 'fb_assert_submission_field_key_transition($pdo, $formId, $currentFields, $nextFields)')
+    && str_contains($draftHelpers, 'fb_assert_submission_field_key_transition(')
+    && str_contains($definitions, 'fb_assert_submission_field_key_transition(')
+    && str_contains($definitions, 'DELETE FROM fb_fields WHERE form_id = ? AND deleted_at IS NULL'),
+    'all canonical field-key mutations protect submission identities and definition replacement preserves the Bin');
 $check(!str_contains((string)file_get_contents($root . '/plugin.php'), 'CREATE TABLE') && !str_contains((string)file_get_contents($root . '/plugin.php'), 'ALTER TABLE'), 'runtime entrypoint contains no DDL');
 $adminIndex = (string)file_get_contents($root . '/admin/index.php');
 $globalSettings = (string)file_get_contents($root . '/admin/global-settings.php');
@@ -251,7 +264,6 @@ $check(str_contains($visualPreview, "user_can(\$pdo, \$uid, 'plugin.form-builder
     && str_contains($visualPreview, 'Cache-Control: private, no-store')
     && str_contains($visualPreview, 'X-Robots-Tag: noindex, nofollow'),
     'Visual preview uses the authorized Core public layout without executable form customizations');
-$draftHelpers = (string)file_get_contents($root . '/includes/visual-drafts.php');
 $check(str_contains($draftHelpers, 'FOR UPDATE')
     && str_contains($draftHelpers, 'revision = ?')
     && str_contains($draftHelpers, 'hash_equals(')
@@ -267,6 +279,29 @@ $check(str_contains($draftHelpers, 'function fb_visual_publish_draft(')
     && str_contains($plugin, 'SELECT GET_LOCK(?, ?)')
     && str_contains((string)file_get_contents($root . '/admin/bin.php'), 'fb_acquire_form_mutation_lock($pdo, $formId)'),
     'transactional publishing preserves the field bin and serializes with Classic edits and restores');
+$check(str_contains($draftHelpers, 'function fb_visual_attach_field_identities(')
+    && str_contains($draftHelpers, 'function fb_visual_assert_field_identity_transition(')
+    && str_contains($draftHelpers, '$currentByIdentity')
+    && str_contains($draftHelpers, 'UPDATE fb_fields SET parent_id=')
+    && str_contains($draftHelpers, 'UPDATE fb_fields SET deleted_at=NOW()')
+    && str_contains($draftHelpers, 'fb_cascade_trashed_field_key_reference_map(')
+    && str_contains($visualBuilder, '>Move to Bin</button>')
+    && str_contains($visualBuilder, 'Open Field Bin'),
+    'Visual deletion keeps historical identities recoverable while surviving canonical rows update in place');
+$check(str_contains($submit, 'fb_json_encode((object)$data)')
+    && str_contains($submit, 'fb_json_encode((object)$files)')
+    && str_contains((string)file_get_contents($root . '/includes/submission-import.php'), 'fb_json_encode((object)$normalized[\'data\'])')
+    && str_contains($plugin, "NOT IN ('OBJECT','ARRAY')")
+    && str_contains($plugin, "'$[' . \$key . ']'"),
+    'numeric field keys persist as JSON objects while legacy array-shaped submission maps remain protected');
+$check(str_contains($draftHelpers, 'function fb_visual_definition_json_value(')
+    && str_contains($draftHelpers, "\$translation['fields'] = (object)\$translation['fields']")
+    && substr_count($visualAjax, 'fb_visual_draft_transport(') === 3,
+    'Visual draft storage and transport preserve numeric translation field maps as JSON objects');
+$check(str_contains($plugin, 'function fb_field_restore_dependency_error(')
+    && str_contains($plugin, "['after_field', 'before_field']")
+    && str_contains((string)file_get_contents($root . '/admin/bin.php'), 'fb_field_restore_dependency_error($pdo, $formId, $f)'),
+    'field Bin restore requires active Country and Date dependencies before reactivation');
 $check(str_contains($draftHelpers, 'function fb_visual_protected_code_hash(')
     && str_contains($draftHelpers, 'Unsafe-code permission is required to publish protected content changes.')
     && str_contains($visualAjax, 'catch (DomainException $error)')
@@ -380,6 +415,14 @@ $check(str_contains($visualBuilder, 'Object.defineProperty(translated, option.va
     && str_contains($visualBuilder, 'priceToggle?.focus({ preventScroll: true })')
     && substr_count($visualBuilder, 'focus({ preventScroll: true })') >= 3,
     'structured option edits preserve translations, visibly reject invalid input, and restore keyboard focus');
+$check(str_contains($visualBuilder, 'data-field-key')
+    && str_contains($visualBuilder, "candidate.parent === oldKey")
+    && str_contains($visualBuilder, "candidate.settings.country_field === oldKey")
+    && str_contains($visualBuilder, "['after_field', 'before_field']")
+    && str_contains($visualBuilder, "['confirmation_email_field', 'reply_to_email_field', 'success_detail_field']")
+    && str_contains($visualBuilder, 'Object.defineProperty(translatedFields, nextKey')
+    && str_contains($visualBuilder, "setStatus('Field key changed - checking submission history'"),
+    'Visual field-key edits validate locally and atomically cascade every definition reference before server history checks');
 $check(str_contains($visualBuilder, 'id="fbvToggleLeft"')
     && str_contains($visualBuilder, 'id="fbvToggleRight"')
     && str_contains($visualBuilder, 'aria-controls="fbvQuestionLibrary"')

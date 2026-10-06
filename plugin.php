@@ -453,6 +453,112 @@ function fb_assert_capacity_configuration(PDO $pdo, int $formId, array $currentF
     }
 }
 
+function fb_assert_submission_history_field_json(PDO $pdo, int $formId): void {
+    $malformed = $pdo->prepare("SELECT 1 FROM fb_submissions WHERE form_id = ? AND ((data_json IS NOT NULL AND (JSON_VALID(data_json) = 0 OR COALESCE(JSON_TYPE(IF(JSON_VALID(data_json), data_json, '{}')), '') NOT IN ('OBJECT','ARRAY'))) OR (files_json IS NOT NULL AND (JSON_VALID(files_json) = 0 OR COALESCE(JSON_TYPE(IF(JSON_VALID(files_json), files_json, '{}')), '') NOT IN ('OBJECT','ARRAY')))) LIMIT 1");
+    $malformed->execute([$formId]);
+    if ($malformed->fetchColumn() !== false) throw new InvalidArgumentException('Submission history contains invalid field data; field keys cannot change.');
+}
+
+function fb_submission_history_uses_field_keys(PDO $pdo, int $formId, array $keys): bool {
+    if ($keys === []) return false;
+    $paths = [];
+    foreach (array_values(array_unique($keys, SORT_STRING)) as $key) {
+        if (!is_string($key) || preg_match('/\A[a-z0-9][a-z0-9_]{0,79}\z/', $key) !== 1) throw new InvalidArgumentException('Invalid field key transition.');
+        $paths[] = '$."' . $key . '"';
+        if (preg_match('/\A(?:0|[1-9][0-9]*)\z/', $key) === 1) $paths[] = '$[' . $key . ']';
+    }
+    $placeholders = implode(',', array_fill(0, count($paths), '?'));
+    $used = $pdo->prepare("SELECT 1 FROM fb_submissions WHERE form_id = ? AND ((data_json IS NOT NULL AND JSON_CONTAINS_PATH(data_json, 'one', {$placeholders})) OR (files_json IS NOT NULL AND JSON_CONTAINS_PATH(files_json, 'one', {$placeholders}))) LIMIT 1");
+    $used->execute(array_merge([$formId], $paths, $paths));
+    return $used->fetchColumn() !== false;
+}
+
+function fb_cascade_trashed_field_key_reference_map(PDO $pdo, int $formId, array $renames): void {
+    $renameMap = [];
+    foreach ($renames as $rename) {
+        if (!is_array($rename) || count($rename) !== 2) throw new InvalidArgumentException('Invalid field key rename map.');
+        [$oldKey, $newKey] = array_values($rename);
+        if (!is_string($oldKey) || !is_string($newKey) || $oldKey === $newKey) continue;
+        $renameMap['key:' . $oldKey] = $newKey;
+    }
+    if ($renameMap === []) return;
+    $select = $pdo->prepare("SELECT id,type,validation_json,settings_json FROM fb_fields WHERE form_id = ? AND deleted_at IS NOT NULL AND type IN ('intl_phone','date')");
+    $select->execute([$formId]);
+    $settingsUpdate = $pdo->prepare('UPDATE fb_fields SET settings_json = ? WHERE id = ? AND form_id = ? AND deleted_at IS NOT NULL');
+    $validationUpdate = $pdo->prepare('UPDATE fb_fields SET validation_json = ? WHERE id = ? AND form_id = ? AND deleted_at IS NOT NULL');
+    foreach ($select->fetchAll(PDO::FETCH_ASSOC) ?: [] as $field) {
+        if ($field['type'] === 'intl_phone') {
+            $settings = fb_field_settings($field);
+            $replacement = $renameMap['key:' . (string)($settings['country_field'] ?? '')] ?? null;
+            if ($replacement !== null) {
+                $settings['country_field'] = $replacement;
+                $settingsUpdate->execute([fb_json_encode($settings), (int)$field['id'], $formId]);
+            }
+            continue;
+        }
+        $validation = fb_field_validation($field); $changed = false;
+        foreach (['after_field', 'before_field'] as $rule) {
+            $replacement = $renameMap['key:' . (string)($validation[$rule] ?? '')] ?? null;
+            if ($replacement !== null) { $validation[$rule] = $replacement; $changed = true; }
+        }
+        if ($changed) $validationUpdate->execute([fb_json_encode($validation), (int)$field['id'], $formId]);
+    }
+}
+
+function fb_cascade_trashed_field_key_references(PDO $pdo, int $formId, string $oldKey, string $newKey): void {
+    fb_cascade_trashed_field_key_reference_map($pdo, $formId, [[$oldKey, $newKey]]);
+}
+
+function fb_field_restore_dependency_error(PDO $pdo, int $formId, array $field): ?string {
+    if (($field['type'] ?? null) === 'intl_phone') {
+        $countryKey = (string)(fb_field_settings($field)['country_field'] ?? '');
+        $country = $pdo->prepare("SELECT required,is_hidden FROM fb_fields WHERE form_id = ? AND field_key = ? AND type = 'country' AND deleted_at IS NULL LIMIT 1");
+        $country->execute([$formId, $countryKey]);
+        $countryState = $country->fetch(PDO::FETCH_ASSOC);
+        if (!is_array($countryState) || !empty($countryState['is_hidden']) || (!empty($field['required']) && empty($countryState['required']))) return 'Restore and configure the linked Country field first.';
+    }
+    if (($field['type'] ?? null) === 'date') {
+        $date = $pdo->prepare("SELECT 1 FROM fb_fields WHERE form_id = ? AND field_key = ? AND type = 'date' AND deleted_at IS NULL LIMIT 1");
+        foreach (['after_field', 'before_field'] as $rule) {
+            $dateKey = (string)(fb_field_validation($field)[$rule] ?? '');
+            if ($dateKey === '') continue;
+            $date->execute([$formId, $dateKey]);
+            if ($date->fetchColumn() === false) return "Restore the referenced Date field '{$dateKey}' first.";
+        }
+    }
+    return null;
+}
+
+function fb_assert_submission_field_key_transition(PDO $pdo, int $formId, array $currentFields, array $nextFields, bool $protectRemoved = true): void {
+    $extractKeys = static function (array $fields): array {
+        $keys = [];
+        foreach ($fields as $field) {
+            if (!is_array($field)) continue;
+            $key = (string)($field['field_key'] ?? $field['key'] ?? '');
+            if (preg_match('/\A[a-z0-9][a-z0-9_]{0,79}\z/', $key) !== 1) throw new InvalidArgumentException('Invalid field key transition.');
+            $keys[] = $key;
+        }
+        return array_values(array_unique($keys, SORT_STRING));
+    };
+    $currentKeys = $extractKeys($currentFields);
+    $nextKeys = $extractKeys($nextFields);
+    $removed = array_values(array_diff($currentKeys, $nextKeys));
+    $added = array_values(array_diff($nextKeys, $currentKeys));
+    if ($removed === [] && $added === []) return;
+
+    fb_assert_submission_history_field_json($pdo, $formId);
+    $protectedKeys = $protectRemoved ? array_merge($removed, $added) : $added;
+    if (fb_submission_history_uses_field_keys($pdo, $formId, $protectedKeys)) throw new InvalidArgumentException('One or more field keys are locked by submission history.');
+
+    if ($added !== []) {
+        $placeholders = implode(',', array_fill(0, count($added), '?'));
+        $trashed = $pdo->prepare("SELECT field_key FROM fb_fields WHERE form_id = ? AND field_key IN ({$placeholders}) AND deleted_at IS NOT NULL LIMIT 1");
+        $trashed->execute(array_merge([$formId], $added));
+        $trashedKey = $trashed->fetchColumn();
+        if ($trashedKey !== false) throw new InvalidArgumentException("Field key '{$trashedKey}' is reserved by the Bin.");
+    }
+}
+
 function fb_select_capacity_errors(PDO $pdo, int $formId, array $fields, array $submissions, array $settings = []): array {
     $limits = fb_select_capacity_limits($fields);
     if ($limits === []) return [];

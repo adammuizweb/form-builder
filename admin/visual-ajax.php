@@ -28,14 +28,14 @@ try {
     $allowUnsafeCode = user_can($pdo, $uid, 'plugin.form-builder.unsafe-code.manage');
     $action = (string)($_POST['fb_action'] ?? '');
     if ($action === 'load') {
-        fb_visual_json(['ok' => true, 'draft' => fb_visual_load_draft($pdo, $formId, $uid, $allowUnsafeCode)]);
+        fb_visual_json(['ok' => true, 'draft' => fb_visual_draft_transport(fb_visual_load_draft($pdo, $formId, $uid, $allowUnsafeCode))]);
     }
     if ($action === 'save') {
         $revision = filter_var($_POST['revision'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
         if ($revision === false) fb_visual_json(['ok' => false, 'error' => 'Invalid draft revision'], 422);
         $definition = $_POST['definition'] ?? null;
         if (!is_string($definition)) fb_visual_json(['ok' => false, 'error' => 'Invalid form definition'], 422);
-        fb_visual_json(['ok' => true, 'draft' => fb_visual_save_draft($pdo, $formId, $definition, $revision, $uid, $allowUnsafeCode)]);
+        fb_visual_json(['ok' => true, 'draft' => fb_visual_draft_transport(fb_visual_save_draft($pdo, $formId, $definition, $revision, $uid, $allowUnsafeCode))]);
     }
     if ($action === 'publish' || $action === 'reset') {
         $revision = filter_var($_POST['revision'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
@@ -43,7 +43,7 @@ try {
         $draft = $action === 'publish'
             ? fb_visual_publish_draft($pdo, $formId, $revision, $uid, $allowUnsafeCode)
             : fb_visual_reset_draft($pdo, $formId, $revision, $uid, $allowUnsafeCode);
-        fb_visual_json(['ok' => true, 'draft' => $draft]);
+        fb_visual_json(['ok' => true, 'draft' => fb_visual_draft_transport($draft)]);
     }
     fb_visual_json(['ok' => false, 'error' => 'Unknown action'], 400);
 } catch (UnexpectedValueException $error) {

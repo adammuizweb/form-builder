@@ -184,7 +184,7 @@ try {
     $history = [['at'=>gmdate('c'),'from'=>null,'to'=>'submitted','actor'=>null,'source'=>'public']];
     $source = ['channel'=>'web','locale'=>fb_locale(),'path'=>mb_substr((string)($_SERVER['REQUEST_URI'] ?? ''),0,500),'user_agent'=>mb_substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''),0,500)];
     $stmt = $pdo->prepare('INSERT INTO fb_submissions (form_id,reference_code,workflow_status,history_json,source_json,idempotency_key,data_json,files_json,totals_json,search_blob,ip,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,NOW(),NOW())');
-    $stmt->execute([$formId,$reference,'submitted',fb_json_encode($history),fb_json_encode($source),$idempotency,fb_json_encode($data),$files ? fb_json_encode($files) : null,fb_json_encode(['total'=>fb_compute_total($fields,$data)]),fb_search_blob($fields,$data),$ctx['ip']]);
+    $stmt->execute([$formId,$reference,'submitted',fb_json_encode($history),fb_json_encode($source),$idempotency,fb_json_encode((object)$data),$files ? fb_json_encode((object)$files) : null,fb_json_encode(['total'=>fb_compute_total($fields,$data)]),fb_search_blob($fields,$data),$ctx['ip']]);
     $submissionId = (int)$pdo->lastInsertId();
     $pdo->commit();
     fb_release_form_mutation_lock($pdo, $submissionMutationLock);

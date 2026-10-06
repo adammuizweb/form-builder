@@ -1,6 +1,6 @@
 # Form Builder
 
-Form Builder 2.3.1 is a Jyavani Core 2.3.140 plugin for reusable public forms, configurable private multi-file uploads, multilingual definitions, review workflows, and revision-safe visual editing.
+Form Builder 2.4.0 is a Jyavani Core 2.3.140 plugin for reusable public forms, configurable private multi-file uploads, multilingual definitions, review workflows, and revision-safe visual editing.
 
 ## Requirements
 
@@ -16,7 +16,7 @@ Core runs `migrations/` during install, update, or enable. Runtime requests only
 
 Embed an active form with `[form slug="contact"]`. On Jyavani Core 2.3.167 or newer, authorized forms are highlighted in Article, Page, and Theme Content CodeMirror editors; hover identifies the form and Ctrl/Cmd-click, Enter, or F12 opens its Visual Builder in a new tab. Older supported Core versions continue rendering forms without editor-reference navigation. Theme Section integrations may render `form-builder` with a `slug` attribute, and Theme Zones may use the Form Builder widget. Repeated embeds receive unique DOM IDs. Form slugs preserve valid hyphens and underscores when settings or status change. Authorized Form Builder editors see a non-public status notice when an embed points to a draft, archived, trashed, or missing form; visitors never receive an unavailable form.
 
-Visual Builder is the primary editing workflow and supports detailed number, date, and text validation, linked international-phone Country selection, Image Block media and metadata, protected Rich Text or Raw HTML editing through Core's Quill/CodeMirror mount, and horizontal or vertical field alignment. Classic Builder remains the advanced compatibility surface for direct canonical edits, field-key changes, and field-bin recovery until those controls reach Visual Builder parity.
+Visual Builder is the primary editing workflow and supports detailed number, date, and text validation, linked international-phone Country selection, Image Block media and metadata, protected Rich Text or Raw HTML editing through Core's Quill/CodeMirror mount, horizontal or vertical field alignment, safe field-key changes, and recoverable field deletion through the Bin. Classic Builder remains available as an advanced canonical compatibility surface.
 
 Definitions use schema version `1` and deterministically upsert by slug. The admin import/export controls omit submissions, files, secrets, ACL, and unsafe code by default. PHP integrations can call `fb_export_form_definition()` and `fb_upsert_form_definition()` directly after checking their own authorization.
 

@@ -109,10 +109,11 @@ function fb_definition_decode(string|array $definition): array {
 
     $types = fb_field_types(); $byKey = []; $optionValues = []; $capacityOptionCount = 0;
     foreach ($fields as $field) {
-        $allowedKeys = ['key','parent','type','label','placeholder','help','required','width','order','hidden','options','validation','settings'];
+        $allowedKeys = ['key','parent','type','label','placeholder','help','required','width','order','hidden','options','validation','settings','identity'];
         if (!is_array($field) || array_diff(array_keys($field), $allowedKeys) !== []) throw new InvalidArgumentException('Invalid field contract.');
         $key = fb_definition_text($field['key'] ?? null, 80, 'Invalid field key.', false);
         if (preg_match('/\A[a-z0-9][a-z0-9_]{0,79}\z/', $key) !== 1 || isset($byKey[$key])) throw new InvalidArgumentException('Invalid or duplicate field key.');
+        if (isset($field['identity']) && (!is_string($field['identity']) || preg_match('/\Afield:[1-9][0-9]{0,19}\z/', $field['identity']) !== 1)) throw new InvalidArgumentException('Invalid field identity.');
         $type = $field['type'] ?? null;
         if (!is_string($type) || !isset($types[$type])) throw new InvalidArgumentException('Invalid field type.');
         fb_definition_text($field['label'] ?? '', 1000, 'Invalid field label.');
@@ -278,9 +279,11 @@ function fb_upsert_form_definition(PDO $pdo, string|array $input, ?int $actorId 
         }
         if ($row) {
             $formId = (int)$row['id'];
-            fb_assert_capacity_configuration($pdo, $formId, fb_flat_fields(fb_get_fields($pdo, $formId)), $form['fields']);
+            $currentFields = fb_get_fields($pdo, $formId);
+            fb_assert_submission_field_key_transition($pdo, $formId, $currentFields, $form['fields']);
+            fb_assert_capacity_configuration($pdo, $formId, fb_flat_fields($currentFields), $form['fields']);
             $pdo->prepare('UPDATE fb_forms SET title=?,description=?,status=?,settings_json=?,css=?,js=?,updated_at=NOW() WHERE id=?')->execute([trim($form['title']),trim($form['description']) ?: null,$nextStatus,fb_json_encode($settings),$css,$js,$formId]);
-            $pdo->prepare('DELETE FROM fb_fields WHERE form_id = ?')->execute([$formId]);
+            $pdo->prepare('DELETE FROM fb_fields WHERE form_id = ? AND deleted_at IS NULL')->execute([$formId]);
         } else {
             $pdo->prepare('INSERT INTO fb_forms (slug,title,description,status,settings_json,css,js,access_json,created_by) VALUES (?,?,?,?,?,?,?,?,?)')->execute([$form['slug'],trim($form['title']),trim($form['description']) ?: null,$nextStatus,fb_json_encode($settings),$css,$js,fb_json_encode(['roles'=>[],'users'=>[],'owner'=>$actorId ?? 0,'submissions'=>['roles'=>[],'users'=>[]]]),$actorId]);
             $formId = (int)$pdo->lastInsertId();

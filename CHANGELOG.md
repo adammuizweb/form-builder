@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.4.0 - 2026-10-06
+
+- Expand Visual Builder validation, linked Country, alignment, Image Block, Rich Text, and Raw HTML controls to match canonical field capabilities.
+- Add safe field-key editing with stable identities, complete reference cascading, submission-history locks, Bin collision protection, and Classic Builder parity.
+- Move fields removed by Visual publishing into the recoverable Bin while preserving surviving field IDs, submissions, and protected content.
+- Validate Country and Date dependencies before Bin restore, cascade references in recoverable fields, and preserve numeric field maps across draft and submission JSON.
+
 ## 2.3.1 - 2026-10-06
 
 - Use Core's available `panel-top` Lucide icon consistently for Classic Builder navigation, headings, and Visual Builder handoff actions.

@@ -21,6 +21,7 @@ if ($form === null || ($form['deleted_at'] ?? null) !== null || !fb_can_access_f
 
 $types = fb_field_types();
 $canUnsafeCode = user_can($pdo, $uid, 'plugin.form-builder.unsafe-code.manage');
+$canManageFieldBin = user_can($pdo, $uid, 'plugin.form-builder.bin.manage') && user_can($pdo, $uid, 'plugin.form-builder.forms.manage-any');
 $tree = fb_get_tree($pdo, $formId);
 $fieldCount = 0;
 foreach ($tree as $row) foreach ($row['cols'] as $column) $fieldCount += count($column['fields']);
@@ -238,8 +239,9 @@ fb_admin_css();
       </div>
       <div class="fbv-inspector" id="fbvInspector"><div class="fbv-inspector-empty">Select a field on the canvas, or add one from the library.</div></div>
       <div class="fbv-mode-card">
-        <strong>Compatibility tools</strong>
-        <span>Field-key changes and Bin recovery remain available in Classic while Visual parity is completed.</span>
+        <strong>Recovery</strong>
+        <span>Published field removals move to the Form Builder Bin and can be restored without losing submission history.</span>
+        <?php if ($canManageFieldBin): ?><a class="fba-btn sm" href="?page=admin/bin/form-builder/index">Open Field Bin</a><?php endif; ?>
         <a class="fba-btn sm" href="<?= htmlspecialchars($classicUrl, ENT_QUOTES) ?>"><?= svg_ico('panel-top') ?>Open Classic Builder</a>
       </div>
     </aside>
@@ -712,12 +714,12 @@ fb_admin_css();
       return `<div data-upload-editor-host></div><div class="fba-row2"><div class="fba-field"><label>${escapeHtml(UPLOAD_TEXT.maxFiles)}</label><input name="v_max_files" data-upload-prop="max_files" type="number" min="1" max="${UPLOAD_MAX_FILES}" step="1" value="${maxFiles}"></div><div class="fba-field"><label>${escapeHtml(UPLOAD_TEXT.maxSize)}</label><input name="v_maxmb" data-upload-prop="max_mb" type="number" min="1" max="25" step="1" value="${maxMb}"></div></div><div class="fba-field"><label>${escapeHtml(UPLOAD_TEXT.extensions)}</label><input name="v_exts" data-upload-prop="exts" type="text" value="${escapeHtml(extensions.join(', '))}"></div><div class="fba-field"><label>${escapeHtml(UPLOAD_TEXT.previewMode)}</label><select name="s_preview_mode" data-upload-prop="preview_mode"><option value="none"${previewMode === 'none' ? ' selected' : ''}>${escapeHtml(UPLOAD_TEXT.none)}</option><option value="icon"${previewMode === 'icon' ? ' selected' : ''}>${escapeHtml(UPLOAD_TEXT.icon)}</option><option value="real"${previewMode === 'real' ? ' selected' : ''}>${escapeHtml(UPLOAD_TEXT.real)}</option></select></div>`;
     })() : '';
     const headingControl = field.type === 'heading' ? `<div class="fba-field"><label>Heading level</label><select data-setting-prop="level">${['h1','h2','h3','h4','h5','h6'].map((level) => `<option value="${level}"${(field.settings?.level || 'h2') === level ? ' selected' : ''}>${level.toUpperCase()}</option>`).join('')}</select></div>` : '';
-    const inputControls = isInput ? `<div class="fba-field"><label>Field key</label><input class="fbv-inspector-key" type="text" value="${escapeHtml(field.key)}" readonly></div><div class="fba-field"><label>Placeholder</label><input data-field-prop="placeholder" type="text" maxlength="1000" value="${escapeHtml(field.placeholder || '')}"></div><div class="fba-field"><label>Help text</label><input data-field-prop="help" type="text" maxlength="2000" value="${escapeHtml(field.help || '')}"></div>${renderCountryFieldControl(field)}${isChoice ? renderOptionEditor(field) : ''}${renderValidationControls(field)}<div class="fba-checks"><label class="fba-check"><input data-field-prop="required" type="checkbox"${field.required ? ' checked' : ''}> Required</label><label class="fba-check"><input data-field-prop="hidden" type="checkbox"${field.hidden ? ' checked' : ''}> Hidden</label></div>` : '';
+    const inputControls = isInput ? `<div class="fba-field"><label>Field key</label><input class="fbv-inspector-key" data-field-key type="text" maxlength="80" pattern="[a-z0-9][a-z0-9_]{0,79}" value="${escapeHtml(field.key)}" spellcheck="false" autocomplete="off"><div class="fba-hint">Changing a key updates form references. Keys used in submission history are locked.</div></div><div class="fba-field"><label>Placeholder</label><input data-field-prop="placeholder" type="text" maxlength="1000" value="${escapeHtml(field.placeholder || '')}"></div><div class="fba-field"><label>Help text</label><input data-field-prop="help" type="text" maxlength="2000" value="${escapeHtml(field.help || '')}"></div>${renderCountryFieldControl(field)}${isChoice ? renderOptionEditor(field) : ''}${renderValidationControls(field)}<div class="fba-checks"><label class="fba-check"><input data-field-prop="required" type="checkbox"${field.required ? ' checked' : ''}> Required</label><label class="fba-check"><input data-field-prop="hidden" type="checkbox"${field.hidden ? ' checked' : ''}> Hidden</label></div>` : '';
     const siblings = ordered(currentFields().filter((candidate) => candidate.parent === field.parent && !['row', 'col'].includes(candidate.type)));
     const siblingIndex = siblings.findIndex((candidate) => candidate.key === field.key);
     const positionControls = `<div class="fba-field"><label>Column</label><select data-field-parent>${layoutColumns().map(({ row, column, rowIndex, columnIndex }) => `<option value="${escapeHtml(column.key)}"${column.key === field.parent ? ' selected' : ''}>Row ${rowIndex + 1}, column ${columnIndex + 1}</option>`).join('')}</select></div><div class="fbv-position-actions"><button class="fba-btn sm" type="button" data-field-move="up"${siblingIndex <= 0 ? ' disabled' : ''}>Move up</button><button class="fba-btn sm" type="button" data-field-move="down"${siblingIndex < 0 || siblingIndex >= siblings.length - 1 ? ' disabled' : ''}>Move down</button></div>`;
     const protectedType = ['richtext', 'raw_html'].includes(field.type) && !CAN_UNSAFE;
-    inspector.innerHTML = `<span class="fbv-inspector-type">${escapeHtml(meta.label)}</span>${labelControl}${uploadControl}${headingControl}${inputControls}${renderImageBlockEditor(field)}${renderContentEditorControl(field)}${renderAlignmentControls(field)}${positionControls}<div class="fbv-inspector-actions"><span class="fba-hint">Autosaved draft</span><button class="fba-btn danger sm" type="button" data-fbv-delete${protectedType ? ' disabled title="Unsafe-code permission required"' : ''}>Delete</button></div>`;
+    inspector.innerHTML = `<span class="fbv-inspector-type">${escapeHtml(meta.label)}</span>${labelControl}${uploadControl}${headingControl}${inputControls}${renderImageBlockEditor(field)}${renderContentEditorControl(field)}${renderAlignmentControls(field)}${positionControls}<div class="fbv-inspector-actions"><span class="fba-hint">Autosaved draft</span><button class="fba-btn danger sm" type="button" data-fbv-delete${protectedType ? ' disabled title="Unsafe-code permission required"' : ''}>Move to Bin</button></div>`;
     if (isUploadField(field)) attachUploadDescriptionEditor(field);
     if (isProtectedContentField(field)) attachContentEditor(field);
   };
@@ -1325,6 +1327,51 @@ fb_admin_css();
     });
   });
   inspector.addEventListener('change', (event) => {
+    const keyInput = event.target.closest('[data-field-key]');
+    if (!keyInput) return;
+    const field = currentField();
+    if (!field || TYPES[field.type]?.input !== true) return;
+    const oldKey = field.key;
+    const nextKey = keyInput.value.trim();
+    hasPendingControlChanges = false;
+    const reject = (message) => {
+      keyInput.value = oldKey;
+      keyInput.setAttribute('aria-invalid', 'true');
+      keyInput.focus({ preventScroll: true });
+      keyInput.select();
+      hasUnsavedChanges = Boolean(pendingDefinition || saveInFlight);
+      setStatus(message, 'error');
+      updateActions();
+    };
+    if (!/^[a-z0-9][a-z0-9_]{0,79}$/.test(nextKey)) { reject('Field keys must use lowercase letters, numbers, and underscores'); return; }
+    if (currentFields().some((candidate) => candidate.key === nextKey && candidate.key !== oldKey)) { reject('Field key must be unique'); return; }
+    if (nextKey === oldKey) { keyInput.removeAttribute('aria-invalid'); updateActions(); return; }
+    if (!syncUploadDescription()) { reject('Description editor sync failed'); return; }
+    mutateDefinition((definition) => {
+      const settings = mutableRecord(definition.form.settings);
+      const target = definition.form.fields.find((candidate) => candidate.key === oldKey);
+      if (!target) return;
+      target.key = nextKey;
+      definition.form.fields.forEach((candidate) => {
+        if (candidate.parent === oldKey) candidate.parent = nextKey;
+        candidate.settings = mutableRecord(candidate.settings);
+        candidate.validation = mutableRecord(candidate.validation);
+        if (candidate.settings.country_field === oldKey) candidate.settings.country_field = nextKey;
+        ['after_field', 'before_field'].forEach((rule) => { if (candidate.validation[rule] === oldKey) candidate.validation[rule] = nextKey; });
+      });
+      settings.columns = (settings.columns || []).map((key) => key === oldKey ? nextKey : key);
+      ['confirmation_email_field', 'reply_to_email_field', 'success_detail_field'].forEach((key) => { if (settings[key] === oldKey) settings[key] = nextKey; });
+      Object.values(settings.translations || {}).forEach((translation) => {
+        const translatedFields = translation?.fields;
+        if (!translatedFields || !Object.prototype.hasOwnProperty.call(translatedFields, oldKey)) return;
+        Object.defineProperty(translatedFields, nextKey, { value: translatedFields[oldKey], enumerable: true, configurable: true, writable: true });
+        delete translatedFields[oldKey];
+      });
+      selectedKey = nextKey;
+    }, true);
+    setStatus('Field key changed - checking submission history', 'saving');
+  });
+  inspector.addEventListener('change', (event) => {
     const countryInput = event.target.closest('[data-country-field]');
     const validationInput = event.target.closest('[data-validation-prop]');
     if (!countryInput && !validationInput) return;
@@ -1409,6 +1456,13 @@ fb_admin_css();
     }, true);
   });
   inspector.addEventListener('input', (event) => {
+    if (event.target.matches('[data-field-key]')) {
+      hasPendingControlChanges = true;
+      hasUnsavedChanges = true;
+      setStatus('Unsaved field key', 'saving');
+      updateActions();
+      return;
+    }
     const imageInput = event.target.closest('[data-image-prop]');
     if (imageInput) {
       const property = imageInput.dataset.imageProp;
@@ -1693,6 +1747,7 @@ fb_admin_css();
     selectedKey = null;
     renderInspector();
     renderFieldPicker();
+    setStatus('Field removed from draft - publish to move it to the Bin', 'saving');
   });
 
   window.addEventListener('beforeunload', (event) => {

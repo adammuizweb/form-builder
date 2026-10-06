@@ -118,6 +118,44 @@ try {
     try { fb_assert_capacity_configuration($pdo, $capacityFormId, $capacityFields, $unlimitedFields); $unlimitedAccepted = true; } catch (UnexpectedValueException) { $unlimitedAccepted = false; }
     $check($capacityRenameRejected && $optionRenameRejected && $capacityLowerRejected && $unlimitedAccepted, 'live capacity identities cannot be renamed or lowered, while the same option may become unlimited');
 
+    $keyFormId = (int)$definitionFirst['form_id'];
+    $keyFields = fb_get_fields($pdo, $keyFormId);
+    $pdo->prepare("INSERT INTO fb_submissions (form_id,reference_code,workflow_status,data_json,files_json,is_deleted) VALUES (?,?,'submitted',?,?,1)")
+        ->execute([$keyFormId,'KEY-HISTORY-1',fb_json_encode(['email'=>'archived@example.test']),fb_json_encode(['legacy_upload'=>[]])]);
+    $renamedEmailFields = $keyFields;
+    foreach ($renamedEmailFields as &$candidate) if ($candidate['field_key'] === 'email') $candidate['field_key'] = 'email_new';
+    unset($candidate);
+    try { fb_assert_submission_field_key_transition($pdo, $keyFormId, $keyFields, $renamedEmailFields); $dataKeyRenameRejected = false; } catch (InvalidArgumentException) { $dataKeyRenameRejected = true; }
+    $historicalTargetFields = $keyFields;
+    foreach ($historicalTargetFields as &$candidate) if ($candidate['field_key'] === 'country') $candidate['field_key'] = 'legacy_upload';
+    unset($candidate);
+    try { fb_assert_submission_field_key_transition($pdo, $keyFormId, $keyFields, $historicalTargetFields); $fileKeyReuseRejected = false; } catch (InvalidArgumentException) { $fileKeyReuseRejected = true; }
+    $unusedRenameFields = $keyFields;
+    foreach ($unusedRenameFields as &$candidate) if ($candidate['field_key'] === 'country') $candidate['field_key'] = '123';
+    unset($candidate);
+    try { fb_assert_submission_field_key_transition($pdo, $keyFormId, $keyFields, $unusedRenameFields); $unusedRenameAccepted = true; } catch (InvalidArgumentException) { $unusedRenameAccepted = false; }
+    $pdo->prepare("INSERT INTO fb_fields (form_id,type,label,field_key,deleted_at) VALUES (?,'text','Discarded','discarded_key',NOW())")->execute([$keyFormId]);
+    $binTargetFields = $keyFields;
+    foreach ($binTargetFields as &$candidate) if ($candidate['field_key'] === 'country') $candidate['field_key'] = 'discarded_key';
+    unset($candidate);
+    try { fb_assert_submission_field_key_transition($pdo, $keyFormId, $keyFields, $binTargetFields); $binKeyReuseRejected = false; } catch (InvalidArgumentException) { $binKeyReuseRejected = true; }
+    $pdo->prepare("INSERT INTO fb_submissions (form_id,reference_code,workflow_status,data_json) VALUES (?,?,'submitted','{invalid')")->execute([$keyFormId,'KEY-HISTORY-BROKEN']);
+    try { fb_assert_submission_field_key_transition($pdo, $keyFormId, $keyFields, $unusedRenameFields); $malformedHistoryRejected = false; } catch (InvalidArgumentException) { $malformedHistoryRejected = true; }
+    $pdo->prepare('DELETE FROM fb_submissions WHERE form_id=? AND reference_code=?')->execute([$keyFormId,'KEY-HISTORY-BROKEN']);
+    $pdo->prepare("INSERT INTO fb_submissions (form_id,reference_code,workflow_status,data_json) VALUES (?,?,'submitted',?)")->execute([$keyFormId,'KEY-HISTORY-ZERO','["legacy-zero"]']);
+    try { fb_assert_submission_field_key_transition($pdo, $keyFormId, [['field_key'=>'0']], [['field_key'=>'zero']]); $legacyNumericRenameRejected = false; } catch (InvalidArgumentException) { $legacyNumericRenameRejected = true; }
+    $pdo->prepare('DELETE FROM fb_submissions WHERE form_id=? AND reference_code=?')->execute([$keyFormId,'KEY-HISTORY-ZERO']);
+    $identityFields = [['key'=>'alpha','identity'=>'field:9001'],['key'=>'email','identity'=>'field:9002']];
+    try { fb_visual_assert_field_identity_transition($pdo, $keyFormId, $identityFields, [['key'=>'email','identity'=>'field:9001'],['key'=>'omega','identity'=>'field:9002']]); $chainedHistoricalRenameRejected = false; } catch (InvalidArgumentException) { $chainedHistoricalRenameRejected = true; }
+    try { fb_visual_assert_field_identity_transition($pdo, $keyFormId, $identityFields, [['key'=>'email','identity'=>'field:9001'],['key'=>'alpha','identity'=>'field:9002']]); $swappedHistoricalRenameRejected = false; } catch (InvalidArgumentException) { $swappedHistoricalRenameRejected = true; }
+    $definitionAfterBin = fb_upsert_form_definition($pdo, $definitionJson, null, false);
+    $binPreserved = (int)$pdo->query("SELECT COUNT(*) FROM fb_fields WHERE form_id={$keyFormId} AND field_key='discarded_key' AND deleted_at IS NOT NULL")->fetchColumn() === 1;
+    $activeDefinitionCount = (int)$pdo->query("SELECT COUNT(*) FROM fb_fields WHERE form_id={$keyFormId} AND deleted_at IS NULL")->fetchColumn();
+    $check($dataKeyRenameRejected && $fileKeyReuseRejected && $unusedRenameAccepted && $binKeyReuseRejected && $malformedHistoryRejected && $legacyNumericRenameRejected && $chainedHistoricalRenameRejected && $swappedHistoricalRenameRejected,
+        'field-key transitions lock object, array, chained, and swapped identities while rejecting Bin reuse and allowing unused numeric keys');
+    $check($definitionAfterBin['form_id'] === $keyFormId && $binPreserved && $activeDefinitionCount === 5,
+        'definition replacement preserves recoverable Bin rows while replacing only active fields');
+
     $draft = fb_visual_load_draft($pdo, $formId, 11, true);
     $draft['definition']['form']['title'] = 'Visual draft title';
     $savedDraft = fb_visual_save_draft($pdo, $formId, $draft['definition'], $draft['revision'], 11, true);
@@ -172,6 +210,7 @@ try {
     $publishColumn = array_values(array_filter($publishDraft['definition']['form']['fields'], static fn(array $field): bool => $field['type'] === 'col'))[0]['key'];
     $publishDraft['definition']['form']['fields'][] = ['key'=>'proof_upload','parent'=>$publishColumn,'type'=>'file','label'=>'Proof upload','placeholder'=>'','help'=>'Legacy help','required'=>false,'width'=>12,'order'=>40,'hidden'=>false,'options'=>[],'validation'=>['max_bytes'=>1048576,'max_files'=>1,'exts'=>['pdf']],'settings'=>['upload_description_html'=>'<p>Published <strong>description</strong>.</p>','preview_mode'=>'icon']];
     $publishDraft['definition']['form']['fields'][] = ['key'=>'visual_image','parent'=>$publishColumn,'type'=>'image_block','label'=>'Visual image','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>50,'hidden'=>false,'options'=>[],'validation'=>[],'settings'=>['url'=>'/static/img/visual.jpg','alt'=>'Visual image alt','caption'=>'Visual image caption','width'=>'50']];
+    $publishDraft['definition']['form']['fields'][] = ['key'=>'start_date','parent'=>$publishColumn,'type'=>'date','label'=>'Start date','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>55,'hidden'=>false,'options'=>[],'validation'=>[],'settings'=>[]];
     $publishDraft['definition']['form']['fields'][] = ['key'=>'visual_rich','parent'=>$publishColumn,'type'=>'richtext','label'=>'Visual rich','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>60,'hidden'=>false,'options'=>[],'validation'=>[],'settings'=>['html'=>'<p>Published <strong>rich</strong> content.</p>']];
     $publishDraft['definition']['form']['fields'][] = ['key'=>'visual_raw','parent'=>$publishColumn,'type'=>'raw_html','label'=>'Visual raw','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>70,'hidden'=>false,'options'=>[],'validation'=>[],'settings'=>['html'=>'<section data-visual="raw">Published raw content.</section>']];
     $publishSaved = fb_visual_save_draft($pdo, $publishFormId, $publishDraft['definition'], $publishDraft['revision'], 11, true);
@@ -191,6 +230,77 @@ try {
     $publishedRichSettings = is_string($publishedRichSettingsJson) ? json_decode($publishedRichSettingsJson, true) : null;
     $publishedRawSettings = is_string($publishedRawSettingsJson) ? json_decode($publishedRawSettingsJson, true) : null;
     $check($unsafePublishRejected && $publishedDraft['revision'] === 3 && $publishedDraft['published_changed'] === false && $publishedDraft['has_unpublished_changes'] === false && $publishedForm['title'] === 'Published visual form' && $publishedForm['status'] === 'active' && ($publishedField['label'] ?? null) === 'Published email' && ($publishedFieldValidation['maxlength'] ?? null) === 120 && ($publishedFieldValidation['pattern'] ?? null) === '^[^ ]+@[^ ]+$' && ($publishedFieldSettings['align'] ?? null) === 'right' && ($publishedFieldSettings['valign'] ?? null) === 'bottom' && $publishedSettings['unsafe_code_enabled'] === true && $publishedSettings['submission_proof_enabled'] === '1' && $publishedSettings['submission_proof_format'] === 'pdf' && ($publishedUpload['help_text'] ?? null) === 'Legacy help' && ($publishedUploadSettings['upload_description_html'] ?? null) === '<p>Published <strong>description</strong>.</p>' && ($publishedImageSettings['url'] ?? null) === '/static/img/visual.jpg' && ($publishedImageSettings['alt'] ?? null) === 'Visual image alt' && ($publishedImageSettings['caption'] ?? null) === 'Visual image caption' && ($publishedImageSettings['width'] ?? null) === '50' && ($publishedRichSettings['html'] ?? null) === '<p>Published <strong>rich</strong> content.</p>' && ($publishedRawSettings['html'] ?? null) === '<section data-visual="raw">Published raw content.</section>' && $publishedForm['css'] === '.published-unsafe{color:blue}' && $publishedForm['js'] === 'window.publishedUnsafe=true', 'transactional publish preserves Visual validation, alignment, Image Block metadata, protected content, proof settings, and upload descriptions while requiring unsafe permission for protected changes');
+
+    $countryIdBeforeRename = (int)$pdo->query("SELECT id FROM fb_fields WHERE form_id={$publishFormId} AND field_key='country' AND deleted_at IS NULL")->fetchColumn();
+    $startDateIdBeforeRename = (int)$pdo->query("SELECT id FROM fb_fields WHERE form_id={$publishFormId} AND field_key='start_date' AND deleted_at IS NULL")->fetchColumn();
+    $publishColumnId = (int)$pdo->query("SELECT id FROM fb_fields WHERE form_id={$publishFormId} AND field_key='col_main' AND deleted_at IS NULL")->fetchColumn();
+    $pdo->prepare("INSERT INTO fb_fields (form_id,parent_id,type,label,field_key,settings_json,deleted_at) VALUES (?,?, 'intl_phone','Old phone','old_phone',?,NOW())")
+        ->execute([$publishFormId,$publishColumnId,fb_json_encode(['country_field'=>'country'])]);
+    $pdo->prepare("INSERT INTO fb_fields (form_id,parent_id,type,label,field_key,validation_json,deleted_at) VALUES (?,?, 'date','Old end date','old_end_date',?,NOW())")
+        ->execute([$publishFormId,$publishColumnId,fb_json_encode(['after_field'=>'start_date'])]);
+    $allowedRenameDefinition = $publishedDraft['definition'];
+    foreach ($allowedRenameDefinition['form']['fields'] as &$candidate) {
+        if ($candidate['key'] === 'country') $candidate['key'] = 'nation';
+        if ($candidate['key'] === 'phone') $candidate['settings']['country_field'] = 'nation';
+        if ($candidate['key'] === 'start_date') $candidate['key'] = 'begin_date';
+    }
+    unset($candidate);
+    foreach ($allowedRenameDefinition['form']['settings']['translations'] as &$translation) if (isset($translation['fields']['country'])) {
+        $translation['fields']['nation'] = $translation['fields']['country'];
+        unset($translation['fields']['country']);
+    }
+    unset($translation);
+    $allowedRenameDefinition['form']['fields'][] = ['key'=>'country','parent'=>$publishColumn,'type'=>'text','label'=>'New country text','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>58,'hidden'=>false,'options'=>[],'validation'=>[],'settings'=>[]];
+    $allowedRenameSaved = fb_visual_save_draft($pdo, $publishFormId, $allowedRenameDefinition, $publishedDraft['revision'], 11, true);
+    $allowedRenameReloaded = fb_visual_load_draft($pdo, $publishFormId, 11, true);
+    $reloadedNation = array_values(array_filter($allowedRenameReloaded['definition']['form']['fields'], static fn(array $field): bool => $field['key'] === 'nation'))[0] ?? [];
+    $reloadedCountry = array_values(array_filter($allowedRenameReloaded['definition']['form']['fields'], static fn(array $field): bool => $field['key'] === 'country'))[0] ?? [];
+    $allowedRenameResaved = fb_visual_save_draft($pdo, $publishFormId, $allowedRenameReloaded['definition'], $allowedRenameReloaded['revision'], 11, true);
+    $allowedRenamePublished = fb_visual_publish_draft($pdo, $publishFormId, $allowedRenameResaved['revision'], 11, true);
+    $countryIdAfterRename = (int)$pdo->query("SELECT id FROM fb_fields WHERE form_id={$publishFormId} AND field_key='nation' AND deleted_at IS NULL")->fetchColumn();
+    $startDateIdAfterRename = (int)$pdo->query("SELECT id FROM fb_fields WHERE form_id={$publishFormId} AND field_key='begin_date' AND deleted_at IS NULL")->fetchColumn();
+    $replacementCountryId = (int)$pdo->query("SELECT id FROM fb_fields WHERE form_id={$publishFormId} AND field_key='country' AND deleted_at IS NULL")->fetchColumn();
+    $oldRenameBinCount = (int)$pdo->query("SELECT COUNT(*) FROM fb_fields WHERE form_id={$publishFormId} AND field_key IN ('country','start_date') AND deleted_at IS NOT NULL")->fetchColumn();
+    $trashedPhoneSettings = json_decode((string)$pdo->query("SELECT settings_json FROM fb_fields WHERE form_id={$publishFormId} AND field_key='old_phone' AND deleted_at IS NOT NULL")->fetchColumn(), true);
+    $trashedDateValidation = json_decode((string)$pdo->query("SELECT validation_json FROM fb_fields WHERE form_id={$publishFormId} AND field_key='old_end_date' AND deleted_at IS NOT NULL")->fetchColumn(), true);
+    $check($allowedRenameSaved['revision'] === 4 && isset($reloadedNation['identity']) && !isset($reloadedCountry['identity']) && $allowedRenamePublished['revision'] === 6 && $countryIdAfterRename === $countryIdBeforeRename && $replacementCountryId > 0 && $replacementCountryId !== $countryIdAfterRename && $startDateIdAfterRename === $startDateIdBeforeRename && $oldRenameBinCount === 0
+        && ($trashedPhoneSettings['country_field'] ?? null) === 'nation' && ($trashedDateValidation['after_field'] ?? null) === 'begin_date',
+        'allowed Visual renames preserve distinct identities when reusing old keys and cascade references without Bin copies');
+    $pdo->prepare("INSERT INTO fb_fields (form_id,parent_id,type,label,field_key,validation_json,deleted_at) VALUES (?,?, 'date','Chain alpha','chain_alpha',?,NOW()),(?,?, 'date','Chain beta','chain_beta',?,NOW())")
+        ->execute([$publishFormId,$publishColumnId,fb_json_encode(['after_field'=>'alpha']),$publishFormId,$publishColumnId,fb_json_encode(['after_field'=>'beta'])]);
+    fb_cascade_trashed_field_key_reference_map($pdo, $publishFormId, [['alpha','beta'],['beta','gamma']]);
+    $chainAlphaValidation = json_decode((string)$pdo->query("SELECT validation_json FROM fb_fields WHERE form_id={$publishFormId} AND field_key='chain_alpha'")->fetchColumn(), true);
+    $chainBetaValidation = json_decode((string)$pdo->query("SELECT validation_json FROM fb_fields WHERE form_id={$publishFormId} AND field_key='chain_beta'")->fetchColumn(), true);
+    $check(($chainAlphaValidation['after_field'] ?? null) === 'beta' && ($chainBetaValidation['after_field'] ?? null) === 'gamma',
+        'trashed reference cascades apply chained rename maps once against each original key');
+    $oldEndDate = $pdo->query("SELECT * FROM fb_fields WHERE form_id={$publishFormId} AND field_key='old_end_date' AND deleted_at IS NOT NULL")->fetch(PDO::FETCH_ASSOC);
+    $dateRestoreReady = is_array($oldEndDate) && fb_field_restore_dependency_error($pdo, $publishFormId, $oldEndDate) === null;
+    $pdo->prepare("UPDATE fb_fields SET deleted_at=NOW() WHERE form_id=? AND field_key='begin_date' AND deleted_at IS NULL")->execute([$publishFormId]);
+    $dateRestoreBlocked = is_array($oldEndDate) && fb_field_restore_dependency_error($pdo, $publishFormId, $oldEndDate) !== null;
+    $pdo->prepare("UPDATE fb_fields SET deleted_at=NULL WHERE form_id=? AND field_key='begin_date' AND deleted_at IS NOT NULL")->execute([$publishFormId]);
+    $check($dateRestoreReady && $dateRestoreBlocked, 'Bin restore requires every referenced Date field to remain active');
+    $publishedDraft = $allowedRenamePublished;
+
+    $historicalRenameDefinition = $publishedDraft['definition'];
+    foreach ($historicalRenameDefinition['form']['fields'] as &$candidate) if ($candidate['key'] === 'email') $candidate['key'] = 'email_new';
+    unset($candidate);
+    $historicalRenameDefinition['form']['settings']['confirmation_email_field'] = 'email_new';
+    try { fb_visual_save_draft($pdo, $publishFormId, $historicalRenameDefinition, $publishedDraft['revision'], 11, true); $historicalVisualRenameRejected = false; } catch (InvalidArgumentException) { $historicalVisualRenameRejected = true; }
+    $visualImageIdBeforeDelete = (int)$pdo->query("SELECT id FROM fb_fields WHERE form_id={$publishFormId} AND field_key='visual_image' AND deleted_at IS NULL")->fetchColumn();
+    $deleteDefinition = $publishedDraft['definition'];
+    $deleteDefinition['form']['fields'] = array_values(array_filter($deleteDefinition['form']['fields'], static fn(array $field): bool => $field['key'] !== 'email'));
+    $deleteDefinition['form']['settings']['confirmation_email_field'] = '';
+    $deleteDefinition['form']['settings']['columns'] = array_values(array_filter($deleteDefinition['form']['settings']['columns'], static fn(string $key): bool => $key !== 'email'));
+    foreach ($deleteDefinition['form']['settings']['translations'] as &$translation) if (is_array($translation['fields'] ?? null)) unset($translation['fields']['email']);
+    unset($translation);
+    $deleteSaved = fb_visual_save_draft($pdo, $publishFormId, $deleteDefinition, $publishedDraft['revision'], 11, true);
+    $deletePublished = fb_visual_publish_draft($pdo, $publishFormId, $deleteSaved['revision'], 11, true);
+    $emailBinCount = (int)$pdo->query("SELECT COUNT(*) FROM fb_fields WHERE form_id={$publishFormId} AND field_key='email' AND deleted_at IS NOT NULL")->fetchColumn();
+    $visualImageIdAfterDelete = (int)$pdo->query("SELECT id FROM fb_fields WHERE form_id={$publishFormId} AND field_key='visual_image' AND deleted_at IS NULL")->fetchColumn();
+    $historicalSubmissionCount = (int)$pdo->query("SELECT COUNT(*) FROM fb_submissions WHERE form_id={$publishFormId} AND reference_code='KEY-HISTORY-1'")->fetchColumn();
+    $check($historicalVisualRenameRejected && $deletePublished['revision'] === 8 && $emailBinCount === 1 && $historicalSubmissionCount === 1 && $visualImageIdBeforeDelete === $visualImageIdAfterDelete,
+        'Visual publish locks history-bound renames, moves removed fields to Bin, preserves submissions, and updates surviving rows in place');
+    $publishedForm = fb_get_form($pdo, $publishFormId);
 
     $lifecycleDefinition = json_decode($definitionJson, true, 64, JSON_THROW_ON_ERROR);
     $lifecycleDefinition['definition_id'] = hash('sha256', 'form-builder:lifecycle-contract');

@@ -70,17 +70,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 fb_js_redirect('?page=admin/bin/form-builder/index');
                 return;
             }
-            if ($f['type'] === 'intl_phone') {
-                $countryKey = (string)(fb_field_settings($f)['country_field'] ?? '');
-                $country = $pdo->prepare("SELECT required,is_hidden FROM fb_fields WHERE form_id = ? AND field_key = ? AND type = 'country' AND deleted_at IS NULL LIMIT 1");
-                $country->execute([$formId, $countryKey]);
-                $countryState = $country->fetch(PDO::FETCH_ASSOC);
-                if (!is_array($countryState) || !empty($countryState['is_hidden']) || (!empty($f['required']) && empty($countryState['required']))) {
-                    $flash = 'Pulihkan dan konfigurasi country field yang terhubung terlebih dahulu.'; $flashOk = false;
-                    $_SESSION['fb_bin_flash'] = [$flash, $flashOk];
-                    fb_js_redirect('?page=admin/bin/form-builder/index');
-                    return;
-                }
+            $dependencyError = fb_field_restore_dependency_error($pdo, $formId, $f);
+            if ($dependencyError !== null) {
+                $flash = $dependencyError; $flashOk = false;
+                $_SESSION['fb_bin_flash'] = [$flash, $flashOk];
+                fb_js_redirect('?page=admin/bin/form-builder/index');
+                return;
             }
             $duplicate = $pdo->prepare('SELECT COUNT(*) FROM fb_fields WHERE form_id = ? AND field_key = ? AND id <> ? AND deleted_at IS NULL');
             $duplicate->execute([$formId, (string)$f['field_key'], (int)$f['id']]);

@@ -211,6 +211,19 @@ $definitionPath = __DIR__ . '/fixtures/generic.form.json';
 $definition = fb_definition_decode((string)file_get_contents($definitionPath));
 $fields = $definition['form']['fields'];
 $byKey = array_column($fields, null, 'key');
+$numericTranslationDefinition = $definition;
+foreach ($numericTranslationDefinition['form']['fields'] as &$numericField) if ($numericField['key'] === 'email') $numericField['key'] = '0';
+unset($numericField);
+$numericTranslationDefinition['form']['settings']['confirmation_email_field'] = '0';
+$numericTranslationDefinition['form']['settings']['translations'] = ['fr'=>['form'=>[],'fields'=>[0=>['label'=>'Zero']],'messages'=>[],'email'=>[]]];
+$numericTranslationDefinition = fb_definition_decode($numericTranslationDefinition);
+$numericTranslationJson = fb_visual_definition_json($numericTranslationDefinition);
+$numericTransportJson = fb_json_encode(fb_visual_definition_json_value($numericTranslationDefinition));
+$check(str_contains($numericTranslationJson, '"fields":{"0":') && str_contains($numericTransportJson, '"fields":{"0":')
+    && fb_definition_decode($numericTranslationJson)['form']['settings']['translations']['fr']['fields'][0]['label'] === 'Zero',
+    'numeric translation keys remain object maps across Visual draft storage and transport');
+$check(fb_visual_definition_hash($definition) === hash('sha256', fb_json_encode($definition)),
+    'Visual canonical hashes retain the legacy representation while draft JSON normalizes map objects');
 $check(count(fb_country_catalog()) === 249 && fb_country('ID')['dial'] === '62' && fb_country('ZZ') === null, 'bundled catalog contains the ISO 3166-1 alpha-2 countries and calling metadata');
 $check($byKey['phone']['settings']['country_field'] === 'country' && array_keys($definition['form']['settings']['translations']) === ['fr','fr-ca','ja'], 'generic definitions link international phones and accept configurable locales');
 $previewDefinition = $definition;

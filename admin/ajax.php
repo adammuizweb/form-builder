@@ -125,10 +125,11 @@ try {
             $index = max(0, (int)($_POST['index'] ?? 999));
             $base = fb_normalize_key($types[$type]['label']);
             $key = $base; $i = 2;
+            fb_assert_submission_history_field_json($pdo, $formId);
+            $st = $pdo->prepare('SELECT COUNT(*) FROM `fb_fields` WHERE form_id = ? AND field_key = ?');
             while (true) {
-                $st = $pdo->prepare('SELECT COUNT(*) FROM `fb_fields` WHERE form_id = ? AND field_key = ? AND deleted_at IS NULL');
                 $st->execute([$formId, $key]);
-                if ((int)$st->fetchColumn() === 0) break;
+                if ((int)$st->fetchColumn() === 0 && !fb_submission_history_uses_field_keys($pdo, $formId, [$key])) break;
                 $key = $base . '_' . $i++;
             }
             $maxSort = (int)$pdo->query("SELECT COALESCE(MAX(sort_order), 0) FROM `fb_fields` WHERE form_id = {$formId} AND parent_id = {$colId}")->fetchColumn();
@@ -340,6 +341,7 @@ try {
             $nextField['options_json'] = $options ? fb_json_encode($options) : null;
             $currentFields = fb_get_fields($pdo, $formId);
             $nextFields = array_map(static fn(array $field): array => (int)$field['id'] === $id ? $nextField : $field, $currentFields);
+            fb_assert_submission_field_key_transition($pdo, $formId, $currentFields, $nextFields);
             fb_assert_capacity_configuration($pdo, $formId, $currentFields, $nextFields);
             $pdo->beginTransaction();
             try {
@@ -361,9 +363,23 @@ try {
                     }
                     if ($changed) $pdo->prepare('UPDATE fb_fields SET validation_json = ? WHERE id = ? AND form_id = ?')->execute([fb_json_encode($candidateValidation),(int)$candidate['id'],$formId]);
                 }
-                $formSettings = fb_form_settings($form);
-                if ((string)$formSettings['success_detail_field'] === (string)$n['field_key']) {
-                    $formSettings['success_detail_field'] = $hidden ? '' : $key;
+                if ($key !== $n['field_key']) fb_cascade_trashed_field_key_references($pdo, $formId, (string)$n['field_key'], $key);
+                $formSettings = fb_form_settings($form); $formSettingsChanged = false;
+                if ($key !== $n['field_key']) {
+                    $formSettings['columns'] = array_map(static fn(string $column): string => $column === (string)$n['field_key'] ? $key : $column, $formSettings['columns']);
+                    foreach (['confirmation_email_field', 'reply_to_email_field', 'success_detail_field'] as $reference) if ((string)$formSettings[$reference] === (string)$n['field_key']) $formSettings[$reference] = $key;
+                    foreach ($formSettings['translations'] as &$translation) if (is_array($translation['fields'] ?? null) && array_key_exists((string)$n['field_key'], $translation['fields'])) {
+                        $translation['fields'][$key] = $translation['fields'][(string)$n['field_key']];
+                        unset($translation['fields'][(string)$n['field_key']]);
+                    }
+                    unset($translation);
+                    $formSettingsChanged = true;
+                }
+                if ($hidden && (string)$formSettings['success_detail_field'] === $key) {
+                    $formSettings['success_detail_field'] = '';
+                    $formSettingsChanged = true;
+                }
+                if ($formSettingsChanged) {
                     $pdo->prepare('UPDATE fb_forms SET settings_json = ? WHERE id = ?')->execute([fb_json_encode($formSettings), $formId]);
                 }
                 $touch();

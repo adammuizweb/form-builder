@@ -1,7 +1,30 @@
 <?php
 declare(strict_types=1);
 
+function fb_visual_definition_json_value(array $definition): array {
+    if (isset($definition['form']['settings']['translations']) && is_array($definition['form']['settings']['translations'])) {
+        foreach ($definition['form']['settings']['translations'] as &$translation) {
+            if (is_array($translation) && is_array($translation['fields'] ?? null)) $translation['fields'] = (object)$translation['fields'];
+        }
+        unset($translation);
+    }
+    return $definition;
+}
+
+function fb_visual_definition_json(array $definition): string {
+    return fb_json_encode(fb_visual_definition_json_value($definition));
+}
+
+function fb_visual_draft_transport(array $draft): array {
+    if (is_array($draft['definition'] ?? null)) $draft['definition'] = fb_visual_definition_json_value($draft['definition']);
+    return $draft;
+}
+
 function fb_visual_definition_hash(array $definition): string {
+    if (isset($definition['form']['fields']) && is_array($definition['form']['fields'])) {
+        foreach ($definition['form']['fields'] as &$field) if (is_array($field)) unset($field['identity']);
+        unset($field);
+    }
     return hash('sha256', fb_json_encode($definition));
 }
 
@@ -9,8 +32,49 @@ function fb_visual_canonical_definition(PDO $pdo, int $formId): array {
     $form = fb_get_form($pdo, $formId);
     if ($form === null) throw new InvalidArgumentException('Form not found.');
     $definition = fb_definition_decode(fb_export_form_definition($pdo, $formId, true));
+    $identities = [];
+    foreach (fb_get_fields($pdo, $formId) as $field) $identities['key:' . (string)$field['field_key']] = 'field:' . (int)$field['id'];
+    foreach ($definition['form']['fields'] as &$field) $field['identity'] = $identities['key:' . (string)$field['key']];
+    unset($field);
     $definition['form']['settings']['unsafe_code_enabled'] = (fb_form_settings($form)['unsafe_code_enabled'] ?? false) === true;
     return fb_definition_decode($definition);
+}
+
+function fb_visual_attach_field_identities(PDO $pdo, int $formId, array $definition): array {
+    $identities = [];
+    foreach (fb_get_fields($pdo, $formId) as $field) $identities['key:' . (string)$field['field_key']] = 'field:' . (int)$field['id'];
+    $claimed = [];
+    foreach ($definition['form']['fields'] as $field) if (isset($field['identity'])) $claimed[(string)$field['identity']] = true;
+    foreach ($definition['form']['fields'] as &$field) {
+        $identity = $identities['key:' . (string)$field['key']] ?? null;
+        if (!isset($field['identity']) && $identity !== null && !isset($claimed[$identity])) {
+            $field['identity'] = $identity;
+            $claimed[$identity] = true;
+        }
+    }
+    unset($field);
+    return fb_definition_decode($definition);
+}
+
+function fb_visual_assert_field_identity_transition(PDO $pdo, int $formId, array $currentFields, array $nextFields): void {
+    $currentByIdentity = [];
+    foreach ($currentFields as $field) if (is_array($field) && isset($field['identity'])) $currentByIdentity[(string)$field['identity']] = $field;
+    $seen = []; $renamedKeys = [];
+    foreach ($nextFields as $field) {
+        if (!is_array($field) || !isset($field['identity'])) continue;
+        $identity = (string)$field['identity'];
+        if (isset($seen[$identity]) || !isset($currentByIdentity[$identity])) throw new InvalidArgumentException('Invalid or duplicate field identity.');
+        $seen[$identity] = true;
+        if ((string)$currentByIdentity[$identity]['key'] !== (string)$field['key']) {
+            $renamedKeys[] = (string)$currentByIdentity[$identity]['key'];
+            $renamedKeys[] = (string)$field['key'];
+        }
+    }
+    fb_assert_submission_field_key_transition($pdo, $formId, $currentFields, $nextFields, false);
+    if ($renamedKeys !== []) {
+        fb_assert_submission_history_field_json($pdo, $formId);
+        if (fb_submission_history_uses_field_keys($pdo, $formId, $renamedKeys)) throw new InvalidArgumentException('One or more field keys are locked by submission history.');
+    }
 }
 
 function fb_visual_definition_has_unsafe_code(array $definition): bool {
@@ -166,7 +230,7 @@ function fb_visual_load_draft(PDO $pdo, int $formId, ?int $actorId, bool $allowU
         $select->execute([$formId]);
         $row = $select->fetch(PDO::FETCH_ASSOC);
         if (!is_array($row)) {
-            $json = fb_json_encode($current);
+            $json = fb_visual_definition_json($current);
             $hash = fb_visual_definition_hash($current);
             $pdo->prepare('INSERT INTO fb_builder_drafts (form_id,definition_json,revision,published_sha256,created_by,updated_by) VALUES (?,?,1,?,?,?)')
                 ->execute([$formId, $json, $hash, $actorId, $actorId]);
@@ -174,6 +238,8 @@ function fb_visual_load_draft(PDO $pdo, int $formId, ?int $actorId, bool $allowU
             $row = $select->fetch(PDO::FETCH_ASSOC);
         }
         if (!is_array($row)) throw new RuntimeException('Unable to initialize Visual Builder draft.');
+        $draftDefinition = fb_visual_attach_field_identities($pdo, $formId, fb_definition_decode((string)$row['definition_json']));
+        $row['definition_json'] = fb_visual_definition_json($draftDefinition);
         $response = fb_visual_draft_response($row, $current, $allowUnsafeCode);
         $pdo->commit();
         return $response;
@@ -199,12 +265,13 @@ function fb_visual_save_draft(PDO $pdo, int $formId, array|string $input, int $e
         $row = $select->fetch(PDO::FETCH_ASSOC);
         if (!is_array($row)) throw new LogicException('Draft must be loaded before it can be saved.');
         if ((int)$row['revision'] !== $expectedRevision) throw new UnexpectedValueException('Draft changed in another session.');
-        $stored = fb_definition_decode((string)$row['definition_json']);
+        $stored = fb_visual_attach_field_identities($pdo, $formId, fb_definition_decode((string)$row['definition_json']));
         if (!$allowUnsafeCode) $definition = fb_visual_merge_protected_code($definition, $stored);
         $definition = fb_definition_decode($definition);
+        fb_visual_assert_field_identity_transition($pdo, $formId, $stored['form']['fields'], $definition['form']['fields']);
         $nextRevision = $expectedRevision + 1;
         $update = $pdo->prepare('UPDATE fb_builder_drafts SET definition_json = ?, revision = ?, updated_by = ?, updated_at = NOW() WHERE form_id = ? AND revision = ?');
-        $update->execute([fb_json_encode($definition), $nextRevision, $actorId, $formId, $expectedRevision]);
+        $update->execute([fb_visual_definition_json($definition), $nextRevision, $actorId, $formId, $expectedRevision]);
         if ($update->rowCount() !== 1) throw new UnexpectedValueException('Draft changed in another session.');
         $select->execute([$formId]);
         $saved = $select->fetch(PDO::FETCH_ASSOC);
@@ -228,26 +295,52 @@ function fb_visual_replace_canonical(PDO $pdo, int $formId, array $definition): 
     $conflict = $pdo->prepare('SELECT id FROM fb_forms WHERE slug = ? AND id <> ? LIMIT 1 FOR UPDATE');
     $conflict->execute([$form['slug'], $formId]);
     if ($conflict->fetchColumn() !== false) throw new InvalidArgumentException('The draft slug is already in use.');
-    fb_assert_capacity_configuration($pdo, $formId, fb_flat_fields(fb_get_fields($pdo, $formId)), $form['fields']);
+    $currentFields = fb_get_fields($pdo, $formId);
+    $currentDefinitionFields = fb_visual_canonical_definition($pdo, $formId)['form']['fields'];
+    fb_visual_assert_field_identity_transition($pdo, $formId, $currentDefinitionFields, $form['fields']);
+    fb_assert_capacity_configuration($pdo, $formId, fb_flat_fields($currentFields), $form['fields']);
     $settings = array_merge(fb_default_settings(), fb_definition_safe_settings($form['settings'] ?? []));
     $pdo->prepare('UPDATE fb_forms SET slug=?,title=?,description=?,status=?,settings_json=?,css=?,js=?,updated_at=NOW() WHERE id=?')
         ->execute([$form['slug'],trim($form['title']),trim($form['description']) ?: null,'active',fb_json_encode($settings),$form['css'] !== '' ? $form['css'] : null,$form['js'] !== '' ? $form['js'] : null,$formId]);
-    // Keep soft-deleted field-bin entries; missing ancestors are rebuilt by restore.
-    $pdo->prepare('DELETE FROM fb_fields WHERE form_id = ? AND deleted_at IS NULL')->execute([$formId]);
+    $currentByKey = [];
+    $currentByIdentity = [];
+    foreach ($currentFields as $currentField) {
+        $currentByKey['key:' . (string)$currentField['field_key']] = $currentField;
+        $currentByIdentity['field:' . (int)$currentField['id']] = $currentField;
+    }
+    $identityOwnedIds = [];
+    foreach ($form['fields'] as $field) if (isset($field['identity'], $currentByIdentity[(string)$field['identity']])) $identityOwnedIds[(int)$currentByIdentity[(string)$field['identity']]['id']] = true;
     $ids = []; $pending = $form['fields'];
     $insert = $pdo->prepare('INSERT INTO fb_fields (form_id,parent_id,type,label,field_key,placeholder,help_text,required,width,sort_order,is_hidden,options_json,validation_json,settings_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+    $update = $pdo->prepare('UPDATE fb_fields SET parent_id=?,type=?,label=?,field_key=?,placeholder=?,help_text=?,required=?,width=?,sort_order=?,is_hidden=?,options_json=?,validation_json=?,settings_json=? WHERE id=? AND form_id=? AND deleted_at IS NULL');
+    $keptIds = []; $renames = [];
     while ($pending !== []) {
         $progress = false;
         foreach ($pending as $index => $field) {
             $parent = $field['parent'] ?? null;
             if ($parent !== null && !isset($ids[$parent])) continue;
-            $insert->execute([$formId,$parent === null ? 0 : $ids[$parent],$field['type'],$field['label'],$field['key'],($field['placeholder'] ?? '') ?: null,($field['help'] ?? '') ?: null,!empty($field['required']) ? 1 : 0,$field['width'] ?? 12,$field['order'] ?? 0,!empty($field['hidden']) ? 1 : 0,($field['options'] ?? []) !== [] ? fb_json_encode($field['options']) : null,($field['validation'] ?? []) !== [] ? fb_json_encode($field['validation']) : null,($field['settings'] ?? []) !== [] ? fb_json_encode($field['settings']) : null]);
-            $ids[$field['key']] = (int)$pdo->lastInsertId();
+            $values = [$parent === null ? 0 : $ids[$parent],$field['type'],$field['label'],$field['key'],($field['placeholder'] ?? '') ?: null,($field['help'] ?? '') ?: null,!empty($field['required']) ? 1 : 0,$field['width'] ?? 12,$field['order'] ?? 0,!empty($field['hidden']) ? 1 : 0,($field['options'] ?? []) !== [] ? fb_json_encode($field['options']) : null,($field['validation'] ?? []) !== [] ? fb_json_encode($field['validation']) : null,($field['settings'] ?? []) !== [] ? fb_json_encode($field['settings']) : null];
+            $currentField = isset($field['identity']) ? ($currentByIdentity[(string)$field['identity']] ?? null) : ($currentByKey['key:' . (string)$field['key']] ?? null);
+            if (!isset($field['identity']) && is_array($currentField) && isset($identityOwnedIds[(int)$currentField['id']])) $currentField = null;
+            if (is_array($currentField)) {
+                $fieldId = (int)$currentField['id'];
+                $update->execute(array_merge($values, [$fieldId, $formId]));
+                if ($update->rowCount() > 1) throw new UnexpectedValueException('Field changed before it could be published.');
+                if ((string)$currentField['field_key'] !== (string)$field['key']) $renames[] = [(string)$currentField['field_key'], (string)$field['key']];
+            } else {
+                $insert->execute([$formId,$values[0],$values[1],$values[2],$values[3],$values[4],$values[5],$values[6],$values[7],$values[8],$values[9],$values[10],$values[11],$values[12]]);
+                $fieldId = (int)$pdo->lastInsertId();
+            }
+            $ids[$field['key']] = $fieldId;
+            $keptIds[$fieldId] = true;
             unset($pending[$index]);
             $progress = true;
         }
         if (!$progress) throw new InvalidArgumentException('Cyclic field layout.');
     }
+    if ($renames !== []) fb_cascade_trashed_field_key_reference_map($pdo, $formId, $renames);
+    $trash = $pdo->prepare('UPDATE fb_fields SET deleted_at=NOW() WHERE id=? AND form_id=? AND deleted_at IS NULL');
+    foreach ($currentFields as $currentField) if (!isset($keptIds[(int)$currentField['id']])) $trash->execute([(int)$currentField['id'], $formId]);
 }
 
 function fb_visual_publish_draft(PDO $pdo, int $formId, int $expectedRevision, ?int $actorId, bool $allowUnsafeCode): array {
@@ -281,7 +374,7 @@ function fb_visual_publish_draft(PDO $pdo, int $formId, int $expectedRevision, ?
         $hash = fb_visual_definition_hash($canonical);
         $nextRevision = $expectedRevision + 1;
         $pdo->prepare('UPDATE fb_builder_drafts SET definition_json=?,revision=?,published_sha256=?,updated_by=?,updated_at=NOW() WHERE form_id=? AND revision=?')
-            ->execute([fb_json_encode($canonical),$nextRevision,$hash,$actorId,$formId,$expectedRevision]);
+            ->execute([fb_visual_definition_json($canonical),$nextRevision,$hash,$actorId,$formId,$expectedRevision]);
         $select->execute([$formId]);
         $published = $select->fetch(PDO::FETCH_ASSOC);
         if (!is_array($published)) throw new RuntimeException('Unable to reload the published draft.');
@@ -313,7 +406,7 @@ function fb_visual_reset_draft(PDO $pdo, int $formId, int $expectedRevision, ?in
         $hash = fb_visual_definition_hash($current);
         $nextRevision = $expectedRevision + 1;
         $pdo->prepare('UPDATE fb_builder_drafts SET definition_json=?,revision=?,published_sha256=?,updated_by=?,updated_at=NOW() WHERE form_id=? AND revision=?')
-            ->execute([fb_json_encode($current),$nextRevision,$hash,$actorId,$formId,$expectedRevision]);
+            ->execute([fb_visual_definition_json($current),$nextRevision,$hash,$actorId,$formId,$expectedRevision]);
         $select->execute([$formId]);
         $reset = $select->fetch(PDO::FETCH_ASSOC);
         if (!is_array($reset)) throw new RuntimeException('Unable to reload the reset draft.');
