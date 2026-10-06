@@ -1,6 +1,6 @@
 # Form Builder
 
-Form Builder 2.4.0 is a Jyavani Core 2.3.140 plugin for reusable public forms, configurable private multi-file uploads, multilingual definitions, review workflows, and revision-safe visual editing.
+Form Builder 2.4.1 is a Jyavani Core 2.3.140 plugin for reusable public forms, configurable private multi-file uploads, multilingual definitions, review workflows, and revision-safe visual editing.
 
 ## Requirements
 

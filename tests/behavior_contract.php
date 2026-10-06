@@ -232,10 +232,21 @@ $previewDefinition['form']['js'] = 'window.draftUnsafeScript=true';
 $previewDefinition['form']['settings']['unsafe_code_enabled'] = true;
 $previewDefinition['form']['fields'][] = ['key'=>'unsafe_block','parent'=>'col_main','type'=>'raw_html','label'=>'Unsafe','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>40,'hidden'=>false,'options'=>[],'validation'=>[],'settings'=>['html'=>'<script>window.draftRawHtml=true</script>']];
 $previewDefinition['form']['fields'][] = ['key'=>'rich_block','parent'=>'col_main','type'=>'richtext','label'=>'Rich','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>50,'hidden'=>false,'options'=>[],'validation'=>[],'settings'=>['html'=>'<a href="javascript:window.draftRichHtml=true">Unsafe link</a>']];
+$previewDefinition['form']['fields'][] = ['key'=>'row_empty','parent'=>null,'type'=>'row','label'=>'','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>20,'hidden'=>false,'options'=>[],'validation'=>[],'settings'=>[]];
+$previewDefinition['form']['fields'][] = ['key'=>'col_empty_a','parent'=>'row_empty','type'=>'col','label'=>'','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>10,'hidden'=>false,'options'=>[],'validation'=>[],'settings'=>[]];
+$previewDefinition['form']['fields'][] = ['key'=>'col_empty_b','parent'=>'row_empty','type'=>'col','label'=>'','placeholder'=>'','help'=>'','required'=>false,'width'=>12,'order'=>20,'hidden'=>false,'options'=>[],'validation'=>[],'settings'=>[]];
 $previewHtml = fb_visual_render_preview($previewDefinition);
 $check(str_contains($previewHtml, 'data-fbv-draft-preview')
     && str_contains($previewHtml, 'data-fbv-row="row_main"')
     && str_contains($previewHtml, 'data-fbv-col="col_main"')
+    && str_contains($previewHtml, 'data-fbv-row="row_empty"')
+    && substr_count($previewHtml, 'data-fbv-empty="1"') === 2
+    && str_contains($previewHtml, 'fbv-draft-row-marker')
+    && str_contains($previewHtml, 'fbv-draft-column-marker')
+    && str_contains($previewHtml, 'fbv-draft-empty-column')
+    && str_contains($previewHtml, 'data-fbv-structure-action="row"')
+    && str_contains($previewHtml, 'data-fbv-structure-action="column"')
+    && str_contains($previewHtml, 'data-fbv-structure-action="empty-column"')
     && str_contains($previewHtml, 'data-key="country"')
     && str_contains($previewHtml, 'type="button" class="fb-submit"')
     && !str_contains($previewHtml, 'draft-unsafe-css')
@@ -243,7 +254,18 @@ $check(str_contains($previewHtml, 'data-fbv-draft-preview')
     && !str_contains($previewHtml, 'draftRawHtml')
     && !str_contains($previewHtml, 'draftRichHtml')
     && !str_contains($previewHtml, '/form-submit/'),
-    'draft preview exposes safe layout identities and public field markup without executable custom code or submission controls');
+    'draft preview exposes safe row, column, and empty-layout markers with public field markup but no executable code or submission controls');
+$publicPreviewPdo = new PDO('sqlite::memory:');
+$publicPreviewPdo->exec('CREATE TABLE fb_fields (id INTEGER PRIMARY KEY, form_id INTEGER, parent_id INTEGER, type TEXT, label TEXT, field_key TEXT, placeholder TEXT, help_text TEXT, required INTEGER, width INTEGER, sort_order INTEGER, is_hidden INTEGER, options_json TEXT, validation_json TEXT, settings_json TEXT, deleted_at TEXT)');
+$insertPublicField = $publicPreviewPdo->prepare('INSERT INTO fb_fields (id,form_id,parent_id,type,label,field_key,required,width,sort_order,is_hidden,deleted_at) VALUES (?,?,?,?,?,?,?,?,?,?,NULL)');
+$insertPublicField->execute([1, 91, 0, 'row', '', 'row_public', 0, 12, 10, 0]);
+$insertPublicField->execute([2, 91, 1, 'col', '', 'col_public', 0, 12, 10, 0]);
+$insertPublicField->execute([3, 91, 2, 'text', 'Public field', 'public_field', 0, 12, 10, 0]);
+$publicPreviewHtml = fb_render_form($publicPreviewPdo, ['id'=>91,'slug'=>'public-preview','title'=>'Public preview','description'=>'','settings_json'=>null,'css'=>null,'js'=>null]);
+$check(str_contains($publicPreviewHtml, 'data-fb-form="public-preview"')
+    && !str_contains($publicPreviewHtml, 'fbv-draft-')
+    && !str_contains($publicPreviewHtml, 'data-fbv-'),
+    'public rendering excludes every draft-only layout marker');
 $checkbox = ['type'=>'checkbox','field_key'=>'consent','label'=>'Consent','required'=>1,'is_hidden'=>0,'options_json'=>fb_json_encode([['value'=>'yes','label'=>'I agree','price'=>0]]),'validation_json'=>null,'settings_json'=>null];
 $checkboxHtml = fb_render_field_html($checkbox, 'contract', 'i1', false, fb_default_settings());
 $check(str_contains($checkboxHtml, 'name="consent[]"') && str_contains($checkboxHtml, 'required'), 'single-option required checkboxes render without undefined state');

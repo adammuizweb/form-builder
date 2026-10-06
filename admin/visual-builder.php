@@ -59,22 +59,76 @@ fb_admin_css();
 .fbv.is-right-hidden .fbv-panel-toggle.right { right: 0; }
 .fbv.is-left-hidden .fbv-panel-toggle.left svg, .fbv.is-right-hidden .fbv-panel-toggle.right svg { transform: rotate(180deg); }
 .fbv-sidebar { padding: 1rem; background: var(--adam-card); }
+.fbv.is-definition-locked .fbv-sidebar, .fbv.is-definition-locked .fbv-canvas-shell { opacity: .68; }
 .fbv-sidebar.left { border-right: 1px solid var(--adam-border); }
 .fbv-sidebar.right { border-left: 1px solid var(--adam-border); background: color-mix(in srgb, var(--adam-card) 96%, var(--adam-bg)); }
 .fbv-sidebar h2 { margin: 0 0 .25rem; font-size: .92rem; }
-.fbv-sidebar > p { margin: 0 0 1rem; color: var(--adam-muted); font-size: .75rem; line-height: 1.45; }
-.fbv-library-title { margin: 1rem 0 .5rem; color: var(--adam-muted); font-size: .66rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.fbv-sidebar-section + .fbv-sidebar-section { margin-top: 1.1rem; padding-top: 1rem; border-top: 1px solid var(--adam-border); }
+.fbv-sidebar-kicker { display: block; margin-bottom: .2rem; color: var(--adam-accent); font-size: .59rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.fbv-sidebar-copy { margin: 0 0 .75rem; color: var(--adam-muted); font-size: .72rem; line-height: 1.45; }
+.fbv-library-group + .fbv-library-group { margin-top: .55rem; }
+.fbv-library-group { overflow: hidden; border: 1px solid var(--adam-border); border-radius: 11px; background: color-mix(in srgb, var(--adam-card) 96%, var(--adam-bg)); }
+.fbv-library-group-toggle { display: flex; align-items: center; gap: .45rem; width: 100%; padding: .58rem .65rem; border: 0; background: transparent; color: var(--adam-text); font: inherit; text-align: left; cursor: pointer; }
+.fbv-library-group-toggle:hover { background: color-mix(in srgb, var(--adam-accent) 6%, transparent); }
+.fbv-library-group-toggle:focus-visible { outline: 2px solid var(--adam-accent); outline-offset: -3px; }
+.fbv-library-group-toggle strong { flex: 1; font-size: .7rem; }
+.fbv-library-group-toggle span { padding: .12rem .35rem; border-radius: 999px; background: var(--adam-bg); color: var(--adam-muted); font-size: .58rem; font-weight: 700; }
+.fbv-library-group-toggle::after { content: ''; width: 6px; height: 6px; margin: 0 .12rem 0 .15rem; border-right: 2px solid var(--adam-text); border-bottom: 2px solid var(--adam-text); transform: rotate(45deg); transition: transform .15s ease; }
+.fbv-library-group-toggle[aria-expanded="false"]::after { transform: rotate(-45deg); }
+.fbv-library-group-panel { padding: .45rem; border-top: 1px solid var(--adam-border); }
+.fbv-library-permission-note { margin: 0 0 .45rem; padding: .45rem .5rem; border-radius: 7px; background: var(--adam-bg); color: var(--adam-muted); font-size: .62rem; line-height: 1.4; }
 .fbv-library { display: grid; gap: .4rem; }
 .fbv-library button { display: flex; align-items: center; gap: .55rem; width: 100%; padding: .55rem .65rem; border: 1px solid var(--adam-border); border-radius: 10px; background: var(--adam-bg); color: var(--adam-text); font: inherit; font-size: .78rem; font-weight: 600; text-align: left; cursor: pointer; }
 .fbv-library button:hover:not(:disabled) { border-color: var(--adam-accent); background: color-mix(in srgb, var(--adam-accent) 6%, var(--adam-card)); }
 .fbv-library button:disabled { cursor: not-allowed; opacity: .45; }
-.fbv-layout-add { display: grid; grid-template-columns: 1fr auto; gap: .4rem; margin-top: .5rem; }
-.fbv-layout-list { display: grid; gap: .4rem; margin-top: .65rem; }
-.fbv-layout-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .35rem; align-items: center; padding: .45rem; border: 1px solid var(--adam-border); border-radius: 10px; background: var(--adam-bg); }
-.fbv-layout-row strong { display: block; font-size: .72rem; }
-.fbv-layout-row select { width: 100%; margin-top: .25rem; font-size: .7rem; }
-.fbv-layout-actions { display: grid; grid-template-columns: repeat(2, 25px); gap: .2rem; }
-.fbv-layout-actions button { width: 25px; height: 25px; padding: 0; border: 1px solid var(--adam-border); border-radius: 7px; background: var(--adam-card); color: var(--adam-text); cursor: pointer; }
+.fbv-layout-add { padding: .7rem; border: 1px solid color-mix(in srgb, var(--adam-accent) 24%, var(--adam-border)); border-radius: 13px; background: linear-gradient(145deg, color-mix(in srgb, var(--adam-accent) 7%, var(--adam-card)), var(--adam-bg)); }
+.fbv-layout-add-head { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
+.fbv-layout-add-head strong { font-size: .75rem; }
+.fbv-layout-add-head span { color: var(--adam-muted); font-size: .62rem; }
+.fbv-layout-presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: .3rem; margin: .55rem 0; }
+.fbv-layout-preset { display: grid; gap: .3rem; min-width: 0; padding: .38rem .28rem; border: 1px solid var(--adam-border); border-radius: 8px; background: var(--adam-card); color: var(--adam-muted); cursor: pointer; }
+.fbv-layout-preset:hover, .fbv-layout-preset:focus-visible { border-color: var(--adam-accent); color: var(--adam-accent); }
+.fbv-layout-preset:focus-visible { outline: 2px solid var(--adam-accent); outline-offset: 2px; }
+.fbv-layout-preset.is-active { border-color: var(--adam-accent); background: color-mix(in srgb, var(--adam-accent) 10%, var(--adam-card)); color: var(--adam-accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--adam-accent) 10%, transparent); }
+.fbv-layout-preset-preview { display: flex; gap: 2px; height: 16px; }
+.fbv-layout-preset-preview i { flex: 1; border-radius: 2px; background: currentColor; opacity: .48; }
+.fbv-layout-preset > span:last-child { font-size: .6rem; font-weight: 800; text-align: center; }
+.fbv-layout-add > .fba-btn { width: 100%; justify-content: center; }
+.fbv-layout-current { --fbv-form-accent: #2b7a4a; margin-top: .8rem; overflow: hidden; border: 1px solid color-mix(in srgb, var(--fbv-form-accent) 30%, var(--adam-border)); border-radius: 12px; background: linear-gradient(145deg, color-mix(in srgb, var(--fbv-form-accent) 9%, var(--adam-card)), color-mix(in srgb, var(--fbv-form-accent) 3%, var(--adam-bg))); box-shadow: inset 3px 0 0 var(--fbv-form-accent); }
+.fbv-layout-list-head { display: flex; align-items: center; gap: .45rem; width: 100%; padding: .58rem .65rem .58rem .75rem; border: 0; background: transparent; color: var(--adam-text); font: inherit; text-align: left; cursor: pointer; }
+.fbv-layout-list-head strong { display: inline-flex; align-items: center; gap: .4rem; flex: 1; font-size: .68rem; }
+.fbv-layout-list-head strong::before { content: ''; width: 8px; height: 8px; flex: 0 0 8px; border: 1px solid color-mix(in srgb, var(--fbv-form-accent) 70%, #000); border-radius: 50%; background: var(--fbv-form-accent); }
+.fbv-layout-list-head span { color: var(--adam-muted); font-size: .61rem; }
+.fbv-layout-list-head::after { content: ''; width: 6px; height: 6px; margin: 0 .12rem 0 .15rem; border-right: 2px solid var(--adam-text); border-bottom: 2px solid var(--adam-text); transform: rotate(45deg); transition: transform .15s ease; }
+.fbv-layout-list-head[aria-expanded="false"]::after { transform: rotate(-45deg); }
+.fbv-layout-list-head:hover { background: color-mix(in srgb, var(--fbv-form-accent) 7%, transparent); }
+.fbv-layout-list-head:focus-visible { outline: 2px solid var(--adam-accent); outline-offset: -3px; }
+.fbv-layout-list-panel { padding: .5rem; border-top: 1px solid color-mix(in srgb, var(--fbv-form-accent) 20%, var(--adam-border)); }
+.fbv-layout-list { display: grid; gap: .5rem; }
+.fbv-layout-empty { padding: .7rem; border: 1px dashed var(--adam-border); border-radius: 10px; color: var(--adam-muted); font-size: .67rem; line-height: 1.4; text-align: center; }
+.fbv-layout-row { padding: .55rem; border: 1px solid color-mix(in srgb, var(--fbv-form-accent) 18%, var(--adam-border)); border-radius: 9px; background: color-mix(in srgb, var(--fbv-form-accent) 3%, var(--adam-bg)); }
+.fbv-layout-row.is-preview-linked { border-color: var(--fbv-form-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--fbv-form-accent) 20%, transparent); }
+.fbv-layout-row-head { display: flex; align-items: center; justify-content: space-between; gap: .4rem; }
+.fbv-layout-row-head strong { font-size: .72rem; }
+.fbv-layout-row-head span { padding: .12rem .35rem; border-radius: 999px; background: var(--adam-card); color: var(--adam-muted); font-size: .58rem; }
+.fbv-layout-map { display: flex; gap: 3px; height: 20px; margin: .45rem 0; padding: 3px; border: 1px solid var(--adam-border); border-radius: 6px; background: var(--adam-card); }
+.fbv-layout-map i { flex: 1; min-width: 3px; border-radius: 3px; background: color-mix(in srgb, var(--fbv-form-accent) 48%, var(--adam-border)); }
+.fbv-layout-map em { display: grid; place-items: center; min-width: 20px; color: var(--adam-muted); font-size: .55rem; font-style: normal; }
+.fbv-layout-row-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .4rem; align-items: end; }
+.fbv-layout-row-controls label span { display: block; margin-bottom: .2rem; color: var(--adam-muted); font-size: .58rem; font-weight: 700; }
+.fbv-layout-row select { width: 100%; min-height: 30px; font-size: .67rem; }
+.fbv-layout-actions { display: grid; grid-template-columns: repeat(3, 28px); gap: .2rem; }
+.fbv-layout-actions button { width: 28px; height: 30px; padding: 0; border: 1px solid var(--adam-border); border-radius: 7px; background: var(--adam-card); color: var(--adam-text); cursor: pointer; }
+.fbv-layout-actions button:hover:not(:disabled), .fbv-layout-actions button:focus-visible { border-color: var(--adam-accent); color: var(--adam-accent); }
+.fbv-layout-actions button:focus-visible { outline: 2px solid var(--adam-accent); outline-offset: 2px; }
+.fbv-layout-actions button.danger:hover:not(:disabled), .fbv-layout-actions button.danger:focus-visible { border-color: var(--adam-danger); color: var(--adam-danger); }
+.fbv-layout-actions button:disabled { cursor: not-allowed; opacity: .34; }
+.fbv-field-guidance { margin: 0 0 .7rem; padding: .62rem .7rem; border: 1px solid color-mix(in srgb, var(--adam-accent) 35%, var(--adam-border)); border-radius: 10px; background: color-mix(in srgb, var(--adam-accent) 8%, var(--adam-card)); font-size: .68rem; line-height: 1.45; }
+.fbv-field-guidance strong, .fbv-field-guidance span { display: block; }
+.fbv-field-guidance strong { margin-bottom: .12rem; color: var(--adam-accent); font-size: .7rem; }
+.fbv-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+#fbvQuestionSection { border-radius: 12px; transition: background .18s, box-shadow .18s; }
+#fbvQuestionSection.is-preview-target { background: color-mix(in srgb, var(--adam-accent) 7%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--adam-accent) 22%, transparent); }
 .fbv-library button::before { content: '+'; display: grid; place-items: center; width: 21px; height: 21px; border-radius: 7px; background: color-mix(in srgb, var(--adam-accent) 12%, transparent); color: var(--adam-accent); }
 .fbv-stage { min-width: 0; padding: 1rem clamp(1rem, 3vw, 2.5rem) 3rem; overflow: auto; }
 .fbv-notice { display: flex; gap: .65rem; align-items: flex-start; max-width: var(--fbv-canvas-width); margin: 0 auto 1rem; padding: .7rem .85rem; border: 1px solid color-mix(in srgb, var(--adam-accent) 28%, var(--adam-border)); border-radius: 12px; background: color-mix(in srgb, var(--adam-accent) 6%, var(--adam-card)); font-size: .78rem; line-height: 1.5; transition: max-width .25s ease; }
@@ -165,7 +219,7 @@ fb_admin_css();
   .fbv-sidebar.left { border: 0; border-bottom: 1px solid var(--adam-border); }
   .fbv-library { display: flex; overflow-x: auto; padding-bottom: .25rem; }
   .fbv-library button { min-width: 135px; }
-  .fbv-library-title { display: none; }
+  .fbv-layout-list { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
   .fbv-stage { padding: 1rem .75rem 2rem; }
   .fbv-option-features { grid-template-columns: 1fr; }
 }
@@ -189,24 +243,58 @@ fb_admin_css();
     <button class="fbv-panel-toggle left" id="fbvToggleLeft" type="button" aria-controls="fbvQuestionLibrary" aria-expanded="true" title="Hide question library"><?= svg_ico('chevron-left', 'fbv-panel-icon') ?></button>
     <button class="fbv-panel-toggle right" id="fbvToggleRight" type="button" aria-controls="fbvQuestionProperties" aria-expanded="true" title="Hide question properties"><?= svg_ico('chevron-right', 'fbv-panel-icon') ?></button>
     <aside class="fbv-sidebar left" id="fbvQuestionLibrary" aria-label="Question library">
-      <h2>Add a question</h2>
-      <p>Add a field to the final column, then select it on the canvas to edit its draft properties.</p>
-      <?php foreach (['input' => 'Questions', 'element' => 'Content'] as $group => $label): ?>
-        <div class="fbv-library-title"><?= $label ?></div>
-        <div class="fbv-library">
-          <?php foreach ($types as $type => $meta):
-            if (!empty($meta['container']) || ($meta['group'] ?? '') !== $group) continue; ?>
-            <?php $unsafeType = in_array($type, ['richtext', 'raw_html'], true); ?>
-            <button type="button" disabled data-fbv-type="<?= htmlspecialchars((string)$type, ENT_QUOTES) ?>" data-unsafe="<?= $unsafeType ? '1' : '0' ?>"<?= $unsafeType && !$canUnsafeCode ? ' title="Unsafe-code permission required"' : '' ?>><?= htmlspecialchars((string)$meta['label'], ENT_QUOTES) ?></button>
-          <?php endforeach; ?>
+      <section class="fbv-sidebar-section" id="fbvLayoutSection" aria-labelledby="fbvLayoutHeading">
+        <span class="fbv-sidebar-kicker">Structure</span>
+        <h2 id="fbvLayoutHeading">Layout</h2>
+        <p class="fbv-sidebar-copy">Create the row and column structure before adding questions.</p>
+        <div class="fbv-layout-add">
+          <div class="fbv-layout-add-head"><strong>New row</strong><span>Choose columns</span></div>
+          <input id="fbvNewRowColumns" type="hidden" value="2">
+          <div class="fbv-layout-presets" role="group" aria-label="Columns in new row">
+            <?php for ($columnPreset = 1; $columnPreset <= 4; $columnPreset++): ?>
+            <button class="fbv-layout-preset<?= $columnPreset === 2 ? ' is-active' : '' ?>" type="button" data-new-row-columns="<?= $columnPreset ?>" aria-pressed="<?= $columnPreset === 2 ? 'true' : 'false' ?>" aria-label="<?= $columnPreset ?> column<?= $columnPreset === 1 ? '' : 's' ?>">
+              <span class="fbv-layout-preset-preview" aria-hidden="true"><?php for ($slot = 0; $slot < $columnPreset; $slot++): ?><i></i><?php endfor; ?></span>
+              <span><?= $columnPreset ?></span>
+            </button>
+            <?php endfor; ?>
+          </div>
+          <button class="fba-btn sm" id="fbvAddRow" type="button" disabled>Add 2-column row</button>
         </div>
-      <?php endforeach; ?>
-      <div class="fbv-library-title">Layout</div>
-      <div class="fbv-layout-add">
-        <select id="fbvNewRowColumns" aria-label="Columns in new row"><option value="1">1 column</option><option value="2" selected>2 columns</option><option value="3">3 columns</option><option value="4">4 columns</option></select>
-        <button class="fba-btn sm" id="fbvAddRow" type="button" disabled>Add row</button>
-      </div>
-      <div class="fbv-layout-list" id="fbvLayoutList"></div>
+        <div class="fbv-layout-current" id="fbvLayoutCurrent">
+          <button class="fbv-layout-list-head" id="fbvLayoutToggle" type="button" aria-expanded="true" aria-controls="fbvLayoutListPanel">
+            <strong>Layout</strong><span id="fbvLayoutCount">0 rows</span>
+          </button>
+          <div class="fbv-layout-list-panel" id="fbvLayoutListPanel">
+            <div class="fbv-layout-list" id="fbvLayoutList"></div>
+          </div>
+          <span class="fbv-sr-only" id="fbvStructureStatus" role="status" aria-live="polite"></span>
+        </div>
+      </section>
+      <section class="fbv-sidebar-section" id="fbvQuestionSection" aria-labelledby="fbvQuestionHeading">
+        <span class="fbv-sidebar-kicker">Fields</span>
+        <h2 id="fbvQuestionHeading" tabindex="-1">Add a question</h2>
+        <p class="fbv-sidebar-copy">New fields are added to the final column and can then be moved on the canvas.</p>
+        <div class="fbv-field-guidance" id="fbvFieldGuidance" role="status" hidden><strong id="fbvFieldGuidanceTitle">Empty column selected</strong><span id="fbvFieldGuidanceText"></span></div>
+        <?php foreach (['input' => 'Questions', 'element' => 'Content'] as $group => $label):
+          $groupTypes = array_filter($types, static fn(array $meta): bool => empty($meta['container']) && ($meta['group'] ?? '') === $group);
+          $groupExpanded = $group === 'input';
+          $groupPanelId = 'fbvLibraryPanel' . ucfirst($group); ?>
+          <section class="fbv-library-group" data-library-group="<?= $group ?>">
+            <button class="fbv-library-group-toggle" id="fbvLibraryToggle<?= ucfirst($group) ?>" type="button" data-library-toggle="<?= $group ?>" aria-expanded="<?= $groupExpanded ? 'true' : 'false' ?>" aria-controls="<?= $groupPanelId ?>">
+              <strong><?= $label ?></strong><span><?= count($groupTypes) ?> types</span>
+            </button>
+            <div class="fbv-library-group-panel" id="<?= $groupPanelId ?>"<?= $groupExpanded ? '' : ' hidden' ?>>
+              <?php if ($group === 'element' && !$canUnsafeCode): ?><p class="fbv-library-permission-note" id="fbvProtectedContentNote">Rich Text and Raw HTML require unsafe-code permission.</p><?php endif; ?>
+              <div class="fbv-library">
+            <?php foreach ($groupTypes as $type => $meta): ?>
+              <?php $unsafeType = in_array($type, ['richtext', 'raw_html'], true); ?>
+              <button type="button" disabled data-fbv-type="<?= htmlspecialchars((string)$type, ENT_QUOTES) ?>" data-unsafe="<?= $unsafeType ? '1' : '0' ?>"<?= $unsafeType && !$canUnsafeCode ? ' aria-describedby="fbvProtectedContentNote" title="Unsafe-code permission required"' : '' ?>><?= htmlspecialchars((string)$meta['label'], ENT_QUOTES) ?></button>
+            <?php endforeach; ?>
+              </div>
+            </div>
+          </section>
+        <?php endforeach; ?>
+      </section>
     </aside>
 
     <main class="fbv-stage">
@@ -223,13 +311,13 @@ fb_admin_css();
         <span class="fbv-count" id="fbvFieldCount"><?= $fieldCount ?> field<?= $fieldCount === 1 ? '' : 's' ?></span>
       </div>
       <div class="fbv-canvas-shell" id="fbvCanvas" data-device="desktop">
-        <iframe class="fbv-preview-frame" id="fbvPreviewFrame" title="Public form preview" src="about:blank" data-src="/fb-visual-preview/?id=<?= $formId ?>" sandbox="allow-same-origin" tabindex="-1"></iframe>
+        <iframe class="fbv-preview-frame" id="fbvPreviewFrame" title="Public form preview" src="about:blank" data-src="/fb-visual-preview/?id=<?= $formId ?>" sandbox="allow-same-origin"></iframe>
       </div>
     </main>
 
     <aside class="fbv-sidebar right" id="fbvQuestionProperties" aria-label="Question properties">
       <h2>Question properties</h2>
-      <p>Select a question on the canvas to edit its content, validation, layout, required state, and visibility.</p>
+      <p class="fbv-sidebar-copy">Select a question on the canvas to edit its content, validation, layout, required state, and visibility.</p>
       <div class="fbv-field-picker-shell">
         <label for="fbvFieldPicker">Editing field</label>
         <div class="fbv-field-picker-control">
@@ -288,7 +376,10 @@ fb_admin_css();
   const ADMIN_BASE = <?= json_encode(rtrim((string)(defined('ADMIN_BASE_PATH') ? ADMIN_BASE_PATH : ''), '/'), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
   const CAN_UNSAFE = <?= $canUnsafeCode ? 'true' : 'false' ?>;
   const TYPES = <?= json_encode($types, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+  const FORM_ACCENTS = <?= json_encode(array_map(static fn(array $preset): string => (string)$preset['accent'], fb_accent_presets()), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
   const app = document.getElementById('fbvApp');
+  const questionLibrary = document.getElementById('fbvQuestionLibrary');
+  const questionProperties = document.getElementById('fbvQuestionProperties');
   const canvas = document.getElementById('fbvCanvas');
   const previewFrame = document.getElementById('fbvPreviewFrame');
   const inspector = document.getElementById('fbvInspector');
@@ -302,9 +393,21 @@ fb_admin_css();
   const status = document.getElementById('fbvDraftStatus');
   const devices = document.querySelectorAll('.fbv-device');
   const libraryButtons = document.querySelectorAll('[data-fbv-type]');
+  const libraryGroupToggles = document.querySelectorAll('[data-library-toggle]');
   const addRowButton = document.getElementById('fbvAddRow');
   const newRowColumns = document.getElementById('fbvNewRowColumns');
+  const newRowLayoutButtons = document.querySelectorAll('[data-new-row-columns]');
+  const layoutCurrent = document.getElementById('fbvLayoutCurrent');
+  const layoutToggle = document.getElementById('fbvLayoutToggle');
+  const layoutPanel = document.getElementById('fbvLayoutListPanel');
   const layoutList = document.getElementById('fbvLayoutList');
+  const layoutCount = document.getElementById('fbvLayoutCount');
+  const structureStatus = document.getElementById('fbvStructureStatus');
+  const questionSection = document.getElementById('fbvQuestionSection');
+  const questionHeading = document.getElementById('fbvQuestionHeading');
+  const fieldGuidance = document.getElementById('fbvFieldGuidance');
+  const fieldGuidanceTitle = document.getElementById('fbvFieldGuidanceTitle');
+  const fieldGuidanceText = document.getElementById('fbvFieldGuidanceText');
   const leftToggle = document.getElementById('fbvToggleLeft');
   const rightToggle = document.getElementById('fbvToggleRight');
   const uploadEditorParking = document.getElementById('fbvUploadEditorParking');
@@ -344,6 +447,11 @@ fb_admin_css();
   let contentEditorFieldKey = null;
   let contentEditorApplying = false;
   let contentEditorSelectionToken = 0;
+  let targetColumnKey = null;
+  let linkedLayoutRowKey = null;
+  let layoutHighlightTimer = 0;
+  let fieldGuidanceTimer = 0;
+  let definitionLocked = false;
 
   const setPanelHidden = (side, hidden, persist = true) => {
     const toggle = side === 'left' ? leftToggle : rightToggle;
@@ -360,18 +468,58 @@ fb_admin_css();
     setPanelHidden('left', localStorage.getItem('fbv_left_hidden') === '1', false);
     setPanelHidden('right', localStorage.getItem('fbv_right_hidden') === '1', false);
   } catch (error) {}
+  const setLibraryGroupExpanded = (group, expanded, persist = true) => {
+    const toggle = Array.from(libraryGroupToggles).find((candidate) => candidate.dataset.libraryToggle === group);
+    const panel = toggle ? document.getElementById(toggle.getAttribute('aria-controls')) : null;
+    if (!toggle || !panel) return;
+    toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    toggle.title = `${expanded ? 'Collapse' : 'Expand'} ${toggle.querySelector('strong')?.textContent || 'field group'}`;
+    panel.hidden = !expanded;
+    if (persist) {
+      try { localStorage.setItem(`fbv_library_${group}_collapsed`, expanded ? '0' : '1'); } catch (error) {}
+    }
+  };
+  libraryGroupToggles.forEach((toggle) => {
+    const group = toggle.dataset.libraryToggle;
+    let expanded = group === 'input';
+    try {
+      const saved = localStorage.getItem(`fbv_library_${group}_collapsed`);
+      if (saved !== null) expanded = saved !== '1';
+    } catch (error) {}
+    setLibraryGroupExpanded(group, expanded, false);
+    toggle.addEventListener('click', () => setLibraryGroupExpanded(group, toggle.getAttribute('aria-expanded') !== 'true'));
+  });
+  const setLayoutCollapsed = (collapsed, persist = true) => {
+    layoutPanel.hidden = collapsed;
+    layoutToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    layoutToggle.title = collapsed ? 'Expand current layout' : 'Collapse current layout';
+    if (persist) {
+      try { localStorage.setItem(`fbv_layout_collapsed_${FORM_ID}`, collapsed ? '1' : '0'); } catch (error) {}
+    }
+  };
+  layoutToggle.addEventListener('click', () => setLayoutCollapsed(layoutToggle.getAttribute('aria-expanded') === 'true'));
+  try { setLayoutCollapsed(localStorage.getItem(`fbv_layout_collapsed_${FORM_ID}`) === '1', false); } catch (error) {}
 
   const setStatus = (message, state = 'ready') => {
     status.textContent = message;
     status.dataset.state = state;
   };
   const updateActions = () => {
-    const busy = !draft || hasUnsavedChanges || hasPendingControlChanges || saveInFlight;
+    const busy = !draft || hasUnsavedChanges || hasPendingControlChanges || saveInFlight || definitionLocked;
     publishButton.disabled = busy || draft.published_changed || !draft.has_unpublished_changes;
     publishButton.title = draft?.published_changed ? 'Reload the Classic version before publishing' : publishButton.disabled ? '' : 'Publish this draft';
     resetButton.hidden = !draft?.published_changed;
-    resetButton.disabled = saveInFlight;
-    addRowButton.disabled = !draft || saveInFlight;
+    resetButton.disabled = saveInFlight || definitionLocked;
+    addRowButton.disabled = !draft || saveInFlight || definitionLocked;
+    libraryButtons.forEach((button) => { button.disabled = !draft || definitionLocked || (button.dataset.unsafe === '1' && !CAN_UNSAFE); });
+  };
+  const setDefinitionLocked = (locked) => {
+    definitionLocked = locked;
+    app.classList.toggle('is-definition-locked', locked);
+    questionLibrary.inert = locked;
+    questionProperties.inert = locked;
+    if (preview) preview.inert = locked;
+    updateActions();
   };
   const request = async (action, values = {}) => {
     const body = new URLSearchParams({ fb_action: action, form_id: String(FORM_ID), csrf_token: CSRF, ...values });
@@ -394,6 +542,10 @@ fb_admin_css();
     updateActions();
   };
   const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[character]);
+  const syncLayoutAccent = (definition) => {
+    const accentKey = String(definition?.form?.settings?.accent || 'green');
+    layoutCurrent.style.setProperty('--fbv-form-accent', FORM_ACCENTS[accentKey] || FORM_ACCENTS.green || '#2b7a4a');
+  };
   const syncHeader = (definition) => {
     const form = definition?.form;
     if (!form) return;
@@ -401,6 +553,7 @@ fb_admin_css();
     formSlug.textContent = `${form.slug} · Visual Builder`;
     formStatus.textContent = form.status;
     formStatus.className = `fba-badge ${{ active: 'active', draft: 'draft', archived: 'arch' }[form.status] || 'draft'}`;
+    syncLayoutAccent(definition);
   };
   const currentFields = () => workingDefinition?.form?.fields || [];
   const currentField = () => currentFields().find((field) => field.key === selectedKey) || null;
@@ -453,27 +606,102 @@ fb_admin_css();
     fieldPicker.disabled = !draft || fields.length === 0;
   };
   const renderLayout = () => {
+    if (targetColumnKey) {
+      const targetExists = currentFields().some((field) => field.type === 'col' && field.key === targetColumnKey);
+      const targetIsEmpty = !currentFields().some((field) => field.parent === targetColumnKey && !['row', 'col'].includes(field.type));
+      if (!targetExists || !targetIsEmpty) clearFieldGuidance();
+    }
     const rows = layoutRows();
+    layoutCount.textContent = `${rows.length} row${rows.length === 1 ? '' : 's'}`;
     layoutList.innerHTML = rows.map((row, index) => {
-      const columns = currentFields().filter((field) => field.type === 'col' && field.parent === row.key).length;
+      const rowColumns = ordered(currentFields().filter((field) => field.type === 'col' && field.parent === row.key));
+      const columns = rowColumns.length;
+      const columnKeys = new Set(rowColumns.map((column) => column.key));
+      const fields = currentFields().filter((field) => columnKeys.has(field.parent) && !['row', 'col'].includes(field.type)).length;
       const columnChoices = [1,2,3,4];
       if (!columnChoices.includes(columns)) columnChoices.unshift(columns);
-      return `<div class="fbv-layout-row" data-layout-row="${escapeHtml(row.key)}"><div><strong>Row ${index + 1}</strong><select data-row-columns aria-label="Columns in row ${index + 1}">${columnChoices.map((count) => `<option value="${count}"${count === columns ? ' selected' : ''}>${count} column${count === 1 ? '' : 's'}${count < 1 || count > 4 ? ' (advanced)' : ''}</option>`).join('')}</select></div><div class="fbv-layout-actions"><button type="button" data-row-move="up" title="Move row up"${index === 0 ? ' disabled' : ''}>&uarr;</button><button type="button" data-row-move="down" title="Move row down"${index === rows.length - 1 ? ' disabled' : ''}>&darr;</button><button type="button" data-row-delete title="Delete empty row">&times;</button></div></div>`;
-    }).join('');
+      const mapSlots = Array.from({ length: Math.min(columns, 4) }, () => '<i></i>').join('') + (columns > 4 ? `<em>+${columns - 4}</em>` : '');
+      return `<article class="fbv-layout-row" data-layout-row="${escapeHtml(row.key)}"><div class="fbv-layout-row-head"><strong>Row ${index + 1}</strong><span>${fields} field${fields === 1 ? '' : 's'}</span></div><div class="fbv-layout-map" aria-hidden="true">${mapSlots}</div><div class="fbv-layout-row-controls"><label><span>Columns</span><select data-row-columns aria-label="Columns in row ${index + 1}">${columnChoices.map((count) => `<option value="${count}"${count === columns ? ' selected' : ''}>${count} column${count === 1 ? '' : 's'}${count < 1 || count > 4 ? ' (advanced)' : ''}</option>`).join('')}</select></label><div class="fbv-layout-actions"><button type="button" data-row-move="up" title="Move row up" aria-label="Move row ${index + 1} up"${index === 0 ? ' disabled' : ''}>&uarr;</button><button type="button" data-row-move="down" title="Move row down" aria-label="Move row ${index + 1} down"${index === rows.length - 1 ? ' disabled' : ''}>&darr;</button><button class="danger" type="button" data-row-delete title="${fields ? 'Move or delete fields before removing this row' : 'Delete empty row'}" aria-label="Delete row ${index + 1}"${fields ? ' disabled' : ''}>&times;</button></div></div></article>`;
+    }).join('') || '<div class="fbv-layout-empty">No rows yet. Choose a column layout above to create the form structure.</div>';
+    if (linkedLayoutRowKey) {
+      const linkedRow = Array.from(layoutList.querySelectorAll('[data-layout-row]')).find((row) => row.dataset.layoutRow === linkedLayoutRowKey);
+      if (linkedRow) linkedRow.classList.add('is-preview-linked');
+      else linkedLayoutRowKey = null;
+    }
+  };
+  const markPreviewTarget = () => {
+    if (!preview) return;
+    preview.querySelectorAll('.is-add-target').forEach((column) => column.classList.remove('is-add-target'));
+    if (targetColumnKey) Array.from(preview.querySelectorAll('.fb-col[data-fbv-col]')).find((column) => column.dataset.fbvCol === targetColumnKey)?.classList.add('is-add-target');
+  };
+  const clearFieldGuidance = () => {
+    targetColumnKey = null;
+    fieldGuidance.hidden = true;
+    fieldGuidanceTitle.textContent = 'Empty column selected';
+    fieldGuidanceText.textContent = '';
+    questionSection.classList.remove('is-preview-target');
+    window.clearTimeout(fieldGuidanceTimer);
+    markPreviewTarget();
+  };
+  const highlightLayoutRow = (rowKey, message) => {
+    setPanelHidden('left', false);
+    setLayoutCollapsed(false);
+    linkedLayoutRowKey = rowKey;
+    layoutList.querySelectorAll('.is-preview-linked').forEach((row) => row.classList.remove('is-preview-linked'));
+    const rowCard = Array.from(layoutList.querySelectorAll('[data-layout-row]')).find((row) => row.dataset.layoutRow === rowKey);
+    if (!rowCard) {
+      linkedLayoutRowKey = null;
+      structureStatus.textContent = 'That row is no longer available in the current layout.';
+      return;
+    }
+    rowCard.classList.add('is-preview-linked');
+    rowCard.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest' });
+    rowCard.querySelector('[data-row-columns]')?.focus({ preventScroll: true });
+    structureStatus.textContent = message;
+    window.clearTimeout(layoutHighlightTimer);
+    layoutHighlightTimer = window.setTimeout(() => {
+      linkedLayoutRowKey = null;
+      layoutList.querySelectorAll('.is-preview-linked').forEach((row) => row.classList.remove('is-preview-linked'));
+    }, 2400);
+  };
+  const guideEmptyColumn = (rowKey, columnKey) => {
+    const position = layoutColumns().find(({ row, column }) => row.key === rowKey && column.key === columnKey);
+    const targetIsEmpty = !currentFields().some((field) => field.parent === columnKey && !['row', 'col'].includes(field.type));
+    if (!position || !targetIsEmpty) {
+      clearFieldGuidance();
+      structureStatus.textContent = position ? 'That column is no longer empty.' : 'That column is no longer available in the current layout.';
+      return;
+    }
+    const label = `Column ${position.columnIndex + 1} in Row ${position.rowIndex + 1}`;
+    targetColumnKey = columnKey;
+    linkedLayoutRowKey = null;
+    window.clearTimeout(layoutHighlightTimer);
+    layoutList.querySelectorAll('.is-preview-linked').forEach((row) => row.classList.remove('is-preview-linked'));
+    setPanelHidden('left', false);
+    setLibraryGroupExpanded('input', true);
+    fieldGuidanceText.textContent = `${label} is ready. Choose a field below to add it here.`;
+    fieldGuidance.hidden = false;
+    questionSection.classList.add('is-preview-target');
+    questionSection.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+    questionHeading.focus({ preventScroll: true });
+    markPreviewTarget();
+    window.clearTimeout(fieldGuidanceTimer);
+    fieldGuidanceTimer = window.setTimeout(() => questionSection.classList.remove('is-preview-target'), 3600);
   };
   const applyPreview = (html) => {
+    updateFieldCount();
+    renderFieldPicker();
+    renderLayout();
     if (!html || !preview) return;
     const template = preview.ownerDocument.createElement('template');
     template.innerHTML = html.trim();
     const fresh = template.content.querySelector('.fb-wrap');
     const existing = preview.querySelector('.fb-wrap');
     if (fresh && existing) existing.replaceWith(fresh);
-    preview.querySelectorAll('input, textarea, select, button').forEach((control) => control.tabIndex = -1);
+    preview.querySelectorAll('input, textarea, select, button').forEach((control) => { control.tabIndex = control.matches('[data-fbv-structure-action]') ? 0 : -1; });
     preview.querySelectorAll('.fb-field[data-key]').forEach((field) => field.draggable = true);
     markSelection();
-    updateFieldCount();
-    renderFieldPicker();
-    renderLayout();
+    markPreviewTarget();
   };
   const renderOptionEditor = (field) => {
     const options = Array.isArray(field.options) ? field.options : [];
@@ -724,7 +952,7 @@ fb_admin_css();
     if (isProtectedContentField(field)) attachContentEditor(field);
   };
   const mutateDefinition = (callback, refreshInspector = false) => {
-    if (!draft) return;
+    if (!draft || definitionLocked) return;
     const definition = structuredClone(workingDefinition);
     callback(definition);
     workingDefinition = definition;
@@ -869,11 +1097,21 @@ fb_admin_css();
   };
   const addField = (type) => {
     const meta = TYPES[type];
-    if (!meta || meta.container || (['richtext', 'raw_html'].includes(type) && !CAN_UNSAFE)) return;
+    if (!meta || meta.container || definitionLocked || (['richtext', 'raw_html'].includes(type) && !CAN_UNSAFE)) return;
+    const selectedTargetColumn = currentFields().find((field) => field.type === 'col' && field.key === targetColumnKey);
+    const selectedTargetIsEmpty = selectedTargetColumn && !currentFields().some((field) => field.parent === selectedTargetColumn.key && !['row', 'col'].includes(field.type));
+    if (targetColumnKey && (!selectedTargetColumn || !selectedTargetIsEmpty)) {
+      clearFieldGuidance();
+      fieldGuidanceTitle.textContent = 'Layout changed';
+      fieldGuidanceText.textContent = 'That column is no longer empty or available. Select an empty column in the preview and try again.';
+      fieldGuidance.hidden = false;
+      questionSection.classList.add('is-preview-target');
+      return;
+    }
     const existingRows = ordered(currentFields().filter((field) => field.type === 'row'));
     const finalRow = existingRows.at(-1);
     const finalRowHasColumn = finalRow && currentFields().some((field) => field.type === 'col' && field.parent === finalRow.key);
-    const nodesNeeded = 1 + (existingRows.length ? (finalRowHasColumn ? 0 : 1) : 2);
+    const nodesNeeded = selectedTargetColumn ? 1 : 1 + (existingRows.length ? (finalRowHasColumn ? 0 : 1) : 2);
     if (currentFields().length + nodesNeeded > 300) {
       setStatus('This form has reached the 300-field limit', 'error');
       return;
@@ -885,20 +1123,23 @@ fb_admin_css();
     }
     mutateDefinition((definition) => {
       const fields = definition.form.fields;
-      let rows = ordered(fields.filter((field) => field.type === 'row'));
-      if (!rows.length) {
-        const rowKey = uniqueKey('row_visual', fields);
-        fields.push(newNode(rowKey, null, 'row', '', 10));
-        rows = ordered(fields.filter((field) => field.type === 'row'));
+      let column = targetColumnKey ? fields.find((field) => field.type === 'col' && field.key === targetColumnKey) : null;
+      if (!column) {
+        let rows = ordered(fields.filter((field) => field.type === 'row'));
+        if (!rows.length) {
+          const rowKey = uniqueKey('row_visual', fields);
+          fields.push(newNode(rowKey, null, 'row', '', 10));
+          rows = ordered(fields.filter((field) => field.type === 'row'));
+        }
+        const row = rows.at(-1);
+        let columns = ordered(fields.filter((field) => field.type === 'col' && field.parent === row.key));
+        if (!columns.length) {
+          const columnKey = uniqueKey('col_visual', fields);
+          fields.push(newNode(columnKey, row.key, 'col', '', 10));
+          columns = ordered(fields.filter((field) => field.type === 'col' && field.parent === row.key));
+        }
+        column = columns.at(-1);
       }
-      const row = rows.at(-1);
-      let columns = ordered(fields.filter((field) => field.type === 'col' && field.parent === row.key));
-      if (!columns.length) {
-        const columnKey = uniqueKey('col_visual', fields);
-        fields.push(newNode(columnKey, row.key, 'col', '', 10));
-        columns = ordered(fields.filter((field) => field.type === 'col' && field.parent === row.key));
-      }
-      const column = columns.at(-1);
       const siblings = fields.filter((field) => field.parent === column.key);
       const key = uniqueKey(meta.label || type, fields);
       const field = newNode(key, column.key, type, meta.label || type, Math.max(0, ...siblings.map((item) => Number(item.order) || 0)) + 10);
@@ -917,6 +1158,7 @@ fb_admin_css();
       fields.push(field);
       selectedKey = key;
     }, true);
+    clearFieldGuidance();
   };
   const save = async (definition) => {
     if (!draft) throw new Error('Draft is not ready');
@@ -1123,12 +1365,21 @@ fb_admin_css();
     applyPreview(draft.preview_html);
     renderInspector();
     renderFieldPicker();
-    libraryButtons.forEach((button) => button.disabled = button.dataset.unsafe === '1' && !CAN_UNSAFE);
     showDraftState();
   })
     .catch(() => setStatus('Draft unavailable', 'error'));
 
   libraryButtons.forEach((button) => button.addEventListener('click', () => addField(button.dataset.fbvType)));
+  newRowLayoutButtons.forEach((button) => button.addEventListener('click', () => {
+    const columns = Math.max(1, Math.min(4, Number(button.dataset.newRowColumns) || 1));
+    newRowColumns.value = String(columns);
+    newRowLayoutButtons.forEach((candidate) => {
+      const active = candidate === button;
+      candidate.classList.toggle('is-active', active);
+      candidate.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    addRowButton.textContent = `Add ${columns}-column row`;
+  }));
   addRowButton.addEventListener('click', () => addRow(newRowColumns.value));
   layoutList.addEventListener('change', (event) => {
     if (!event.target.matches('[data-row-columns]')) return;
@@ -1148,11 +1399,25 @@ fb_admin_css();
     preview.dataset.fbvBound = '1';
     preview.addEventListener('click', (event) => {
       const field = event.target.closest('.fb-field[data-key]');
-      if (!field || !preview.contains(field)) return;
-      selectedKey = field.dataset.key;
-      markSelection();
-      renderInspector();
-      renderFieldPicker();
+      if (field && preview.contains(field)) {
+        clearFieldGuidance();
+        selectedKey = field.dataset.key;
+        markSelection();
+        renderInspector();
+        renderFieldPicker();
+        return;
+      }
+      const column = event.target.closest('.fb-col[data-fbv-col]');
+      const row = event.target.closest('.fb-row[data-fbv-row]');
+      const structureAction = event.target.closest('[data-fbv-structure-action]')?.dataset.fbvStructureAction || '';
+      if (!row || !preview.contains(row)) return;
+      if (structureAction === 'empty-column' || (!structureAction && column?.dataset.fbvEmpty === '1')) {
+        guideEmptyColumn(row.dataset.fbvRow, column.dataset.fbvCol);
+        return;
+      }
+      clearFieldGuidance();
+      const position = column ? layoutColumns().find(({ column: candidate }) => candidate.key === column.dataset.fbvCol) : null;
+      highlightLayoutRow(row.dataset.fbvRow, position ? `Column ${position.columnIndex + 1} belongs to Row ${position.rowIndex + 1} - layout controls highlighted` : 'Row layout controls highlighted');
     });
     const clearDropTargets = () => preview.querySelectorAll('.is-drop-target, .is-dragging').forEach((element) => element.classList.remove('is-drop-target', 'is-dragging'));
     preview.addEventListener('dragstart', (event) => {
@@ -1178,7 +1443,10 @@ fb_admin_css();
       const field = event.target.closest('.fb-field[data-key]');
       const column = event.target.closest('.fb-col[data-fbv-col]');
       event.preventDefault();
-      if (column) moveField(draggedFieldKey, column.dataset.fbvCol, field?.dataset.key || null);
+      if (column) {
+        moveField(draggedFieldKey, column.dataset.fbvCol, field?.dataset.key || null);
+        if (column.dataset.fbvCol === targetColumnKey) clearFieldGuidance();
+      }
       draggedFieldKey = null;
       clearDropTargets();
     });
@@ -1192,6 +1460,7 @@ fb_admin_css();
     const frameDocument = previewFrame.contentDocument;
     preview = frameDocument?.getElementById('fbvPreview') || null;
     if (!preview) { setStatus('Public preview unavailable', 'error'); return; }
+    preview.inert = definitionLocked;
     Array.from(frameDocument.body.children).forEach((element) => {
       if (element.id !== 'site-main' && element.tagName !== 'SCRIPT') element.inert = true;
     });
@@ -1207,11 +1476,12 @@ fb_admin_css();
   publishButton.addEventListener('click', async () => {
     if (publishButton.disabled || !draft) return;
     if (!syncUploadDescription() || !syncContentEditor()) return;
+    setDefinitionLocked(true);
     if (saveInFlight || pendingDefinition) {
       setStatus('Saving description before publish...', 'saving');
       if (!await waitForSaveIdle()) {
+        setDefinitionLocked(false);
         setStatus('Publish paused - resolve the draft save before retrying', 'error');
-        updateActions();
         return;
       }
     }
@@ -1233,7 +1503,7 @@ fb_admin_css();
       setStatus(error.conflict ? 'Publish conflict - reload required' : error.message, error.conflict ? 'conflict' : 'error');
     } finally {
       saveInFlight = false;
-      updateActions();
+      setDefinitionLocked(false);
     }
   });
   resetButton.addEventListener('click', async () => {
@@ -1248,15 +1518,19 @@ fb_admin_css();
       focus: 'cancel'
     });
     if (!confirmed || !draft) return;
+    setDefinitionLocked(true);
     if (saveInFlight || pendingDefinition) {
       setStatus('Waiting for draft save before reset...', 'saving');
       if (!await waitForSaveIdle()) {
+        setDefinitionLocked(false);
         setStatus('Reset paused - resolve the draft save before retrying', 'error');
-        updateActions();
         return;
       }
     }
-    if (resetButton.disabled) return;
+    if (saveInFlight) {
+      setDefinitionLocked(false);
+      return;
+    }
     detachUploadDescriptionEditor(false);
     detachContentEditor(false);
     saveInFlight = true;
@@ -1279,7 +1553,7 @@ fb_admin_css();
       renderInspector();
     } finally {
       saveInFlight = false;
-      updateActions();
+      setDefinitionLocked(false);
     }
   });
   inspector.addEventListener('change', (event) => {

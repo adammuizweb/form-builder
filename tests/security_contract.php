@@ -8,7 +8,7 @@ $permissions = array_column($manifest['permissions'] ?? [], null, 'key');
 $composer = json_decode((string)file_get_contents($root . '/composer.json'), true, 32, JSON_THROW_ON_ERROR);
 $lock = json_decode((string)file_get_contents($root . '/composer.lock'), true, 64, JSON_THROW_ON_ERROR);
 $lockedPackages = array_column($lock['packages'] ?? [], 'version', 'name');
-$check(($manifest['version'] ?? null) === '2.4.0' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.140' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
+$check(($manifest['version'] ?? null) === '2.4.1' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.140' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
 $check(in_array('content-editor', $manifest['dependencies']['js'] ?? [], true), 'upload descriptions declare the Core content-editor dependency');
 $staticCopies = array_column($manifest['static']['copy'] ?? [], 'to', 'from');
 $check(($staticCopies['public/proof.js'] ?? null) === 'static/plugins/form-builder/proof.js', 'submission proof generator publishes only in the plugin-owned static namespace');
@@ -437,13 +437,55 @@ $check(str_contains($visualBuilder, 'id="fbvToggleLeft"')
     'Visual Builder side panels collapse independently, persist their state, and widen the canvas');
 $check(str_contains($draftHelpers, 'data-fbv-row=')
     && str_contains($draftHelpers, 'data-fbv-col=')
+    && str_contains($draftHelpers, 'fbv-draft-row-marker')
+    && str_contains($draftHelpers, 'fbv-draft-empty-column')
+    && str_contains($visualPreview, '.fbv-preview .fb-row[data-fbv-row]')
+    && str_contains($visualPreview, '.fbv-preview .fb-col[data-fbv-empty="1"]')
     && str_contains($visualBuilder, 'id="fbvAddRow"')
+    && str_contains($visualBuilder, 'id="fbvLayoutSection"')
+    && str_contains($visualBuilder, 'id="fbvQuestionSection"')
+    && strpos($visualBuilder, 'id="fbvLayoutSection"') < strpos($visualBuilder, 'id="fbvQuestionSection"')
+    && str_contains($visualBuilder, 'data-new-row-columns=')
+    && str_contains($visualBuilder, 'id="fbvLayoutToggle"')
+    && str_contains($visualBuilder, '<strong>Layout</strong>')
+    && str_contains($visualBuilder, '--fbv-form-accent')
+    && str_contains($visualBuilder, 'FORM_ACCENTS[accentKey]')
+    && str_contains($visualBuilder, 'syncLayoutAccent(definition);')
+    && str_contains($visualBuilder, 'fbv_layout_collapsed_${FORM_ID}')
+    && str_contains($visualBuilder, 'layoutPanel.hidden = collapsed')
+    && str_contains($visualBuilder, "layoutToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true')")
+    && str_contains($visualBuilder, "const applyPreview = (html) => {\n    updateFieldCount();\n    renderFieldPicker();\n    renderLayout();")
+    && str_contains($visualBuilder, 'const highlightLayoutRow = (rowKey, message)')
+    && str_contains($visualBuilder, 'const guideEmptyColumn = (rowKey, columnKey)')
+    && str_contains($visualBuilder, 'id="fbvFieldGuidance"')
+    && str_contains($visualBuilder, 'id="fbvStructureStatus"')
+    && str_contains($visualBuilder, 'id="fbvLibraryToggle<?= ucfirst($group) ?>"')
+    && str_contains($visualBuilder, '$groupExpanded = $group === \'input\'')
+    && str_contains($visualBuilder, 'const setLibraryGroupExpanded = (group, expanded, persist = true)')
+    && str_contains($visualBuilder, 'fbv_library_${group}_collapsed')
+    && str_contains($visualBuilder, "setLibraryGroupExpanded('input', true)")
+    && str_contains($visualBuilder, 'id="fbvProtectedContentNote"')
+    && str_contains($visualBuilder, 'let definitionLocked = false')
+    && str_contains($visualBuilder, 'if (!draft || definitionLocked) return')
+    && str_contains($visualBuilder, 'button.disabled = !draft || definitionLocked')
+    && str_contains($visualBuilder, 'const setDefinitionLocked = (locked)')
+    && str_contains($visualBuilder, 'questionLibrary.inert = locked')
+    && str_contains($visualBuilder, 'questionProperties.inert = locked')
+    && str_contains($visualBuilder, 'preview.inert = locked')
+    && str_contains($visualBuilder, 'const targetIsEmpty = !currentFields().some')
+    && str_contains($visualBuilder, "structureAction === 'empty-column'")
+    && str_contains($visualBuilder, "rowCard.querySelector('[data-row-columns]')?.focus")
+    && str_contains($visualBuilder, 'field.key === targetColumnKey')
+    && str_contains($visualBuilder, "control.matches('[data-fbv-structure-action]') ? 0 : -1")
+    && str_contains($draftHelpers, 'data-fbv-structure-action="empty-column"')
+    && str_contains($visualPreview, '.fb-col.is-add-target')
+    && str_contains($visualBuilder, 'fbv-layout-map')
     && str_contains($visualBuilder, 'const setRowColumns = async (rowKey, columnCount)')
     && str_contains($visualBuilder, 'const moveRow = (rowKey, delta)')
     && str_contains($visualBuilder, 'const moveField = (fieldKey, parentKey, beforeKey = null)')
     && str_contains($visualBuilder, "preview.addEventListener('dragstart'")
     && str_contains($visualBuilder, 'data-field-move="up"'),
-    'Visual layout supports row/column management, pointer drag-and-drop, and accessible field reordering');
+    'Visual layout links preview structures to its accent-aware controls and guides empty-column field insertion without losing drag-and-drop or accessible reordering');
 $check(str_contains($visualBuilder, 'pendingDefinition = pendingDefinition || workingDefinition')
     && str_contains($visualBuilder, 'let retryTimer = 0')
     && str_contains($visualBuilder, 'column${count === 1 ? \'\' : \'s\'}${count < 1 || count > 4 ? \' (advanced)\' : \'\'}')

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.4.1 - 2026-10-06
+
+- Reorganize Visual Builder around an accent-aware, collapsible Layout summary with clearer row and column controls.
+- Link draft Row, Column, and Empty Column markers to the matching layout controls and exact field insertion target.
+- Add persistent Questions and Content accordions, keyboard-accessible structure markers, and responsive field guidance.
+- Lock editing during publish and reset operations while preserving autosave, drag-and-drop, and public-render isolation.
+
 ## 2.4.0 - 2026-10-06
 
 - Expand Visual Builder validation, linked Country, alignment, Image Block, Rich Text, and Raw HTML controls to match canonical field capabilities.

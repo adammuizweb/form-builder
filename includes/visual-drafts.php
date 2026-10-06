@@ -177,16 +177,20 @@ function fb_visual_render_preview(array $definition): string {
   <?php if ((string)$localizedForm['description'] !== ''): ?><div class="fb-desc"><?= nl2br(fb_h((string)$localizedForm['description'])) ?></div><?php endif; ?>
   <form novalidate aria-label="Draft form preview">
     <div class="fb-rows">
-    <?php foreach ($byParent[''] ?? [] as $row):
+    <?php foreach ($byParent[''] ?? [] as $rowIndex => $row):
         if (($row['type'] ?? null) !== 'row') continue;
         $columns = array_values(array_filter($byParent[$row['key']] ?? [], static fn(array $field): bool => ($field['type'] ?? null) === 'col'));
         $span = intdiv(12, min(4, max(1, count($columns))));
         $colClass = ['12'=>'','6'=>' c6','4'=>' c4','3'=>' c3'][(string)$span] ?? ''; ?>
       <div class="fb-row" data-fbv-row="<?= fb_h((string)$row['key']) ?>">
-        <?php foreach ($columns as $column): ?>
-        <div class="fb-col<?= $colClass ?>" data-fbv-col="<?= fb_h((string)$column['key']) ?>">
-          <?php foreach ($byParent[$column['key']] ?? [] as $field) {
-              if (in_array($field['type'] ?? null, ['row', 'col'], true)) continue;
+        <button class="fbv-draft-row-marker" type="button" data-fbv-structure-action="row" aria-label="Open layout controls for Row <?= $rowIndex + 1 ?>">Row <?= $rowIndex + 1 ?><small><?= count($columns) ?> column<?= count($columns) === 1 ? '' : 's' ?></small></button>
+        <?php if ($columns === []): ?><div class="fbv-draft-empty-row" aria-hidden="true">Add columns from the Layout panel</div><?php endif; ?>
+        <?php foreach ($columns as $columnIndex => $column):
+          $columnFields = array_values(array_filter($byParent[$column['key']] ?? [], static fn(array $field): bool => !in_array($field['type'] ?? null, ['row', 'col'], true))); ?>
+        <div class="fb-col<?= $colClass ?>" data-fbv-col="<?= fb_h((string)$column['key']) ?>" data-fbv-empty="<?= $columnFields === [] ? '1' : '0' ?>">
+          <button class="fbv-draft-column-marker" type="button" data-fbv-structure-action="column" aria-label="Open layout controls for Row <?= $rowIndex + 1 ?>, Column <?= $columnIndex + 1 ?>">Column <?= $columnIndex + 1 ?></button>
+          <?php if ($columnFields === []): ?><button class="fbv-draft-empty-column" type="button" data-fbv-structure-action="empty-column" aria-label="Add a field to Row <?= $rowIndex + 1 ?>, Column <?= $columnIndex + 1 ?>">Empty column</button><?php endif; ?>
+          <?php foreach ($columnFields as $field) {
               $rowData = fb_localized_field(fb_visual_definition_field_row($field), $settings);
               echo fb_render_field_html($rowData, $slug, $instance, false, $settings);
           } ?>
