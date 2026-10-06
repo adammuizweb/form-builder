@@ -957,7 +957,12 @@ function fb_validate_submission(array $fields, array $post, array $files, array 
             case 'date':
                 $date = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
                 $dateErrors = DateTimeImmutable::getLastErrors();
-                if ($date === false || ($dateErrors !== false && ($dateErrors['warning_count'] > 0 || $dateErrors['error_count'] > 0)) || $date->format('Y-m-d') !== $value) $errors[] = fb_message($settings, 'invalid_date', ['field'=>$label]);
+                $validDate = $date !== false && ($dateErrors === false || ($dateErrors['warning_count'] === 0 && $dateErrors['error_count'] === 0)) && $date->format('Y-m-d') === $value;
+                if (!$validDate) $errors[] = fb_message($settings, 'invalid_date', ['field'=>$label]);
+                else {
+                    if (isset($valid['min']) && $valid['min'] !== '' && $value < $valid['min']) $errors[] = fb_message($settings, 'date_min', ['field'=>$label,'min'=>$valid['min']]);
+                    if (isset($valid['max']) && $valid['max'] !== '' && $value > $valid['max']) $errors[] = fb_message($settings, 'date_max', ['field'=>$label,'max'=>$valid['max']]);
+                }
                 break;
             case 'select':
             case 'radio':

@@ -190,8 +190,11 @@ try {
             if (in_array($n['type'], ['row', 'col'], true)) $collectSubtree($id);
             $deleting = array_fill_keys($deleteIds, true);
             $countryKeys = [];
-            foreach (fb_get_fields($pdo, $formId) as $field) if (isset($deleting[(int)$field['id']]) && $field['type'] === 'country') $countryKeys[] = $field['field_key'];
-            foreach (fb_get_fields($pdo, $formId) as $field) {
+            $activeFields = fb_get_fields($pdo, $formId);
+            foreach ($activeFields as $field) if (isset($deleting[(int)$field['id']])) {
+                if ($field['type'] === 'country') $countryKeys[] = $field['field_key'];
+            }
+            foreach ($activeFields as $field) {
                 if (isset($deleting[(int)$field['id']]) || $field['type'] !== 'intl_phone') continue;
                 if (in_array(fb_field_settings($field)['country_field'] ?? '', $countryKeys, true)) fb_json(['ok'=>false,'error'=>'Delete the linked international phone field first'], 422);
             }
@@ -248,11 +251,13 @@ try {
             if (!empty($types[$type]['options'])) {
                 $options = fb_parse_option_lines((string)($_POST['options'] ?? ''), $type);
             }
-            $validation = [];
+            $validation = fb_field_validation($n);
             if ($type === 'number') {
+                unset($validation['min'], $validation['max']);
                 if (trim((string)($_POST['v_min'] ?? '')) !== '') $validation['min'] = trim((string)$_POST['v_min']);
                 if (trim((string)($_POST['v_max'] ?? '')) !== '') $validation['max'] = trim((string)$_POST['v_max']);
             } elseif (in_array($type, ['text', 'tel', 'intl_phone', 'textarea'], true)) {
+                unset($validation['maxlength'], $validation['pattern']);
                 if ((int)($_POST['v_maxlength'] ?? 0) > 0) $validation['maxlength'] = (int)$_POST['v_maxlength'];
                 if (trim((string)($_POST['v_pattern'] ?? '')) !== '') $validation['pattern'] = trim((string)$_POST['v_pattern']);
             } elseif (in_array($type, ['file', 'image'], true)) {
@@ -272,7 +277,6 @@ try {
                 if ($exts === [] || in_array('', $exts, true) || array_diff($exts, $allowedExtensions) !== []) {
                     fb_json(['ok' => false, 'error' => __('Allowed extensions contain an unsupported value.')], 422);
                 }
-                $validation = fb_field_validation($n);
                 $validation['max_bytes'] = (int)$maxMbRaw * 1024 * 1024;
                 $validation['max_files'] = (int)$maxFilesRaw;
                 $validation['exts'] = array_values(array_unique($exts));
@@ -346,6 +350,16 @@ try {
                 if ($type === 'country' && $key !== $n['field_key']) foreach ($dependants as $dependant) {
                     $dependentSettings = fb_field_settings($dependant); $dependentSettings['country_field'] = $key;
                     $pdo->prepare('UPDATE fb_fields SET settings_json = ? WHERE id = ? AND form_id = ?')->execute([fb_json_encode($dependentSettings),(int)$dependant['id'],$formId]);
+                }
+                if ($type === 'date' && $key !== $n['field_key']) foreach ($currentFields as $candidate) {
+                    if ((int)$candidate['id'] === $id || $candidate['type'] !== 'date') continue;
+                    $candidateValidation = fb_field_validation($candidate);
+                    $changed = false;
+                    foreach (['after_field', 'before_field'] as $dateRule) if (($candidateValidation[$dateRule] ?? '') === $n['field_key']) {
+                        $candidateValidation[$dateRule] = $key;
+                        $changed = true;
+                    }
+                    if ($changed) $pdo->prepare('UPDATE fb_fields SET validation_json = ? WHERE id = ? AND form_id = ?')->execute([fb_json_encode($candidateValidation),(int)$candidate['id'],$formId]);
                 }
                 $formSettings = fb_form_settings($form);
                 if ((string)$formSettings['success_detail_field'] === (string)$n['field_key']) {

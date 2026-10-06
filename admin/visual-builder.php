@@ -135,6 +135,9 @@ fb_admin_css();
 .fbv-option-advanced summary { color: var(--adam-muted); font-size: .68rem; font-weight: 700; cursor: pointer; }
 .fbv-option-advanced label { display: grid; gap: .3rem; margin-top: .55rem; }
 .fbv-option-empty { padding: .8rem; border: 1px dashed var(--adam-border); border-radius: 10px; color: var(--adam-muted); font-size: .72rem; text-align: center; }
+.fbv-property-group { margin: .9rem 0; padding: .75rem; border: 1px solid var(--adam-border); border-radius: 11px; background: var(--adam-bg); }
+.fbv-property-group > strong { display: block; margin-bottom: .65rem; font-size: .74rem; }
+.fbv-property-group .fba-field:last-child { margin-bottom: 0; }
 .fbv-mode-card { margin-top: 1rem; padding: .85rem; border: 1px solid var(--adam-border); border-radius: 12px; }
 .fbv-mode-card strong { display: block; margin-bottom: .25rem; font-size: .78rem; }
 .fbv-mode-card span { display: block; margin-bottom: .65rem; color: var(--adam-muted); font-size: .72rem; line-height: 1.45; }
@@ -219,7 +222,7 @@ fb_admin_css();
 
     <aside class="fbv-sidebar right" id="fbvQuestionProperties" aria-label="Question properties">
       <h2>Question properties</h2>
-      <p>Select a question on the canvas to edit its label, help text, options, required state, and visibility.</p>
+      <p>Select a question on the canvas to edit its content, validation, layout, required state, and visibility.</p>
       <div class="fbv-field-picker-shell">
         <label for="fbvFieldPicker">Editing field</label>
         <div class="fbv-field-picker-control">
@@ -229,8 +232,8 @@ fb_admin_css();
       </div>
       <div class="fbv-inspector" id="fbvInspector"><div class="fbv-inspector-empty">Select a field on the canvas, or add one from the library.</div></div>
       <div class="fbv-mode-card">
-        <strong>Need advanced layout?</strong>
-        <span>Rows, columns, custom HTML, and current production controls remain available.</span>
+        <strong>Compatibility tools</strong>
+        <span>Field-key changes, rich or raw content, image metadata, and Bin recovery remain available in Classic while Visual parity is completed.</span>
         <a class="fba-btn sm" href="<?= htmlspecialchars($classicUrl, ENT_QUOTES) ?>"><?= svg_ico('panel-top') ?>Open Classic Builder</a>
       </div>
     </aside>
@@ -456,6 +459,25 @@ fb_admin_css();
       <div class="fbv-option-list">${optionCards || '<div class="fbv-option-empty">Add the first answer choice.</div>'}</div>
     </section>`;
   };
+  const renderValidationControls = (field) => {
+    const validation = mutableRecord(field.validation);
+    if (field.type === 'number') {
+      return `<section class="fbv-property-group"><strong>Validation</strong><div class="fba-row2"><div class="fba-field"><label>Minimum</label><input data-validation-prop="min" type="number" step="any" value="${escapeHtml(validation.min ?? '')}"></div><div class="fba-field"><label>Maximum</label><input data-validation-prop="max" type="number" step="any" value="${escapeHtml(validation.max ?? '')}"></div></div></section>`;
+    }
+    if (field.type === 'date') {
+      return `<section class="fbv-property-group"><strong>Date validation</strong><div class="fba-row2"><div class="fba-field"><label>Earliest date</label><input data-validation-prop="min" type="date" value="${escapeHtml(validation.min ?? '')}"></div><div class="fba-field"><label>Latest date</label><input data-validation-prop="max" type="date" value="${escapeHtml(validation.max ?? '')}"></div></div></section>`;
+    }
+    if (['text', 'email', 'tel', 'intl_phone', 'textarea'].includes(field.type)) {
+      return `<section class="fbv-property-group"><strong>Text validation</strong><div class="fba-row2"><div class="fba-field"><label>Maximum length</label><input data-validation-prop="maxlength" type="number" min="1" max="65536" step="1" value="${escapeHtml(validation.maxlength ?? '')}"></div><div class="fba-field"><label>Pattern (regex)</label><input data-validation-prop="pattern" type="text" maxlength="500" value="${escapeHtml(validation.pattern ?? '')}"></div></div></section>`;
+    }
+    return '';
+  };
+  const renderCountryFieldControl = (field) => {
+    if (field.type !== 'intl_phone') return '';
+    const countries = currentFields().filter((candidate) => candidate.type === 'country' && !candidate.hidden);
+    return `<div class="fba-field"><label>Country field</label><select data-country-field required>${countries.map((country) => `<option value="${escapeHtml(country.key)}"${field.settings?.country_field === country.key ? ' selected' : ''}>${escapeHtml(country.label || country.key)}</option>`).join('')}</select>${countries.length ? '' : '<div class="fba-hint">Add a visible Country field before configuring this phone field.</div>'}</div>`;
+  };
+  const renderAlignmentControls = (field) => `<section class="fbv-property-group"><strong>Alignment</strong><div class="fba-row2"><div class="fba-field"><label>Horizontal</label><select data-setting-prop="align"><option value=""${field.settings?.align ? '' : ' selected'}>Left (default)</option><option value="center"${field.settings?.align === 'center' ? ' selected' : ''}>Center</option><option value="right"${field.settings?.align === 'right' ? ' selected' : ''}>Right</option></select></div><div class="fba-field"><label>Vertical in column</label><select data-setting-prop="valign"><option value=""${field.settings?.valign ? '' : ' selected'}>Top (default)</option><option value="middle"${field.settings?.valign === 'middle' ? ' selected' : ''}>Middle</option><option value="bottom"${field.settings?.valign === 'bottom' ? ' selected' : ''}>Bottom</option></select></div></div></section>`;
   const storeUploadDescription = (fieldKey, content) => {
     const field = currentFields().find((candidate) => candidate.key === fieldKey);
     if (!isUploadField(field) || String(field.settings?.upload_description_html || '') === content) return;
@@ -551,12 +573,12 @@ fb_admin_css();
       return `<div data-upload-editor-host></div><div class="fba-row2"><div class="fba-field"><label>${escapeHtml(UPLOAD_TEXT.maxFiles)}</label><input name="v_max_files" data-upload-prop="max_files" type="number" min="1" max="${UPLOAD_MAX_FILES}" step="1" value="${maxFiles}"></div><div class="fba-field"><label>${escapeHtml(UPLOAD_TEXT.maxSize)}</label><input name="v_maxmb" data-upload-prop="max_mb" type="number" min="1" max="25" step="1" value="${maxMb}"></div></div><div class="fba-field"><label>${escapeHtml(UPLOAD_TEXT.extensions)}</label><input name="v_exts" data-upload-prop="exts" type="text" value="${escapeHtml(extensions.join(', '))}"></div><div class="fba-field"><label>${escapeHtml(UPLOAD_TEXT.previewMode)}</label><select name="s_preview_mode" data-upload-prop="preview_mode"><option value="none"${previewMode === 'none' ? ' selected' : ''}>${escapeHtml(UPLOAD_TEXT.none)}</option><option value="icon"${previewMode === 'icon' ? ' selected' : ''}>${escapeHtml(UPLOAD_TEXT.icon)}</option><option value="real"${previewMode === 'real' ? ' selected' : ''}>${escapeHtml(UPLOAD_TEXT.real)}</option></select></div>`;
     })() : '';
     const headingControl = field.type === 'heading' ? `<div class="fba-field"><label>Heading level</label><select data-setting-prop="level">${['h1','h2','h3','h4','h5','h6'].map((level) => `<option value="${level}"${(field.settings?.level || 'h2') === level ? ' selected' : ''}>${level.toUpperCase()}</option>`).join('')}</select></div>` : '';
-    const inputControls = isInput ? `<div class="fba-field"><label>Field key</label><input class="fbv-inspector-key" type="text" value="${escapeHtml(field.key)}" readonly></div><div class="fba-field"><label>Placeholder</label><input data-field-prop="placeholder" type="text" maxlength="1000" value="${escapeHtml(field.placeholder || '')}"></div><div class="fba-field"><label>Help text</label><input data-field-prop="help" type="text" maxlength="2000" value="${escapeHtml(field.help || '')}"></div>${isChoice ? renderOptionEditor(field) : ''}<div class="fba-checks"><label class="fba-check"><input data-field-prop="required" type="checkbox"${field.required ? ' checked' : ''}> Required</label><label class="fba-check"><input data-field-prop="hidden" type="checkbox"${field.hidden ? ' checked' : ''}> Hidden</label></div>` : '';
+    const inputControls = isInput ? `<div class="fba-field"><label>Field key</label><input class="fbv-inspector-key" type="text" value="${escapeHtml(field.key)}" readonly></div><div class="fba-field"><label>Placeholder</label><input data-field-prop="placeholder" type="text" maxlength="1000" value="${escapeHtml(field.placeholder || '')}"></div><div class="fba-field"><label>Help text</label><input data-field-prop="help" type="text" maxlength="2000" value="${escapeHtml(field.help || '')}"></div>${renderCountryFieldControl(field)}${isChoice ? renderOptionEditor(field) : ''}${renderValidationControls(field)}<div class="fba-checks"><label class="fba-check"><input data-field-prop="required" type="checkbox"${field.required ? ' checked' : ''}> Required</label><label class="fba-check"><input data-field-prop="hidden" type="checkbox"${field.hidden ? ' checked' : ''}> Hidden</label></div>` : '';
     const siblings = ordered(currentFields().filter((candidate) => candidate.parent === field.parent && !['row', 'col'].includes(candidate.type)));
     const siblingIndex = siblings.findIndex((candidate) => candidate.key === field.key);
     const positionControls = `<div class="fba-field"><label>Column</label><select data-field-parent>${layoutColumns().map(({ row, column, rowIndex, columnIndex }) => `<option value="${escapeHtml(column.key)}"${column.key === field.parent ? ' selected' : ''}>Row ${rowIndex + 1}, column ${columnIndex + 1}</option>`).join('')}</select></div><div class="fbv-position-actions"><button class="fba-btn sm" type="button" data-field-move="up"${siblingIndex <= 0 ? ' disabled' : ''}>Move up</button><button class="fba-btn sm" type="button" data-field-move="down"${siblingIndex < 0 || siblingIndex >= siblings.length - 1 ? ' disabled' : ''}>Move down</button></div>`;
     const protectedType = ['richtext', 'raw_html'].includes(field.type) && !CAN_UNSAFE;
-    inspector.innerHTML = `<span class="fbv-inspector-type">${escapeHtml(meta.label)}</span>${labelControl}${uploadControl}${headingControl}${inputControls}${positionControls}<div class="fbv-inspector-actions"><span class="fba-hint">Autosaved draft</span><button class="fba-btn danger sm" type="button" data-fbv-delete${protectedType ? ' disabled title="Unsafe-code permission required"' : ''}>Delete</button></div>`;
+    inspector.innerHTML = `<span class="fbv-inspector-type">${escapeHtml(meta.label)}</span>${labelControl}${uploadControl}${headingControl}${inputControls}${renderAlignmentControls(field)}${positionControls}<div class="fbv-inspector-actions"><span class="fba-hint">Autosaved draft</span><button class="fba-btn danger sm" type="button" data-fbv-delete${protectedType ? ' disabled title="Unsafe-code permission required"' : ''}>Delete</button></div>`;
     if (isUploadField(field)) attachUploadDescriptionEditor(field);
   };
   const mutateDefinition = (callback, refreshInspector = false) => {
@@ -1098,7 +1120,66 @@ fb_admin_css();
       else target.settings.preview_mode = value;
     });
   });
+  inspector.addEventListener('change', (event) => {
+    const countryInput = event.target.closest('[data-country-field]');
+    const validationInput = event.target.closest('[data-validation-prop]');
+    if (!countryInput && !validationInput) return;
+    const field = currentField();
+    if (!field) return;
+    const reject = (message) => {
+      renderInspector();
+      hasUnsavedChanges = Boolean(pendingDefinition || saveInFlight);
+      setStatus(message, 'error');
+      updateActions();
+    };
+    if (countryInput) {
+      const country = currentFields().find((candidate) => candidate.key === countryInput.value && candidate.type === 'country' && !candidate.hidden);
+      if (field.type !== 'intl_phone' || !country) { reject('Select a visible Country field'); return; }
+      mutateDefinition((definition) => {
+        const phone = definition.form.fields.find((candidate) => candidate.key === selectedKey);
+        const linkedCountry = definition.form.fields.find((candidate) => candidate.key === countryInput.value);
+        if (!phone || !linkedCountry) return;
+        phone.settings = mutableRecord(phone.settings);
+        phone.settings.country_field = linkedCountry.key;
+        if (phone.required) linkedCountry.required = true;
+      });
+      return;
+    }
+    const property = validationInput.dataset.validationProp;
+    const validation = { ...mutableRecord(field.validation) };
+    const rawValue = validationInput.value.trim();
+    if (rawValue === '') delete validation[property];
+    else if (property === 'maxlength') {
+      const value = Number(rawValue);
+      if (!Number.isSafeInteger(value) || value < 1 || value > 65536) { reject('Maximum length must be between 1 and 65536'); return; }
+      validation.maxlength = value;
+    } else if (property === 'pattern') {
+      if ([...rawValue].length > 500) { reject('Pattern must not exceed 500 characters'); return; }
+      validation.pattern = rawValue;
+    } else if (property === 'min' || property === 'max') {
+      if (field.type === 'number') {
+        const value = Number(rawValue);
+        if (!Number.isFinite(value)) { reject('Enter a valid numeric range'); return; }
+        validation[property] = value;
+        if (validation.min !== undefined && validation.max !== undefined && Number(validation.min) > Number(validation.max)) { reject('Minimum cannot exceed maximum'); return; }
+      } else if (field.type === 'date') {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(rawValue)) { reject('Enter a valid date range'); return; }
+        validation[property] = rawValue;
+        if (validation.min && validation.max && validation.min > validation.max) { reject('Earliest date cannot exceed latest date'); return; }
+      } else { return; }
+    } else return;
+    mutateDefinition((definition) => {
+      const target = definition.form.fields.find((candidate) => candidate.key === selectedKey);
+      if (target) target.validation = validation;
+    });
+  });
   inspector.addEventListener('input', (event) => {
+    if (event.target.matches('[data-validation-prop]')) {
+      hasUnsavedChanges = true;
+      setStatus('Unsaved validation changes', 'saving');
+      updateActions();
+      return;
+    }
     if (event.target.matches('[data-field-parent]')) {
       moveField(selectedKey, event.target.value);
       return;
@@ -1230,7 +1311,8 @@ fb_admin_css();
       if (!field) return;
       if (setting) {
         field.settings = mutableRecord(field.settings);
-        field.settings[setting] = value;
+        if (['align', 'valign'].includes(setting) && value === '') delete field.settings[setting];
+        else field.settings[setting] = value;
       }
       else {
         field[property] = value;

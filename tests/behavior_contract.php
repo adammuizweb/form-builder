@@ -242,6 +242,17 @@ $check(str_contains($countryHtml, 'data-fb-country') && str_contains($countryHtm
     && !str_contains($countryHtml, 'type="search"') && !str_contains($countryHtml, 'data-fb-country-search')
     && str_contains($phoneHtml, 'data-country-field="country"'),
     'country picker uses one native type-ahead select and declares its phone dependency');
+$parityDefinition = $definition;
+$parityDefinition['form']['fields'][4]['validation'] = ['maxlength'=>24,'pattern'=>'^[a-z]+@[a-z]+[.][a-z]+$'];
+$parityDefinition['form']['fields'][4]['settings'] = ['align'=>'right','valign'=>'bottom'];
+$parityEmail = fb_definition_decode($parityDefinition)['form']['fields'][4];
+$parityEmailField = ['type'=>'email','field_key'=>'email','label'=>'Email','required'=>1,'is_hidden'=>0,'placeholder'=>'','help_text'=>'','validation_json'=>fb_json_encode($parityEmail['validation']),'settings_json'=>fb_json_encode($parityEmail['settings'])];
+$parityEmailHtml = fb_render_field_html($parityEmailField, 'contract', 'parity', false, fb_default_settings());
+[, $parityErrors] = fb_validate_submission([$parityEmailField], ['email'=>'user123@example.test'], [], fb_default_settings());
+$check(str_contains($parityEmailHtml, 'class="fb-field fb-al-r fb-v-b"')
+    && str_contains($parityEmailHtml, 'maxlength="24"')
+    && $parityErrors !== [],
+    'Visual parity properties round-trip through definitions, public alignment, and detailed validation');
 $GLOBALS['__APP_LOCALE'] = 'fr-CA';
 $localizedSettings = array_merge(fb_default_settings(), $definition['form']['settings']);
 $localizedPhone = fb_localized_field(['field_key'=>'phone','label'=>'Phone'], $localizedSettings);
@@ -394,6 +405,8 @@ $dateField = static fn(string $key, string $label, array $validation = []): arra
 $settings = fb_default_settings();
 [$valid, $errors] = fb_validate_submission([$dateField('start','Start',['before_field'=>'end']),$dateField('end','End',['after_field'=>'start'])], ['start'=>'2027-01-01','end'=>'2027-02-01'], [], $settings);
 $check($errors === [] && $valid['start'] === '2027-01-01', 'strict valid date range passes');
+[, $errors] = fb_validate_submission([$dateField('event','Event',['min'=>'2027-01-01','max'=>'2027-12-31'])], ['event'=>'2026-12-31'], [], $settings);
+$check(count($errors) === 1 && str_contains($errors[0], 'on or after 2027-01-01'), 'server-side date validation enforces configured absolute bounds');
 [, $errors] = fb_validate_submission([$dateField('start','Start',['before_field'=>'end']),$dateField('end','End',['after_field'=>'start'])], ['start'=>'2027-02-30','end'=>'2027-01-01'], [], $settings);
 $check(count($errors) >= 2, 'invalid calendar and cross-field date ranges fail');
 $check(fb_csv_cell(' =cmd') === "' =cmd" && fb_csv_cell("\t@cmd") === "'\t@cmd" && fb_csv_cell('ordinary') === 'ordinary', 'CSV formulas including leading whitespace are neutralized');

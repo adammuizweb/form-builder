@@ -316,6 +316,24 @@ $check(str_contains($visualBuilder, 'const renderOptionEditor = (field)')
     && !str_contains($visualBuilder, 'data-field-options')
     && !str_contains($visualBuilder, 'value|Label|price'),
     'Visual Builder edits labels, values, prices, and optional capacities with structured controls');
+$check(str_contains($visualBuilder, 'const renderValidationControls = (field)')
+    && str_contains($visualBuilder, 'data-validation-prop="maxlength"')
+    && str_contains($visualBuilder, 'data-validation-prop="pattern"')
+    && str_contains($visualBuilder, 'const renderCountryFieldControl = (field)')
+    && str_contains($visualBuilder, 'data-country-field required')
+    && str_contains($visualBuilder, 'const renderAlignmentControls = (field)')
+    && str_contains($visualBuilder, 'data-setting-prop="align"')
+    && str_contains($visualBuilder, 'data-setting-prop="valign"')
+    && str_contains($visualBuilder, "delete field.settings[setting]"),
+    'Visual Builder exposes detailed validation, linked Country selection, and reversible alignment controls');
+$check(str_contains($ajax, '$validation = fb_field_validation($n);')
+    && str_contains($ajax, "unset(\$validation['min'], \$validation['max']);")
+    && str_contains($ajax, "unset(\$validation['maxlength'], \$validation['pattern']);"),
+    'Classic field saves preserve validation rules that are owned only by Visual Builder');
+$check(str_contains($ajax, "if (\$type === 'date' && \$key !== \$n['field_key'])")
+    && str_contains($visualBuilder, "event.target.matches('[data-validation-prop]')")
+    && str_contains($visualBuilder, 'hasUnsavedChanges = Boolean(pendingDefinition || saveInFlight);'),
+    'Classic renames preserve imported date references while Visual validation edits participate safely in unsaved-state protection');
 $check(str_contains($visualBuilder, '.fbv-field-picker-shell')
     && str_contains($visualBuilder, '.fbv-field-picker-control::after')
     && str_contains($visualBuilder, 'grid-template-columns: 224px minmax(360px, 1fr) 370px')

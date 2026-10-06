@@ -15,6 +15,8 @@ function fb_public_message_defaults(string $locale): array {
         'country_search' => 'Search countries',
         'country_placeholder' => '-- Select a country --',
         'invalid_country' => '{field} must be a valid country',
+        'date_min' => '{field} must be on or after {min}',
+        'date_max' => '{field} must be on or before {max}',
         'too_many_files' => '{field} accepts at most {max} files',
         'too_many_uploads' => 'Too many files were uploaded in this request',
         'upload_count_mismatch' => '{field} upload was truncated; please choose the files again',
