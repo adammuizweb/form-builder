@@ -74,10 +74,15 @@ function fb_contained_path(string $base, string $relative, bool $mustExist = tru
     $realBase = realpath($base);
     if ($realBase === false || is_link($base)) return null;
     $candidate = $realBase . '/' . $relative;
+    $probe = $realBase;
+    foreach (explode('/', $relative) as $segment) {
+        $probe .= DIRECTORY_SEPARATOR . $segment;
+        if (is_link($probe)) return null;
+    }
     $resolved = $mustExist ? realpath($candidate) : realpath(dirname($candidate));
     if ($resolved === false || ($resolved !== $realBase && !str_starts_with($resolved, $realBase . DIRECTORY_SEPARATOR))) return null;
-    if ($mustExist && is_link($candidate)) return null;
-    return $candidate;
+    if ($mustExist && (!is_file($resolved) || is_link($candidate))) return null;
+    return $mustExist ? $resolved : $candidate;
 }
 
 function fb_csv_cell(mixed $value): string {

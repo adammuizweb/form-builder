@@ -23,7 +23,8 @@ function authorization_actor(PDO $pdo, int $uid): ?array {
     return ['roles' => array_map(static fn(string $slug): array => ['slug' => $slug], $GLOBALS['_actors'][$uid])];
 }
 require dirname(__DIR__) . '/plugin.php';
-require '/var/www/jyavani.lan/cfg/helpers/migration_helper.php';
+$migrationHelper = getenv('JYAVANI_MIGRATION_HELPER') ?: '/var/www/jyavani.lan/cfg/helpers/migration_helper.php';
+require $migrationHelper;
 
 $failures = [];
 $check = static function (bool $ok, string $message) use (&$failures): void { echo ($ok ? 'PASS ' : 'FAIL ') . $message . "\n"; if (!$ok) $failures[] = $message; };
@@ -181,7 +182,7 @@ $migrations = plugin_migrations_discover($sandbox . '/plugins/form-builder');
 $check(array_keys($migrations) === ['0001-baseline.sql','0002-submission-workflow.php','0003-visual-builder-drafts.php','0004-option-capacity.php'], 'Core discovers the final append-only migration filenames');
 
 $pathBase = fb_files_base_dir([]); mkdir($pathBase . '/1', 0750); file_put_contents($pathBase . '/1/test.pdf', '%PDF-contract');
-$check(fb_contained_path($pathBase, '1/test.pdf', true) === $pathBase . '/1/test.pdf' && fb_contained_path($pathBase, '../private_files/secret', false) === null && fb_contained_path($pathBase, '/etc/passwd', true) === null, 'private path containment accepts only contained regular paths');
+$check(fb_contained_path($pathBase, '1/test.pdf', true) === realpath($pathBase . '/1/test.pdf') && fb_contained_path($pathBase, '../private_files/secret', false) === null && fb_contained_path($pathBase, '/etc/passwd', true) === null, 'private path containment accepts only contained regular paths and returns the resolved file');
 $safeDirectory = fb_ensure_storage_directory($pathBase, ['2', '2026', '09']);
 $check($safeDirectory === $pathBase . '/2/2026/09' && is_dir($safeDirectory) && is_writable($safeDirectory), 'private upload directories are created writable and one contained component at a time');
 $symlinkTarget = $sandbox . '/symlink-target'; mkdir($symlinkTarget, 0700); symlink($symlinkTarget, $pathBase . '/3');

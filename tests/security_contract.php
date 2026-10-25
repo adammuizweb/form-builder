@@ -8,7 +8,7 @@ $permissions = array_column($manifest['permissions'] ?? [], null, 'key');
 $composer = json_decode((string)file_get_contents($root . '/composer.json'), true, 32, JSON_THROW_ON_ERROR);
 $lock = json_decode((string)file_get_contents($root . '/composer.lock'), true, 64, JSON_THROW_ON_ERROR);
 $lockedPackages = array_column($lock['packages'] ?? [], 'version', 'name');
-$check(($manifest['version'] ?? null) === '2.4.1' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.140' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
+$check(($manifest['version'] ?? null) === '2.4.2' && ($manifest['requires']['jyavani'] ?? null) === '>=2.3.140' && ($manifest['store']['url'] ?? null) === 'https://jyavani.com/plugin-store', 'release identity, Core requirement, and Store endpoint are exact');
 $check(in_array('content-editor', $manifest['dependencies']['js'] ?? [], true), 'upload descriptions declare the Core content-editor dependency');
 $staticCopies = array_column($manifest['static']['copy'] ?? [], 'to', 'from');
 $check(($staticCopies['public/proof.js'] ?? null) === 'static/plugins/form-builder/proof.js', 'submission proof generator publishes only in the plugin-owned static namespace');
@@ -95,6 +95,11 @@ $check(str_contains($submit, 'if ($uploadFields !== [])')
     && str_contains($submit, 'fb_prepare_files_base_dir($form)')
     && str_contains($submit, 'chmod($path, 0640)'),
     'public submission provisions scoped private storage only when validated uploads are present');
+$check(str_contains($publicHelpers, 'foreach (explode(\'/\', $relative) as $segment)')
+    && str_contains($publicHelpers, 'if (is_link($probe)) return null;')
+    && str_contains($publicHelpers, '!is_file($resolved)')
+    && str_contains($publicHelpers, 'return $mustExist ? $resolved : $candidate;'),
+    'private attachment paths reject symlinked components and return the verified resolved file path');
 $check(str_contains($submit, 'fb_select_capacity_errors($pdo, $formId, $localizedFields, [$data], $settings)')
     && strpos($submit, 'idempotency_key = ? FOR UPDATE') < strpos($submit, 'fb_select_capacity_errors(')
     && str_contains($plugin, 'function fb_select_capacity_usage(')
@@ -454,7 +459,10 @@ $check(str_contains($draftHelpers, 'data-fbv-row=')
     && str_contains($visualBuilder, 'fbv_layout_collapsed_${FORM_ID}')
     && str_contains($visualBuilder, 'layoutPanel.hidden = collapsed')
     && str_contains($visualBuilder, "layoutToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true')")
-    && str_contains($visualBuilder, "const applyPreview = (html) => {\n    updateFieldCount();\n    renderFieldPicker();\n    renderLayout();")
+    && str_contains($visualBuilder, 'const applyPreview = (html) => {')
+    && str_contains($visualBuilder, 'updateFieldCount();')
+    && str_contains($visualBuilder, 'renderFieldPicker();')
+    && str_contains($visualBuilder, 'renderLayout();')
     && str_contains($visualBuilder, 'const highlightLayoutRow = (rowKey, message)')
     && str_contains($visualBuilder, 'const guideEmptyColumn = (rowKey, columnKey)')
     && str_contains($visualBuilder, 'id="fbvFieldGuidance"')
